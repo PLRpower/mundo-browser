@@ -20,6 +20,9 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private ObservableCollection<HistoryEntry> _suggestions = new();
 
+        [ObservableProperty]
+        private ObservableCollection<ExtensionInfo> _installedExtensions = new();
+
         public HistoryManager HistoryManager { get; }
 
         [RelayCommand]

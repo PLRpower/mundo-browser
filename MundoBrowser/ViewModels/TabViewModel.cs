@@ -10,8 +10,14 @@ namespace MundoBrowser.ViewModels
 
         // The active URL of the WebView
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(AddressUrl))]
         private string _url = "https://www.google.com";
+
+        // Called automatically when Url changes - sync AddressUrl
+        partial void OnUrlChanged(string value)
+        {
+            // Update the address bar to show the current URL
+            AddressUrl = value;
+        }
 
         // The text in the address bar
         [ObservableProperty]

@@ -21,21 +21,94 @@ public partial class MainWindow : Window
         {
             try
             {
-                await BrowserView.EnsureCoreWebView2Async();
+                // Configure WebView2 environment to disable ALL download verification and SmartScreen
+                var options = new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions()
+                {
+                    // Enable browser extensions support
+                    AreBrowserExtensionsEnabled = true,
+                    AdditionalBrowserArguments = 
+                        "--disable-features=DownloadBubble,DownloadBubbleV2 " +
+                        "--safebrowsing-disable-download-protection " +
+                        "--safebrowsing-disable-extension-blacklist " +
+                        "--disable-client-side-phishing-detection " +
+                        "--disable-popup-blocking"
+                };
+                
+                // Create a persistent user data folder for WebView2 (required for extensions)
+                var userDataFolder = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MundoBrowser", "WebView2Data");
+                System.IO.Directory.CreateDirectory(userDataFolder);
+                
+                var environment = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                    null, userDataFolder, options);
+                
+                await BrowserView.EnsureCoreWebView2Async(environment);
+                
+                // Disable download verification by handling the DownloadStarting event
+                BrowserView.CoreWebView2.DownloadStarting += (sender, args) =>
+                {
+                    // Disable SmartScreen check for this download
+                    args.Handled = false;  // Let the download proceed
+                    
+                    // Get the default download path
+                    var downloadPath = args.ResultFilePath;
+                    if (string.IsNullOrEmpty(downloadPath))
+                    {
+                        // Set default download path to Downloads folder
+                        var downloadsFolder = System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                            "Downloads");
+                        var fileName = System.IO.Path.GetFileName(new Uri(args.DownloadOperation.Uri).LocalPath);
+                        if (string.IsNullOrEmpty(fileName))
+                        {
+                            fileName = "download";
+                        }
+                        downloadPath = System.IO.Path.Combine(downloadsFolder, fileName);
+                        args.ResultFilePath = downloadPath;
+                    }
+                    
+                    // CRITICAL: This prevents the Mark-of-the-Web and SmartScreen verification
+                    args.DownloadOperation.StateChanged += (s, e) =>
+                    {
+                        if (args.DownloadOperation.State == Microsoft.Web.WebView2.Core.CoreWebView2DownloadState.Completed)
+                        {
+                            // Remove the Mark-of-the-Web (Zone.Identifier) that triggers SmartScreen
+                            try
+                            {
+                                var zoneIdentifierPath = downloadPath + ":Zone.Identifier";
+                                if (System.IO.File.Exists(zoneIdentifierPath))
+                                {
+                                    System.IO.File.Delete(zoneIdentifierPath);
+                                }
+                            }
+                            catch
+                            {
+                                // Ignore errors when removing Zone.Identifier
+                            }
+                        }
+                    };
+                };
                 
                 // Enable extensions support
                 await InitializeExtensionsSupport();
                 
-                // Subscribe to navigation events to update tab titles
+                // Subscribe to navigation events to update tab titles and URL
                 BrowserView.CoreWebView2.NavigationCompleted += (sender, args) =>
                 {
                     UpdateCurrentTabTitle();
                     
-                    // Add to history
-                    if (DataContext is ViewModels.MainViewModel viewModel && args.IsSuccess)
+                    // Update the address bar with the current URL
+                    if (DataContext is ViewModels.MainViewModel viewModel && viewModel.SelectedTab != null && args.IsSuccess)
                     {
                         var url = BrowserView.CoreWebView2.Source;
                         var title = BrowserView.CoreWebView2.DocumentTitle;
+                        
+                        // Update both URL properties
+                        viewModel.SelectedTab.Url = url;
+                        viewModel.SelectedTab.AddressUrl = url;
+                        
+                        // Add to history
                         viewModel.HistoryManager.AddEntry(url, title);
                     }
                 };
@@ -45,6 +118,40 @@ public partial class MainWindow : Window
                 {
                     UpdateCurrentTabTitle();
                 };
+                
+                // Subscribe to source changes (URL changes) - this fires immediately when URL changes
+                BrowserView.CoreWebView2.SourceChanged += (sender, args) =>
+                {
+                    System.Diagnostics.Debug.WriteLine($"SourceChanged fired! New URL: {BrowserView.CoreWebView2.Source}");
+                    
+                    // Use Dispatcher to ensure UI updates happen on UI thread
+                    Dispatcher.Invoke(() =>
+                    {
+                        var newUrl = BrowserView.CoreWebView2.Source;
+                        
+                        System.Diagnostics.Debug.WriteLine($"Updating AddressTextBox to: {newUrl}");
+                        
+                        // Update the address bar directly
+                        _isUpdatingText = true;
+                        AddressTextBox.Text = newUrl;
+                        _isUpdatingText = false;
+                        
+                        // Also update ViewModel for consistency
+                        if (DataContext is ViewModels.MainViewModel viewModel && viewModel.SelectedTab != null)
+                        {
+                            viewModel.SelectedTab.AddressUrl = newUrl;
+                        }
+                    });
+                };
+                
+                // Navigate to initial URL after environment is fully configured
+                if (DataContext is ViewModels.MainViewModel vm2 && vm2.SelectedTab != null && !string.IsNullOrEmpty(vm2.SelectedTab.Url))
+                {
+                    BrowserView.CoreWebView2.Navigate(vm2.SelectedTab.Url);
+                }
+                
+                // Load installed extensions to display in the toolbar
+                await LoadInstalledExtensions();
             }
             catch (Exception ex)
             {
@@ -67,8 +174,14 @@ public partial class MainWindow : Window
                 }
                 else if (e.PropertyName == nameof(vm.SelectedTab))
                 {
-                    // When the selected tab changes, update its title from the current page
+                    // When the selected tab changes, navigate to its URL
                     UpdateCurrentTabTitle();
+                    
+                    // Navigate to the tab's URL
+                    if (vm.SelectedTab != null && !string.IsNullOrEmpty(vm.SelectedTab.Url) && BrowserView.CoreWebView2 != null)
+                    {
+                        BrowserView.CoreWebView2.Navigate(vm.SelectedTab.Url);
+                    }
                 }
             };
         }
@@ -154,26 +267,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            // Open folder picker dialog
-            var dialog = new Microsoft.Win32.OpenFileDialog
+            // Show the modern Add Extension dialog
+            var dialog = new AddExtensionWindow
             {
-                Title = "Select Extension Folder or CRX File",
-                Filter = "All Files|*.*",
-                CheckFileExists = false,
-                CheckPathExists = true
+                Owner = this
             };
 
-            // For folder selection, we'll use FolderBrowserDialog
-            var folderDialog = new System.Windows.Forms.FolderBrowserDialog
+            if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.ExtensionPath))
             {
-                Description = "Select the unpacked extension folder",
-                ShowNewFolderButton = false
-            };
-
-            if (folderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            {
-                string extensionPath = folderDialog.SelectedPath;
-                await LoadExtensionFromFolder(extensionPath);
+                await LoadExtensionFromFolder(dialog.ExtensionPath);
             }
         }
         catch (Exception ex)
@@ -186,9 +288,28 @@ public partial class MainWindow : Window
     {
         try
         {
+            // Log the path for debugging
+            System.Diagnostics.Debug.WriteLine($"Attempting to load extension from: {path}");
+            
+            // Check if manifest.json exists
+            var manifestPath = System.IO.Path.Combine(path, "manifest.json");
+            if (!System.IO.File.Exists(manifestPath))
+            {
+                System.Windows.MessageBox.Show($"No manifest.json found in:\n{path}", 
+                    "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            
+            // Read and log manifest info
+            var manifestContent = await System.IO.File.ReadAllTextAsync(manifestPath);
+            System.Diagnostics.Debug.WriteLine($"Manifest content: {manifestContent.Substring(0, Math.Min(500, manifestContent.Length))}...");
+            
             if (BrowserView.CoreWebView2 != null)
             {
                 var profile = BrowserView.CoreWebView2.Profile;
+                
+                System.Diagnostics.Debug.WriteLine($"Profile path: {profile.ProfilePath}");
+                System.Diagnostics.Debug.WriteLine($"AreBrowserExtensionsEnabled should be true");
                 
                 // Add extension to the browser profile
                 var extension = await profile.AddBrowserExtensionAsync(path);
@@ -196,12 +317,140 @@ public partial class MainWindow : Window
                 System.Windows.MessageBox.Show($"Extension '{extension.Name}' loaded successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
                 System.Diagnostics.Debug.WriteLine($"Extension loaded: {extension.Name} (ID: {extension.Id})");
             }
+            else
+            {
+                System.Windows.MessageBox.Show("WebView2 is not initialized yet.", 
+                    "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (System.Runtime.InteropServices.COMException comEx)
+        {
+            System.Windows.MessageBox.Show($"COM Error loading extension:\nHResult: 0x{comEx.HResult:X8}\nMessage: {comEx.Message}\n\nPath: {path}", 
+                "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Diagnostics.Debug.WriteLine($"COM Exception: HResult=0x{comEx.HResult:X8}, {comEx.Message}");
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show($"Failed to load extension: {ex.Message}\n\nMake sure the folder contains a valid manifest.json file.", 
+            System.Windows.MessageBox.Show($"Failed to load extension: {ex.Message}\n\nPath: {path}\n\nMake sure the folder contains a valid manifest.json file.", 
                 "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            System.Diagnostics.Debug.WriteLine($"Extension load error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Extension load error: {ex.GetType().Name}: {ex.Message}");
+        }
+        
+        // Refresh the extensions list after loading
+        await LoadInstalledExtensions();
+    }
+
+    private async Task LoadInstalledExtensions()
+    {
+        try
+        {
+            if (BrowserView.CoreWebView2 == null || DataContext is not ViewModels.MainViewModel vm)
+                return;
+
+            var profile = BrowserView.CoreWebView2.Profile;
+            var extensions = await profile.GetBrowserExtensionsAsync();
+
+            vm.InstalledExtensions.Clear();
+
+            foreach (var ext in extensions)
+            {
+                if (ext.IsEnabled)
+                {
+                    vm.InstalledExtensions.Add(new Models.ExtensionInfo(ext.Id, ext.Name, ext.IsEnabled));
+                    System.Diagnostics.Debug.WriteLine($"Found extension: {ext.Name} (ID: {ext.Id})");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading extensions list: {ex.Message}");
+        }
+    }
+
+    private async void ExtensionIcon_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button button && button.Tag is string extensionId)
+        {
+            try
+            {
+                if (BrowserView.CoreWebView2 == null) return;
+                
+                // Get extension info from WebView2
+                var profile = BrowserView.CoreWebView2.Profile;
+                var extensions = await profile.GetBrowserExtensionsAsync();
+                
+                string? extensionName = null;
+                foreach (var ext in extensions)
+                {
+                    if (ext.Id == extensionId)
+                    {
+                        extensionName = ext.Name;
+                        break;
+                    }
+                }
+                
+                string popupPath = "popup/index.html"; // Default - common pattern
+                
+                // Search in our downloaded extensions folder
+                var ourExtensionsPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MundoBrowser", "Extensions");
+                
+                System.Diagnostics.Debug.WriteLine($"Searching for manifest in: {ourExtensionsPath}");
+                
+                if (System.IO.Directory.Exists(ourExtensionsPath))
+                {
+                    // Check each extension folder for a matching manifest
+                    foreach (var extFolder in System.IO.Directory.GetDirectories(ourExtensionsPath))
+                    {
+                        var manifestPath = System.IO.Path.Combine(extFolder, "manifest.json");
+                        if (System.IO.File.Exists(manifestPath))
+                        {
+                            var manifestJson = await System.IO.File.ReadAllTextAsync(manifestPath);
+                            
+                            // Check if this extension name matches (since IDs differ)
+                            var nameMatch = System.Text.RegularExpressions.Regex.Match(manifestJson, @"""name""\s*:\s*""([^""]+)""");
+                            if (nameMatch.Success)
+                            {
+                                var manifestName = nameMatch.Groups[1].Value;
+                                // Handle localized names like "__MSG_extName__"
+                                if (manifestName.StartsWith("__MSG_") || 
+                                    (extensionName != null && manifestName.Contains(extensionName, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Found matching extension folder: {extFolder}");
+                                }
+                            }
+                            
+                            // Try to find popup path
+                            var popupMatch = System.Text.RegularExpressions.Regex.Match(
+                                manifestJson, @"""default_popup""\s*:\s*""([^""]+)""");
+                            if (popupMatch.Success)
+                            {
+                                popupPath = popupMatch.Groups[1].Value;
+                                System.Diagnostics.Debug.WriteLine($"Found popup path: {popupPath}");
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                var extensionUrl = $"chrome-extension://{extensionId}/{popupPath}";
+                System.Diagnostics.Debug.WriteLine($"Opening extension popup: {extensionUrl}");
+                
+                // Open in a popup window
+                var popupWindow = new ExtensionPopupWindow(
+                    extensionUrl, 
+                    extensionName ?? "Extension",
+                    BrowserView.CoreWebView2.Environment);
+                popupWindow.Owner = this;
+                popupWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error opening extension: {ex.Message}");
+                System.Windows.MessageBox.Show($"Could not open extension: {ex.Message}", 
+                    "Extension Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
     }
 

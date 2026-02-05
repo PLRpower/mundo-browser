@@ -267,7 +267,7 @@
                         </Button.Template>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="🧩" FontSize="16" Margin="0,0,8,0"/>
-                            <TextBlock Text="Load Extension" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBlock Text="Add Extension" VerticalAlignment="Center" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Button>
                 </Grid>
@@ -300,7 +300,8 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="3*"/>    <!-- URL Box takes 60% -->
-                        <ColumnDefinition Width="2*"/>    <!-- Empty space takes 40% -->
+                        <ColumnDefinition Width="*"/>     <!-- Empty space -->
+                        <ColumnDefinition Width="Auto"/>  <!-- Extensions Icons -->
                         <ColumnDefinition Width="Auto"/>  <!-- Window Controls Column -->
                     </Grid.ColumnDefinitions>
                     
@@ -458,9 +459,46 @@
                             </Popup>
                         </Grid>
                     </Border>
+                    <!-- Extensions Icons Bar -->
+                    <ItemsControl Grid.Column="4" ItemsSource="{Binding InstalledExtensions}" 
+                                  VerticalAlignment="Center" Margin="10,0"
+                                  WindowChrome.IsHitTestVisibleInChrome="True">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Width="28" Height="28" Margin="2,0"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip="{Binding Name}"
+                                        Cursor="Hand"
+                                        Click="ExtensionIcon_Click"
+                                        Tag="{Binding Id}">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                                    CornerRadius="6" Padding="4">
+                                                <!-- Puzzle piece icon as placeholder -->
+                                                <TextBlock Text="🧩" FontSize="14" 
+                                                           HorizontalAlignment="Center" 
+                                                           VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="border" Property="Background" Value="#3D3D3D"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
                     <!-- Window Controls -->
-                    <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="0" VerticalAlignment="Stretch" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="0" VerticalAlignment="Stretch" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
                         <Button Click="Minimize_Click" Width="45" Height="40" Background="Transparent" BorderThickness="0" Style="{StaticResource GrayHoverButtonStyle}">
                              <Path Data="M0,2 L10,2" Stroke="White" StrokeThickness="1.5" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                         </Button>
@@ -474,8 +512,8 @@
                 </Grid>
             </Border>
 
-            <!-- WebView2 -->
-            <wv2:WebView2 Grid.Row="1" x:Name="BrowserView" Source="{Binding SelectedTab.Url, Mode=TwoWay}"/>
+            <!-- WebView2 - Source is set programmatically after environment initialization -->
+            <wv2:WebView2 Grid.Row="1" x:Name="BrowserView"/>
              
              <!-- Resize Edge Triggers - Allow resizing when WebView2 would otherwise block it -->
              <!-- Left edge for sidebar toggle -->
