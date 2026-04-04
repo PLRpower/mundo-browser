@@ -1,794 +1,388 @@
-﻿using System;
-using System.Runtime.InteropServices;
+using System;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Shell;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+using MundoBrowser.Helpers;
+using MundoBrowser.Models;
+using MundoBrowser.Services;
+using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
 
 public partial class MainWindow : Window
 {
+    private readonly WebViewService _webViewService;
+    private readonly TabReorderHelper _tabReorderHelper;
+    private CancellationTokenSource? _suggestionCts;
+    private bool _isUpdatingAddressBar;
+    private bool _isFullscreen;
+    private (WindowState State, WindowStyle Style, ResizeMode Resize) _prevWindowState;
+
     public MainWindow()
     {
         InitializeComponent();
-        Loaded += (s, args) => SetRoundedCorners();
         
-        // Handle window state changes to fix maximized mode overflow
-        StateChanged += OnWindowStateChanged;
-        
-        // Initialize WebView2 when the window loads
-        Loaded += async (s, args) =>
+        var vm = (MainViewModel)DataContext;
+        _webViewService = new WebViewService(WebViewsContainer);
+        _tabReorderHelper = new TabReorderHelper(TabsListBox, vm);
+
+        InitializeWindow();
+        InitializeEvents(vm);
+
+        // Hook for taskbar respect
+        SourceInitialized += (s, e) =>
         {
-            try
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
+        };
+    }
+
+    private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == 0x0024) // WM_GETMINMAXINFO
+        {
+            NativeMethods.WmGetMinMaxInfo(hwnd, lParam);
+            handled = true;
+        }
+        return IntPtr.Zero;
+    }
+
+    private void InitializeWindow()
+    {
+        NativeMethods.SetWindowCorners(this, NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND);
+        StateChanged += (_, _) => OnWindowStateChanged();
+        Closing += (_, _) => ((MainViewModel)DataContext).SaveCurrentSession();
+        
+        Loaded += async (_, _) => {
+            await _webViewService.InitializeAsync();
+            if (DataContext is MainViewModel vm && vm.SelectedTab != null)
             {
-                // Configure WebView2 environment to disable ALL download verification and SmartScreen
-                var options = new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions()
-                {
-                    // Enable browser extensions support
-                    AreBrowserExtensionsEnabled = true,
-                    AdditionalBrowserArguments = 
-                        "--disable-features=DownloadBubble,DownloadBubbleV2 " +
-                        "--safebrowsing-disable-download-protection " +
-                        "--safebrowsing-disable-extension-blacklist " +
-                        "--disable-client-side-phishing-detection " +
-                        "--disable-popup-blocking"
-                };
-                
-                // Create a persistent user data folder for WebView2 (required for extensions)
-                var userDataFolder = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "MundoBrowser", "WebView2Data");
-                System.IO.Directory.CreateDirectory(userDataFolder);
-                
-                var environment = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
-                    null, userDataFolder, options);
-                
-                await BrowserView.EnsureCoreWebView2Async(environment);
-                
-                // Disable download verification by handling the DownloadStarting event
-                BrowserView.CoreWebView2.DownloadStarting += (sender, args) =>
-                {
-                    // Disable SmartScreen check for this download
-                    args.Handled = false;  // Let the download proceed
-                    
-                    // Get the default download path
-                    var downloadPath = args.ResultFilePath;
-                    if (string.IsNullOrEmpty(downloadPath))
-                    {
-                        // Set default download path to Downloads folder
-                        var downloadsFolder = System.IO.Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
-                            "Downloads");
-                        var fileName = System.IO.Path.GetFileName(new Uri(args.DownloadOperation.Uri).LocalPath);
-                        if (string.IsNullOrEmpty(fileName))
-                        {
-                            fileName = "download";
-                        }
-                        downloadPath = System.IO.Path.Combine(downloadsFolder, fileName);
-                        args.ResultFilePath = downloadPath;
-                    }
-                    
-                    // CRITICAL: This prevents the Mark-of-the-Web and SmartScreen verification
-                    args.DownloadOperation.StateChanged += (s, e) =>
-                    {
-                        if (args.DownloadOperation.State == Microsoft.Web.WebView2.Core.CoreWebView2DownloadState.Completed)
-                        {
-                            // Remove the Mark-of-the-Web (Zone.Identifier) that triggers SmartScreen
-                            try
-                            {
-                                var zoneIdentifierPath = downloadPath + ":Zone.Identifier";
-                                if (System.IO.File.Exists(zoneIdentifierPath))
-                                {
-                                    System.IO.File.Delete(zoneIdentifierPath);
-                                }
-                            }
-                            catch
-                            {
-                                // Ignore errors when removing Zone.Identifier
-                            }
-                        }
-                    };
-                };
-                
-                // Enable extensions support
-                await InitializeExtensionsSupport();
-                
-                // Subscribe to navigation events to update tab titles and URL
-                BrowserView.CoreWebView2.NavigationCompleted += (sender, args) =>
-                {
-                    UpdateCurrentTabTitle();
-                    
-                    // Update the address bar with the current URL
-                    if (DataContext is ViewModels.MainViewModel viewModel && viewModel.SelectedTab != null && args.IsSuccess)
-                    {
-                        var url = BrowserView.CoreWebView2.Source;
-                        var title = BrowserView.CoreWebView2.DocumentTitle;
-                        
-                        // Update both URL properties
-                        viewModel.SelectedTab.Url = url;
-                        viewModel.SelectedTab.AddressUrl = url;
-                        
-                        // Add to history
-                        viewModel.HistoryManager.AddEntry(url, title);
-                    }
-                };
-                
-                // Subscribe to document title changes
-                BrowserView.CoreWebView2.DocumentTitleChanged += (sender, args) =>
-                {
-                    UpdateCurrentTabTitle();
-                };
-                
-                // Subscribe to source changes (URL changes) - this fires immediately when URL changes
-                BrowserView.CoreWebView2.SourceChanged += (sender, args) =>
-                {
-                    System.Diagnostics.Debug.WriteLine($"SourceChanged fired! New URL: {BrowserView.CoreWebView2.Source}");
-                    
-                    // Use Dispatcher to ensure UI updates happen on UI thread
-                    Dispatcher.Invoke(() =>
-                    {
-                        var newUrl = BrowserView.CoreWebView2.Source;
-                        
-                        System.Diagnostics.Debug.WriteLine($"Updating AddressTextBox to: {newUrl}");
-                        
-                        // Update the address bar directly
-                        _isUpdatingText = true;
-                        AddressTextBox.Text = newUrl;
-                        _isUpdatingText = false;
-                        
-                        // Also update ViewModel for consistency
-                        if (DataContext is ViewModels.MainViewModel viewModel && viewModel.SelectedTab != null)
-                        {
-                            viewModel.SelectedTab.AddressUrl = newUrl;
-                        }
-                    });
-                };
-                
-                // Navigate to initial URL after environment is fully configured
-                if (DataContext is ViewModels.MainViewModel vm2 && vm2.SelectedTab != null && !string.IsNullOrEmpty(vm2.SelectedTab.Url))
-                {
-                    BrowserView.CoreWebView2.Navigate(vm2.SelectedTab.Url);
-                }
-                
-                // Load installed extensions to display in the toolbar
-                await LoadInstalledExtensions();
+                await SwitchToTabAsync(vm.SelectedTab);
+                UpdateSidebarWidth(vm.IsSidebarVisible);
             }
-            catch (Exception ex)
-            {
-                // WebView2 runtime might not be installed
-                System.Diagnostics.Debug.WriteLine($"WebView2 init error: {ex.Message}");
+            await LoadExtensionsAsync();
+        };
+    }
+
+    private void InitializeEvents(MainViewModel vm)
+    {
+        vm.PropertyChanged += async (s, e) => {
+            if (e.PropertyName == nameof(MainViewModel.SelectedTab) && vm.SelectedTab != null)
+                await SwitchToTabAsync(vm.SelectedTab);
+            else if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
+                UpdateSidebarWidth(vm.IsSidebarVisible);
+        };
+
+        vm.Tabs.CollectionChanged += (_, e) => {
+            if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
+                foreach (TabViewModel tab in e.OldItems) _webViewService.RemoveTab(tab);
+        };
+
+        vm.LoadExtensionRequested += async (_, _) => await OnLoadExtensionRequested();
+        vm.NewTabRequested += (_, _) => { AddressTextBox.Focus(); AddressTextBox.SelectAll(); };
+    }
+
+    private async Task SwitchToTabAsync(TabViewModel tab)
+    {
+        if (tab == null) return;
+
+        var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
+        _webViewService.SwitchToTab(tab, webView);
+
+        _isUpdatingAddressBar = true;
+        AddressTextBox.Text = tab.AddressUrl;
+        _isUpdatingAddressBar = false;
+    }
+
+    private void SetupWebViewEvents(WebView2 wv, TabViewModel tab)
+    {
+        wv.CoreWebView2.NavigationCompleted += (_, args) => {
+            if (args.IsSuccess && ((MainViewModel)DataContext).SelectedTab == tab) {
+                tab.Url = tab.AddressUrl = wv.CoreWebView2.Source;
+                UpdateTitle();
+                ((MainViewModel)DataContext).HistoryManager.AddEntry(tab.Url, wv.CoreWebView2.DocumentTitle);
             }
         };
+
+        wv.CoreWebView2.SourceChanged += (_, _) => {
+            tab.AddressUrl = wv.CoreWebView2.Source;
+            if (((MainViewModel)DataContext).SelectedTab == tab) {
+                _isUpdatingAddressBar = true;
+                AddressTextBox.Text = tab.AddressUrl;
+                _isUpdatingAddressBar = false;
+            }
+        };
+
+        wv.CoreWebView2.DocumentTitleChanged += (_, _) => {
+            if (((MainViewModel)DataContext).SelectedTab == tab) UpdateTitle();
+        };
+
+        wv.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => 
+            SetFullscreen(wv.CoreWebView2.ContainsFullScreenElement);
+    }
+
+    private void UpdateTitle()
+    {
+        if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm || vm.SelectedTab == null) return;
+        var title = _webViewService.ActiveWebView.CoreWebView2.DocumentTitle;
+        vm.SelectedTab.Title = !string.IsNullOrWhiteSpace(title) ? title : (vm.SelectedTab.Url ?? "New Tab");
+    }
+
+    // --- BARRE D'ADRESSE ---
+    private void AddressBar_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
         
-        // Subscribe to LoadExtension event
-        if (DataContext is ViewModels.MainViewModel vm)
-        {
-            vm.LoadExtensionRequested += OnLoadExtensionRequested;
-            
-            // Subscribe to property changes
-            vm.PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(vm.IsSidebarVisible))
-                {
-                    UpdateSidebarColumnWidth(vm.IsSidebarVisible);
-                }
-                else if (e.PropertyName == nameof(vm.SelectedTab))
-                {
-                    // When the selected tab changes, navigate to its URL
-                    UpdateCurrentTabTitle();
-                    
-                    // Navigate to the tab's URL
-                    if (vm.SelectedTab != null && !string.IsNullOrEmpty(vm.SelectedTab.Url) && BrowserView.CoreWebView2 != null)
-                    {
-                        BrowserView.CoreWebView2.Navigate(vm.SelectedTab.Url);
-                    }
-                }
-            };
+        var input = AddressTextBox.Text?.Trim();
+        if (string.IsNullOrEmpty(input)) return;
+
+        string url = IsUrl(input) ? (input.Contains("://") ? input : "https://" + input) : $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
+        
+        if (DataContext is MainViewModel vm && vm.SelectedTab != null) {
+            vm.SelectedTab.Url = vm.SelectedTab.AddressUrl = url;
+            _webViewService.ActiveWebView?.CoreWebView2?.Navigate(url);
         }
     }
 
-    private void UpdateSidebarColumnWidth(bool isVisible)
+    private bool IsUrl(string t) => !t.Contains(" ") && (t.Contains(".") || t.Contains("://") || t == "localhost");
+
+    private async void AddressTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        var mainGrid = (Grid)Content;
-        var sidebarColumn = mainGrid.ColumnDefinitions[0];
+        if (_isUpdatingAddressBar || DataContext is not MainViewModel vm) return;
+        if (AddressTextBox == null || SuggestionsPopup == null) return;
         
-        if (isVisible)
+        _suggestionCts?.Cancel();
+        _suggestionCts = new CancellationTokenSource();
+        
+        var query = AddressTextBox.Text;
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 2 || !AddressTextBox.IsFocused) {
+            SuggestionsPopup.IsOpen = false;
+            return;
+        }
+
+        try {
+            await Task.Delay(150, _suggestionCts.Token);
+            if (SuggestionsPopup == null || vm.HistoryManager == null) return;
+
+            var results = vm.HistoryManager.SearchHistory(query, 5);
+            vm.Suggestions.Clear();
+            foreach (var r in results) vm.Suggestions.Add(r);
+            SuggestionsPopup.IsOpen = vm.Suggestions.Count > 0;
+        } catch (TaskCanceledException) { }
+    }
+
+    private void AddressTextBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && vm.Suggestions.Count > 0 && SuggestionsPopup != null)
+            SuggestionsPopup.IsOpen = true;
+    }
+
+    private void AddressTextBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        // Delay closing to allow clicking on suggestions
+        Task.Delay(200).ContinueWith(_ => Dispatcher.Invoke(() => SuggestionsPopup.IsOpen = false));
+    }
+
+    private void SelectAllUrl_Click(object sender, RoutedEventArgs e)
+    {
+        AddressTextBox.Focus();
+        AddressTextBox.SelectAll();
+    }
+
+    private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox lb && lb.SelectedItem is HistoryEntry entry && DataContext is MainViewModel vm)
         {
-            // Restore to default width with constraints
-            sidebarColumn.Width = new GridLength(250);
-            sidebarColumn.MinWidth = 150;
-            sidebarColumn.MaxWidth = 400;
+            if (vm.SelectedTab != null)
+            {
+                vm.SelectedTab.Url = vm.SelectedTab.AddressUrl = entry.Url;
+                _webViewService.ActiveWebView?.CoreWebView2?.Navigate(entry.Url);
+            }
+            SuggestionsPopup.IsOpen = false;
+        }
+    }
+
+    // --- UI ACTIONS ---
+    private void Back_Click(object sender, RoutedEventArgs e) => _webViewService.ActiveWebView?.GoBack();
+    private void Forward_Click(object sender, RoutedEventArgs e) => _webViewService.ActiveWebView?.GoForward();
+    private void Reload_Click(object sender, RoutedEventArgs e) => _webViewService.ActiveWebView?.Reload();
+    
+    private void SetFullscreen(bool enable)
+    {
+        if (enable == _isFullscreen) return;
+        _isFullscreen = enable;
+
+        if (enable) {
+            _prevWindowState = (WindowState, WindowStyle, ResizeMode);
+            TopBar.Visibility = Visibility.Collapsed;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+        } else {
+            TopBar.Visibility = Visibility.Visible;
+            WindowStyle = _prevWindowState.Style;
+            ResizeMode = _prevWindowState.Resize;
+            WindowState = _prevWindowState.State;
+        }
+    }
+
+    private void UpdateSidebarWidth(bool visible)
+    {
+        if (SidebarColumn == null || SplitterColumn == null) return;
+
+        if (visible)
+        {
+            SidebarColumn.Width = new GridLength(250);
+            SidebarColumn.MinWidth = 150;
+            SplitterColumn.Width = GridLength.Auto;
+            if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Visible;
         }
         else
         {
-            // Collapse the column
-            sidebarColumn.Width = new GridLength(0);
-            sidebarColumn.MinWidth = 0;
-            sidebarColumn.MaxWidth = 0;
+            SidebarColumn.Width = new GridLength(0);
+            SidebarColumn.MinWidth = 0;
+            SplitterColumn.Width = new GridLength(0);
+            if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Collapsed;
         }
     }
 
-    private void OnWindowStateChanged(object? sender, EventArgs e)
+    private void OnWindowStateChanged()
     {
-        // When maximized, add border thickness to account for the resize border
-        // and negative margin on MainGrid to pull content up to screen edge
-        if (WindowState == WindowState.Maximized)
-        {
-            // The resize border thickness is 5, plus extra padding for Windows
-            BorderThickness = new Thickness(8, 8, 8, 8);
-            // Pull the content up to compensate for the border
-            MainGrid.Margin = new Thickness(0, -1, -6, 0);
-        }
-        else
-        {
-            BorderThickness = new Thickness(0);
-            MainGrid.Margin = new Thickness(0);
-        }
-    }
+        // When maximized, WindowChrome automatically adds margins. 
+        // With our WM_GETMINMAXINFO hook, we just need to handle the hit-test areas.
+        bool isMax = WindowState == WindowState.Maximized;
+        MainGrid.Margin = isMax ? new Thickness(0) : new Thickness(0); // Handled by WM_GETMINMAXINFO
 
-    private async Task InitializeExtensionsSupport()
-    {
-        // Extensions are supported - we can load them programmatically
-        System.Diagnostics.Debug.WriteLine("WebView2 ready for extension support");
-    }
-
-    private void UpdateCurrentTabTitle()
-    {
-        try
+        // Adjust TitleBar elements when maximized.
+        if (TopBar != null)
         {
-            if (DataContext is ViewModels.MainViewModel vm && vm.SelectedTab != null)
-            {
-                // Get the page title from WebView2
-                var title = BrowserView.CoreWebView2?.DocumentTitle;
-                
-                // Update the tab title. If title is empty, show URL or "New Tab"
-                if (!string.IsNullOrWhiteSpace(title))
-                {
-                    vm.SelectedTab.Title = title;
-                }
-                else if (!string.IsNullOrWhiteSpace(vm.SelectedTab.Url))
-                {
-                    // Show a portion of the URL if title is not available
-                    vm.SelectedTab.Title = vm.SelectedTab.Url;
-                }
-                else
-                {
-                    vm.SelectedTab.Title = "New Tab";
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error updating tab title: {ex.Message}");
-        }
-    }
-
-    private async void OnLoadExtensionRequested(object? sender, EventArgs e)
-    {
-        try
-        {
-            // Show the modern Add Extension dialog
-            var dialog = new AddExtensionWindow
-            {
-                Owner = this
-            };
-
-            if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.ExtensionPath))
-            {
-                await LoadExtensionFromFolder(dialog.ExtensionPath);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Windows.MessageBox.Show($"Error loading extension: {ex.Message}", "Extension Error", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private async Task LoadExtensionFromFolder(string path)
-    {
-        try
-        {
-            // Log the path for debugging
-            System.Diagnostics.Debug.WriteLine($"Attempting to load extension from: {path}");
+            TopBar.Height = isMax ? 40 : 40; // Use same height, WM_GETMINMAXINFO handles the work area
+            var topPad = 0; // No padding needed with correct work area
             
-            // Check if manifest.json exists
-            var manifestPath = System.IO.Path.Combine(path, "manifest.json");
-            if (!System.IO.File.Exists(manifestPath))
-            {
-                System.Windows.MessageBox.Show($"No manifest.json found in:\n{path}", 
-                    "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
+            WindowControlsStack.Margin = new Thickness(0);
             
-            // Read and log manifest info
-            var manifestContent = await System.IO.File.ReadAllTextAsync(manifestPath);
-            System.Diagnostics.Debug.WriteLine($"Manifest content: {manifestContent.Substring(0, Math.Min(500, manifestContent.Length))}...");
-            
-            if (BrowserView.CoreWebView2 != null)
+            MinimizeBtn.Padding = new Thickness(0);
+            MaximizeBtn.Padding = new Thickness(0);
+            CloseBtn.Padding = new Thickness(0);
+
+            NavButtonsStack.Margin = new Thickness(0, 0, 15, 0);
+            UrlBarBorder.Margin = new Thickness(0);
+            ExtensionsControl.Margin = new Thickness(10, 0, 10, 0);
+        }
+
+        // Adjust WindowChrome properties based on state
+        var chrome = WindowChrome.GetWindowChrome(this);
+        if (chrome != null)
+        {
+            chrome.ResizeBorderThickness = isMax ? new Thickness(0) : new Thickness(6);
+        }
+
+        // Hide manual resize borders when maximized
+        if (RightResizeBorder != null) RightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
+        if (BottomResizeBorder != null) BottomResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
+        if (BottomRightResizeBorder != null) BottomRightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            if (e.ClickCount == 2)
             {
-                var profile = BrowserView.CoreWebView2.Profile;
-                
-                System.Diagnostics.Debug.WriteLine($"Profile path: {profile.ProfilePath}");
-                System.Diagnostics.Debug.WriteLine($"AreBrowserExtensionsEnabled should be true");
-                
-                // Add extension to the browser profile
-                var extension = await profile.AddBrowserExtensionAsync(path);
-                
-                System.Windows.MessageBox.Show($"Extension '{extension.Name}' loaded successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
-                System.Diagnostics.Debug.WriteLine($"Extension loaded: {extension.Name} (ID: {extension.Id})");
+                Maximize_Click(sender, e);
             }
             else
             {
-                System.Windows.MessageBox.Show("WebView2 is not initialized yet.", 
-                    "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-        catch (System.Runtime.InteropServices.COMException comEx)
-        {
-            System.Windows.MessageBox.Show($"COM Error loading extension:\nHResult: 0x{comEx.HResult:X8}\nMessage: {comEx.Message}\n\nPath: {path}", 
-                "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            System.Diagnostics.Debug.WriteLine($"COM Exception: HResult=0x{comEx.HResult:X8}, {comEx.Message}");
-        }
-        catch (Exception ex)
-        {
-            System.Windows.MessageBox.Show($"Failed to load extension: {ex.Message}\n\nPath: {path}\n\nMake sure the folder contains a valid manifest.json file.", 
-                "Extension Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            System.Diagnostics.Debug.WriteLine($"Extension load error: {ex.GetType().Name}: {ex.Message}");
-        }
-        
-        // Refresh the extensions list after loading
-        await LoadInstalledExtensions();
-    }
-
-    private async Task LoadInstalledExtensions()
-    {
-        try
-        {
-            if (BrowserView.CoreWebView2 == null || DataContext is not ViewModels.MainViewModel vm)
-                return;
-
-            var profile = BrowserView.CoreWebView2.Profile;
-            var extensions = await profile.GetBrowserExtensionsAsync();
-
-            vm.InstalledExtensions.Clear();
-
-            foreach (var ext in extensions)
-            {
-                if (ext.IsEnabled)
+                if (WindowState == WindowState.Maximized)
                 {
-                    vm.InstalledExtensions.Add(new Models.ExtensionInfo(ext.Id, ext.Name, ext.IsEnabled));
-                    System.Diagnostics.Debug.WriteLine($"Found extension: {ext.Name} (ID: {ext.Id})");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error loading extensions list: {ex.Message}");
-        }
-    }
+                    // Allow dragging to restore a maximized window
+                    var mousePosOnScreen = PointToScreen(e.GetPosition(this));
+                    double xRatio = e.GetPosition(this).X / ActualWidth;
 
-    private async void ExtensionIcon_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.Button button && button.Tag is string extensionId)
-        {
-            try
-            {
-                if (BrowserView.CoreWebView2 == null) return;
-                
-                // Get extension info from WebView2
-                var profile = BrowserView.CoreWebView2.Profile;
-                var extensions = await profile.GetBrowserExtensionsAsync();
-                
-                string? extensionName = null;
-                foreach (var ext in extensions)
-                {
-                    if (ext.Id == extensionId)
-                    {
-                        extensionName = ext.Name;
-                        break;
-                    }
+                    WindowState = WindowState.Normal;
+
+                    // Reposition based on new size to keep cursor at the same horizontal ratio
+                    Left = mousePosOnScreen.X - (ActualWidth * xRatio);
+                    Top = mousePosOnScreen.Y - 15;
                 }
                 
-                string popupPath = "popup/index.html"; // Default - common pattern
-                
-                // Search in our downloaded extensions folder
-                var ourExtensionsPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "MundoBrowser", "Extensions");
-                
-                System.Diagnostics.Debug.WriteLine($"Searching for manifest in: {ourExtensionsPath}");
-                
-                if (System.IO.Directory.Exists(ourExtensionsPath))
-                {
-                    // Check each extension folder for a matching manifest
-                    foreach (var extFolder in System.IO.Directory.GetDirectories(ourExtensionsPath))
-                    {
-                        var manifestPath = System.IO.Path.Combine(extFolder, "manifest.json");
-                        if (System.IO.File.Exists(manifestPath))
-                        {
-                            var manifestJson = await System.IO.File.ReadAllTextAsync(manifestPath);
-                            
-                            // Check if this extension name matches (since IDs differ)
-                            var nameMatch = System.Text.RegularExpressions.Regex.Match(manifestJson, @"""name""\s*:\s*""([^""]+)""");
-                            if (nameMatch.Success)
-                            {
-                                var manifestName = nameMatch.Groups[1].Value;
-                                // Handle localized names like "__MSG_extName__"
-                                if (manifestName.StartsWith("__MSG_") || 
-                                    (extensionName != null && manifestName.Contains(extensionName, StringComparison.OrdinalIgnoreCase)))
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"Found matching extension folder: {extFolder}");
-                                }
-                            }
-                            
-                            // Try to find popup path
-                            var popupMatch = System.Text.RegularExpressions.Regex.Match(
-                                manifestJson, @"""default_popup""\s*:\s*""([^""]+)""");
-                            if (popupMatch.Success)
-                            {
-                                popupPath = popupMatch.Groups[1].Value;
-                                System.Diagnostics.Debug.WriteLine($"Found popup path: {popupPath}");
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                var extensionUrl = $"chrome-extension://{extensionId}/{popupPath}";
-                System.Diagnostics.Debug.WriteLine($"Opening extension popup: {extensionUrl}");
-                
-                // Open in a popup window
-                var popupWindow = new ExtensionPopupWindow(
-                    extensionUrl, 
-                    extensionName ?? "Extension",
-                    BrowserView.CoreWebView2.Environment);
-                popupWindow.Owner = this;
-                popupWindow.Show();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error opening extension: {ex.Message}");
-                System.Windows.MessageBox.Show($"Could not open extension: {ex.Message}", 
-                    "Extension Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                try { DragMove(); } catch { }
             }
         }
     }
 
-    private void SetRoundedCorners()
+    private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
-        // Try to enable rounded corners on Windows 11
-        var hWnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        var attribute = DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE;
-        var preference = DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND;
-        DwmSetWindowAttribute(hWnd, attribute, ref preference, sizeof(uint));
+        // Logic for sidebar resizing if needed, but GridSplitter handles it mostly
     }
 
-    // P/Invoke definitions for DWM
-    public enum DWMWINDOWATTRIBUTE
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        DWMWA_WINDOW_CORNER_PREFERENCE = 33
-    }
-
-    public enum DWM_WINDOW_CORNER_PREFERENCE
-    {
-        DWMWCP_DEFAULT = 0,
-        DWMWCP_DONOTROUND = 1,
-        DWMWCP_ROUND = 2,
-        DWMWCP_ROUNDSMALL = 3
-    }
-
-    [System.Runtime.InteropServices.DllImport("dwmapi.dll", PreserveSig = false)]
-    public static extern void DwmSetWindowAttribute(IntPtr hwnd, DWMWINDOWATTRIBUTE attribute, ref DWM_WINDOW_CORNER_PREFERENCE pvAttribute, uint cbAttribute);
-
-    private void Minimize_Click(object sender, RoutedEventArgs e)
-    {
-        WindowState = WindowState.Minimized;
-    }
-
-    private void Maximize_Click(object sender, RoutedEventArgs e)
-    {
-        if (WindowState == WindowState.Maximized)
-            WindowState = WindowState.Normal;
-        else
-            WindowState = WindowState.Maximized;
-    }
-
-    private void Close_Click(object sender, RoutedEventArgs e)
-    {
-        Close();
-    }
-
-    private void Edge_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        // Try to show sidebar if it's hidden
-        if (DataContext is ViewModels.MainViewModel vm && !vm.IsSidebarVisible)
+        if (e.Key == Key.D && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
-            vm.IsSidebarVisible = true;
+            if (DataContext is MainViewModel vm)
+            {
+                vm.ToggleSidebarCommand.Execute(null);
+                e.Handled = true;
+            }
         }
     }
 
     private void Window_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        // Optional: Manual detection if the invisible border doesn't catch quickly enough
+        // Custom window move logic if needed
     }
 
-    private void Back_Click(object sender, RoutedEventArgs e)
+    private void Edge_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (BrowserView.CanGoBack)
-        {
-            BrowserView.GoBack();
+        if (DataContext is MainViewModel vm && !vm.IsSidebarVisible)
+            vm.IsSidebarVisible = true;
+    }
+
+    // --- EXTENSIONS ---
+    private async Task LoadExtensionsAsync()
+    {
+        if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm) return;
+        var exts = await _webViewService.ActiveWebView.CoreWebView2.Profile.GetBrowserExtensionsAsync();
+        vm.InstalledExtensions.Clear();
+        foreach (var ext in exts) 
+            if (ext.IsEnabled && !ext.Name.Contains("Microsoft"))
+                vm.InstalledExtensions.Add(new Models.ExtensionInfo(ext.Id, ext.Name, true));
+    }
+
+    private async Task OnLoadExtensionRequested()
+    {
+        var dialog = new AddExtensionWindow { Owner = this };
+        if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.ExtensionPath) && _webViewService.ActiveWebView != null) {
+            await _webViewService.ActiveWebView.CoreWebView2.Profile.AddBrowserExtensionAsync(dialog.ExtensionPath);
+            await LoadExtensionsAsync();
         }
     }
 
-    private void Forward_Click(object sender, RoutedEventArgs e)
+    private void ExtensionIcon_Click(object sender, RoutedEventArgs e)
     {
-        if (BrowserView.CanGoForward)
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string extensionId)
         {
-            BrowserView.GoForward();
+            // Show extension popup logic
         }
     }
 
-    private void Reload_Click(object sender, RoutedEventArgs e)
-    {
-        BrowserView.Reload();
-    }
+    // --- DRAG & DROP TABS ---
+    private void TabItem_PreviewMouseLeftButtonDown(object s, MouseButtonEventArgs e) => _tabReorderHelper.HandlePreviewMouseDown(e);
+    private void TabItem_PreviewMouseMove(object s, System.Windows.Input.MouseEventArgs e) => _tabReorderHelper.HandlePreviewMouseMove(s, e);
+    private void TabsList_DragOver(object s, System.Windows.DragEventArgs e) => _tabReorderHelper.HandleDragOver(e);
+    private void TabsList_Drop(object s, System.Windows.DragEventArgs e) => _tabReorderHelper.HandleDrop(e);
+    private void TabsList_DragLeave(object s, System.Windows.DragEventArgs e) => _tabReorderHelper.ClearIndicators();
 
-    private void SelectAllUrl_Click(object sender, RoutedEventArgs e)
-    {
-        // Select all text in the address bar
-        AddressTextBox.SelectAll();
-        AddressTextBox.Focus();
-    }
-
-    private void AddressBar_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (e.Key == System.Windows.Input.Key.Enter)
-        {
-            if (sender is System.Windows.Controls.TextBox textBox)
-            {
-                var input = textBox.Text?.Trim();
-                if (string.IsNullOrWhiteSpace(input)) return;
-
-                string finalUrl;
-                
-                // Detect if it's a URL or a search query
-                if (IsUrl(input))
-                {
-                    // It looks like a URL
-                    if (!input.StartsWith("http://") && !input.StartsWith("https://"))
-                    {
-                        finalUrl = "https://" + input;
-                    }
-                    else
-                    {
-                        finalUrl = input;
-                    }
-                }
-                else
-                {
-                    // It's a search query - use Google search
-                    finalUrl = $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
-                }
-                
-                // Update ViewModel (so tab title/url data is consistent)
-                if (DataContext is ViewModels.MainViewModel vm && vm.SelectedTab != null)
-                {
-                    vm.SelectedTab.Url = finalUrl;
-                    vm.SelectedTab.AddressUrl = finalUrl;
-                }
-                
-                // Navigate
-                try
-                {
-                    BrowserView.Source = new Uri(finalUrl);
-                    // Title will be updated automatically via NavigationCompleted event
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
-                }
-            }
-        }
-    }
-
-    private bool IsUrl(string text)
-    {
-        // If it contains spaces, it's definitely a search query
-        if (text.Contains(" ")) return false;
-        
-        // If it starts with a protocol, it's a URL
-        if (text.StartsWith("http://") || text.StartsWith("https://") || text.StartsWith("file://"))
-            return true;
-        
-        // If it looks like localhost or IP address
-        if (text.StartsWith("localhost") || text.StartsWith("127.0.0.1"))
-            return true;
-        
-        // Check if it looks like a domain (contains a dot and has a valid TLD pattern)
-        if (text.Contains("."))
-        {
-            var parts = text.Split('.');
-            // Must have at least domain.tld (2 parts)
-            if (parts.Length >= 2)
-            {
-                var lastPart = parts[^1].Split('/')[0]; // Get TLD before any path
-                // TLD should be 2+ characters and not contain special chars
-                if (lastPart.Length >= 2 && lastPart.All(c => char.IsLetterOrDigit(c)))
-                {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
-
-    private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
-    {
-        var mainGrid = (Grid)Content;
-        var sidebarColumn = mainGrid.ColumnDefinitions[0];
-        
-        var currentWidth = sidebarColumn.Width.Value;
-        var newWidth = currentWidth + e.HorizontalChange;
-        
-        // Respect min/max constraints
-        if (newWidth >= 150 && newWidth <= 400)
-        {
-            sidebarColumn.Width = new GridLength(newWidth);
-        }
-    }
-
-    // Autocomplete handlers
-    private bool _isUpdatingText = false;
-    
-    private void AddressTextBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (DataContext is not ViewModels.MainViewModel vm || SuggestionsPopup == null || _isUpdatingText)
-            return;
-
-        var query = AddressTextBox.Text;
-        
-        // Don't show suggestions if text is empty or very short
-        if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
-        {
-            SuggestionsPopup.IsOpen = false;
-            vm.Suggestions.Clear();
-            return;
-        }
-
-        // Search history for matching entries
-        var suggestions = vm.HistoryManager.SearchHistory(query, 5);
-        
-        vm.Suggestions.Clear();
-        foreach (var suggestion in suggestions)
-        {
-            vm.Suggestions.Add(suggestion);
-        }
-
-        // Inline autocomplete with first suggestion
-        if (vm.Suggestions.Count > 0)
-        {
-            var firstSuggestion = vm.Suggestions[0];
-            var urlToComplete = firstSuggestion.Url;
-            
-            // Try to find the best completion match
-            string completionText = null;
-            int matchPosition = -1;
-            
-            // 1. Check if URL starts with query (best match)
-            if (urlToComplete.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-            {
-                completionText = urlToComplete;
-                matchPosition = 0;
-            }
-            // 2. Check if URL starts with query after removing protocol
-            else
-            {
-                var urlWithoutProtocol = urlToComplete.Replace("https://", "").Replace("http://", "").Replace("www.", "");
-                if (urlWithoutProtocol.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-                {
-                    completionText = urlWithoutProtocol;
-                    matchPosition = 0;
-                }
-                // 3. Check if domain contains the query (e.g., "yout" matches "youtube.com")
-                else
-                {
-                    var domainPart = urlWithoutProtocol.Split('/')[0]; // Get just the domain
-                    var index = domainPart.IndexOf(query, StringComparison.OrdinalIgnoreCase);
-                    if (index >= 0)
-                    {
-                        // Found in domain - complete from that position
-                        completionText = domainPart;
-                        matchPosition = index;
-                    }
-                }
-            }
-            
-            // Apply inline completion if we found a match
-            if (completionText != null && matchPosition >= 0)
-            {
-                _isUpdatingText = true;
-                
-                var originalLength = query.Length;
-                
-                // If match is at beginning, use the full completion
-                if (matchPosition == 0)
-                {
-                    AddressTextBox.Text = completionText;
-                    AddressTextBox.Select(originalLength, completionText.Length - originalLength);
-                }
-                else
-                {
-                    // Match is in the middle - reconstruct intelligently
-                    // Complete from the match position
-                    var completion = completionText.Substring(matchPosition);
-                    if (completion.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-                    {
-                        AddressTextBox.Text = completion;
-                        AddressTextBox.Select(originalLength, completion.Length - originalLength);
-                    }
-                }
-                
-                _isUpdatingText = false;
-            }
-        }
-
-        // Show popup if we have suggestions
-        SuggestionsPopup.IsOpen = vm.Suggestions.Count > 0;
-    }
-
-    private void AddressTextBox_GotFocus(object sender, RoutedEventArgs e)
-    {
-        if (SuggestionsPopup == null)
-            return;
-            
-        // Could show recent history when focusing without text
-        if (DataContext is ViewModels.MainViewModel vm && string.IsNullOrWhiteSpace(AddressTextBox.Text))
-        {
-            var recentHistory = vm.HistoryManager.GetMostVisited(5);
-            vm.Suggestions.Clear();
-            foreach (var entry in recentHistory)
-            {
-                vm.Suggestions.Add(entry);
-            }
-            
-            if (vm.Suggestions.Count > 0)
-            {
-                SuggestionsPopup.IsOpen = true;
-            }
-        }
-    }
-
-    private void AddressTextBox_LostFocus(object sender, RoutedEventArgs e)
-    {
-        if (SuggestionsPopup == null || SuggestionsListBox == null)
-            return;
-            
-        // Delay closing to allow click on suggestion
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            if (SuggestionsListBox != null && !SuggestionsListBox.IsMouseOver)
-            {
-                SuggestionsPopup.IsOpen = false;
-            }
-        }), System.Windows.Threading.DispatcherPriority.Input);
-    }
-
-    private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is System.Windows.Controls.ListBox listBox && listBox.SelectedItem is Models.HistoryEntry selectedEntry)
-        {
-            if (DataContext is ViewModels.MainViewModel vm && vm.SelectedTab != null)
-            {
-                vm.SelectedTab.AddressUrl = selectedEntry.Url;
-                // Navigate to the selected URL
-                if (BrowserView?.CoreWebView2 != null)
-                {
-                    BrowserView.CoreWebView2.Navigate(selectedEntry.Url);
-                }
-            }
-            
-            SuggestionsPopup.IsOpen = false;
-        }
-    }
+    // --- WINDOW CONTROLS ---
+    private void Minimize_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void Maximize_Click(object s, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    private void Close_Click(object s, RoutedEventArgs e) => Close();
 }

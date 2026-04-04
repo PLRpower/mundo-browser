@@ -4,7 +4,7 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Extension" 
         Width="400" Height="600"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         Background="#1E1E1E"
         ResizeMode="CanResize"
         ShowInTaskbar="False">

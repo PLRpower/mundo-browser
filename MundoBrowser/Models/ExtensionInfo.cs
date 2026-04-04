@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.Windows.Media;
 
 namespace MundoBrowser.Models
 {
@@ -18,6 +19,9 @@ namespace MundoBrowser.Models
 
         [ObservableProperty]
         private string? _iconPath;
+
+        [ObservableProperty]
+        private ImageSource? _iconSource;
 
         public ExtensionInfo(string id, string name, bool isEnabled)
         {

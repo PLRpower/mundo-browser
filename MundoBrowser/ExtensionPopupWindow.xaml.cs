@@ -9,12 +9,30 @@ namespace MundoBrowser
         private readonly string _extensionUrl;
         private readonly CoreWebView2Environment _environment;
 
-        public ExtensionPopupWindow(string extensionUrl, string extensionName, CoreWebView2Environment environment)
+        public ExtensionPopupWindow(string extensionUrl, string extensionName, CoreWebView2Environment environment, System.Windows.Point? iconPosition = null)
         {
             InitializeComponent();
             _extensionUrl = extensionUrl;
             _environment = environment;
             TitleText.Text = extensionName;
+            
+            // Position the window below the icon if position is provided
+            if (iconPosition.HasValue)
+            {
+                Left = iconPosition.Value.X;
+                Top = iconPosition.Value.Y;
+                
+                // Make sure the window stays on screen
+                var workArea = SystemParameters.WorkArea;
+                if (Left + Width > workArea.Right)
+                {
+                    Left = workArea.Right - Width;
+                }
+                if (Top + Height > workArea.Bottom)
+                {
+                    Top = iconPosition.Value.Y - Height - 10; // Show above if no room below
+                }
+            }
             
             Loaded += async (s, e) =>
             {

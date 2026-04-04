@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using MundoBrowser.Models;
 
 namespace MundoBrowser.Services
@@ -12,6 +13,7 @@ namespace MundoBrowser.Services
         private readonly string _historyFilePath;
         private readonly List<HistoryEntry> _history;
         private const int MaxHistoryEntries = 1000;
+        private readonly SemaphoreSlim _saveLock = new SemaphoreSlim(1, 1);
 
         public HistoryManager()
         {
@@ -43,17 +45,22 @@ namespace MundoBrowser.Services
             return new List<HistoryEntry>();
         }
 
-        private void SaveHistory()
+        private async void SaveHistory()
         {
+            await _saveLock.WaitAsync();
             try
             {
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 var json = JsonSerializer.Serialize(_history, options);
-                File.WriteAllText(_historyFilePath, json);
+                await File.WriteAllTextAsync(_historyFilePath, json);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error saving history: {ex.Message}");
+            }
+            finally
+            {
+                _saveLock.Release();
             }
         }
 

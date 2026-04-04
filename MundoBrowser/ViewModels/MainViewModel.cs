@@ -24,6 +24,7 @@ namespace MundoBrowser.ViewModels
         private ObservableCollection<ExtensionInfo> _installedExtensions = new();
 
         public HistoryManager HistoryManager { get; }
+        public SessionManager SessionManager { get; }
 
         [RelayCommand]
         public void ToggleSidebar()
@@ -34,16 +35,56 @@ namespace MundoBrowser.ViewModels
         public MainViewModel()
         {
             HistoryManager = new HistoryManager();
-            // Add a default tab
-            AddNewTab();
+            SessionManager = new SessionManager();
+            
+            // Try to load previous session
+            var session = SessionManager.LoadSession();
+            if (session != null && session.Tabs.Count > 0)
+            {
+                foreach (var tabData in session.Tabs)
+                {
+                    Tabs.Add(new TabViewModel 
+                    { 
+                        Title = tabData.Title, 
+                        Url = tabData.Url,
+                        AddressUrl = tabData.Url // Ensure address bar shows the URL
+                    });
+                }
+
+                if (session.SelectedTabIndex >= 0 && session.SelectedTabIndex < Tabs.Count)
+                {
+                    SelectedTab = Tabs[session.SelectedTabIndex];
+                }
+                else
+                {
+                    SelectedTab = Tabs.FirstOrDefault();
+                }
+            }
+            else
+            {
+                // Add a default tab if no session restored
+                CreateDefaultTab();
+            }
         }
 
-        [RelayCommand]
-        public void AddNewTab()
+        private void CreateDefaultTab()
         {
             var newTab = new TabViewModel { Title = "New Tab", Url = "https://www.google.com" };
             Tabs.Add(newTab);
             SelectedTab = newTab;
+        }
+        
+        public void SaveCurrentSession()
+        {
+            SessionManager.SaveSession(Tabs, SelectedTab);
+        }
+
+        public event EventHandler? NewTabRequested;
+
+        [RelayCommand]
+        public void AddNewTab()
+        {
+            NewTabRequested?.Invoke(this, EventArgs.Empty);
         }
 
         [RelayCommand]
@@ -51,15 +92,25 @@ namespace MundoBrowser.ViewModels
         {
             if (Tabs.Contains(tab))
             {
+                // Capture if the tab to be closed is the currently selected one
+                // WPF ListBox sets SelectedItem to null immediately when the item is removed,
+                // so we must check this BEFORE removing from the collection.
+                bool wasSelected = (SelectedTab == tab);
+
                 Tabs.Remove(tab);
-                if (SelectedTab == tab && Tabs.Count > 0)
+                
+                // If we closed the active tab (or if SelectedTab matches passed tab), select another one
+                if (wasSelected)
                 {
-                    SelectedTab = Tabs[^1];
-                }
-                else if (Tabs.Count == 0)
-                {
-                    // Option: Close app or add new tab
-                    AddNewTab();
+                    if (Tabs.Count > 0)
+                    {
+                        SelectedTab = Tabs[^1];
+                    }
+                    else
+                    {
+                        // Option: Close app or add new tab
+                        CreateDefaultTab();
+                    }
                 }
             }
         }
