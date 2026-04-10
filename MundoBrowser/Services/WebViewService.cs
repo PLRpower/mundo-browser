@@ -32,6 +32,8 @@ public class WebViewService
             AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2 --process-per-site"
         };
 
+        // ExclusiveUserDataFolderAccess was removed to prevent E_UNEXPECTED if old processes linger
+
         var userDataFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MundoBrowser", "WebView2Data");
@@ -46,10 +48,26 @@ public class WebViewService
             return existing;
 
         var webView = new WebView2();
+        webView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+        
         _webViews[tab] = webView;
         _container.Children.Add(webView);
 
         await webView.EnsureCoreWebView2Async(_environment);
+        
+        // Handle Process Crashes to prevent app crashes and try to recover
+        webView.CoreWebView2.ProcessFailed += (sender, args) =>
+        {
+            // If the browser process crashed, we can attempt to reload it
+            if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited || 
+                args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited ||
+                args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+            {
+                // Re-initialize or handle the crash
+                try { webView.Reload(); } catch { }
+            }
+        };
+
         setupEvents(webView);
 
         if (!string.IsNullOrEmpty(tab.Url))
@@ -63,15 +81,23 @@ public class WebViewService
         if (_activeWebView != null)
         {
             _activeWebView.Visibility = Visibility.Collapsed;
-            if (_activeWebView.CoreWebView2 != null)
-                _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+            try
+            {
+                if (_activeWebView.CoreWebView2 != null)
+                    _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+            }
+            catch (InvalidOperationException) { /* Process crashed, ignore */ }
         }
 
         _activeWebView = webView;
         _activeWebView.Visibility = Visibility.Visible;
         
-        if (_activeWebView.CoreWebView2 != null)
-            _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+        try
+        {
+            if (_activeWebView.CoreWebView2 != null)
+                _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+        }
+        catch (InvalidOperationException) { /* Process crashed, ignore */ }
     }
 
     public void RemoveTab(TabViewModel tab)

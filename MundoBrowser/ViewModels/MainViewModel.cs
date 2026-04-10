@@ -21,10 +21,25 @@ namespace MundoBrowser.ViewModels
         private ObservableCollection<HistoryEntry> _suggestions = new();
 
         [ObservableProperty]
+        private bool _isPendingNewTab;
+
+        [ObservableProperty]
+        private string _addressBarText = "";
+
+        [ObservableProperty]
         private ObservableCollection<ExtensionInfo> _installedExtensions = new();
 
         public HistoryManager HistoryManager { get; }
         public SessionManager SessionManager { get; }
+
+        partial void OnSelectedTabChanged(TabViewModel? value)
+        {
+            if (value != null)
+            {
+                IsPendingNewTab = false;
+                AddressBarText = value.AddressUrl;
+            }
+        }
 
         [RelayCommand]
         public void ToggleSidebar()
@@ -65,6 +80,8 @@ namespace MundoBrowser.ViewModels
                 // Add a default tab if no session restored
                 CreateDefaultTab();
             }
+
+            if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
         }
 
         private void CreateDefaultTab()
@@ -84,7 +101,16 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void AddNewTab()
         {
+            IsPendingNewTab = true;
+            AddressBarText = "";
             NewTabRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void AddTabWithUrl(string url)
+        {
+            var newTab = new TabViewModel { Title = "Loading...", Url = url, AddressUrl = url };
+            Tabs.Add(newTab);
+            SelectedTab = newTab;
         }
 
         [RelayCommand]

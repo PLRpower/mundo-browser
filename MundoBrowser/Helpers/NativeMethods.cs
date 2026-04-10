@@ -39,7 +39,7 @@ public static class NativeMethods
         catch { /* Fallback pour les versions de Windows plus anciennes */ }
     }
 
-    public static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam)
+    public static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam, bool isFullScreen)
     {
         MINMAXINFO mmi = (MINMAXINFO)Marshal.PtrToStructure(lParam, typeof(MINMAXINFO))!;
 
@@ -50,12 +50,15 @@ public static class NativeMethods
         {
             MONITORINFO monitorInfo = new MONITORINFO();
             GetMonitorInfo(monitor, monitorInfo);
-            RECT rcWorkArea = monitorInfo.rcWork;
+            
+            // Use rcMonitor for true fullscreen (covers taskbar), rcWork for normal maximized
+            RECT rcLimitArea = isFullScreen ? monitorInfo.rcMonitor : monitorInfo.rcWork;
             RECT rcMonitorArea = monitorInfo.rcMonitor;
-            mmi.ptMaxPosition.x = Math.Abs(rcWorkArea.left - rcMonitorArea.left);
-            mmi.ptMaxPosition.y = Math.Abs(rcWorkArea.top - rcMonitorArea.top);
-            mmi.ptMaxSize.x = Math.Abs(rcWorkArea.right - rcWorkArea.left);
-            mmi.ptMaxSize.y = Math.Abs(rcWorkArea.bottom - rcWorkArea.top);
+            
+            mmi.ptMaxPosition.x = rcLimitArea.left - rcMonitorArea.left;
+            mmi.ptMaxPosition.y = rcLimitArea.top - rcMonitorArea.top;
+            mmi.ptMaxSize.x = rcLimitArea.right - rcLimitArea.left;
+            mmi.ptMaxSize.y = rcLimitArea.bottom - rcLimitArea.top;
         }
 
         Marshal.StructureToPtr(mmi, lParam, true);
