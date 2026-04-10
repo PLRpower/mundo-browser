@@ -45,23 +45,26 @@ namespace MundoBrowser.Services
             return new List<HistoryEntry>();
         }
 
-        private async void SaveHistory()
+        private void SaveHistory()
         {
-            await _saveLock.WaitAsync();
-            try
+            Task.Run(async () =>
             {
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                var json = JsonSerializer.Serialize(_history, options);
-                await File.WriteAllTextAsync(_historyFilePath, json);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error saving history: {ex.Message}");
-            }
-            finally
-            {
-                _saveLock.Release();
-            }
+                await _saveLock.WaitAsync();
+                try
+                {
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    var json = JsonSerializer.Serialize(_history, options);
+                    await File.WriteAllTextAsync(_historyFilePath, json);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error saving history: {ex.Message}");
+                }
+                finally
+                {
+                    _saveLock.Release();
+                }
+            });
         }
 
         public void AddEntry(string url, string title = "")

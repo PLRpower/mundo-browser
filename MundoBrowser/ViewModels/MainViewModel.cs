@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MundoBrowser.Services;
@@ -138,6 +139,17 @@ namespace MundoBrowser.ViewModels
                         CreateDefaultTab();
                     }
                 }
+            }
+        }
+
+        [RelayCommand]
+        public void CloseOtherTabs()
+        {
+            if (SelectedTab == null) return;
+            var toRemove = Tabs.Where(t => t != SelectedTab).ToList();
+            foreach (var tab in toRemove)
+            {
+                Tabs.Remove(tab);
             }
         }
 

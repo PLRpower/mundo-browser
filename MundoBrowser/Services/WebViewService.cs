@@ -16,12 +16,18 @@ public class WebViewService
     private readonly System.Windows.Controls.Panel _container;
     private CoreWebView2Environment? _environment;
     private WebView2? _activeWebView;
+    private readonly System.Timers.Timer _memoryTimer;
 
     public WebView2? ActiveWebView => _activeWebView;
 
     public WebViewService(System.Windows.Controls.Panel container)
     {
         _container = container;
+        
+        // EcoMode: Retire de la mémoire RAM les onglets inactifs > 10 min
+        _memoryTimer = new System.Timers.Timer(60000); 
+        _memoryTimer.Elapsed += CheckMemoryOptimization;
+        _memoryTimer.Start();
     }
 
     public async Task InitializeAsync()
@@ -76,28 +82,69 @@ public class WebViewService
         return webView;
     }
 
+    private void CheckMemoryOptimization(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            var now = DateTime.Now;
+            var tabsToDiscard = new List<TabViewModel>();
+            
+            foreach(var kvp in _webViews)
+            {
+                var tab = kvp.Key;
+                var wv = kvp.Value;
+                // Si l'onglet n'est pas actif et n'a pas été vu depuis 10 minutes, on le libère
+                if (wv != _activeWebView && (now - tab.LastAccessed).TotalMinutes > 10)
+                {
+                    tabsToDiscard.Add(tab);
+                }
+            }
+            
+            foreach(var tab in tabsToDiscard) DiscardTab(tab);
+        });
+    }
+
+    private void DiscardTab(TabViewModel tab)
+    {
+        if (_webViews.TryGetValue(tab, out var webView))
+        {
+            _container.Children.Remove(webView);
+            webView.Dispose();
+            _webViews.Remove(tab);
+            tab.IsDiscarded = true;
+        }
+    }
+
     public void SwitchToTab(TabViewModel tab, WebView2 webView)
     {
-        if (_activeWebView != null)
+        if (_activeWebView != null && _activeWebView != webView)
         {
             _activeWebView.Visibility = Visibility.Collapsed;
             try
             {
                 if (_activeWebView.CoreWebView2 != null)
+                {
                     _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+                    _activeWebView.CoreWebView2.TrySuspendAsync(); // Extrêmement efficace pour le CPU
+                }
             }
-            catch (InvalidOperationException) { /* Process crashed, ignore */ }
+            catch (Exception) { /* Ignorer les erreurs si le processus est fermé/planté */ }
         }
 
         _activeWebView = webView;
         _activeWebView.Visibility = Visibility.Visible;
+        tab.LastAccessed = DateTime.Now;
+        tab.IsDiscarded = false;
         
         try
         {
             if (_activeWebView.CoreWebView2 != null)
+            {
+                _activeWebView.CoreWebView2.Resume();
                 _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+            }
         }
-        catch (InvalidOperationException) { /* Process crashed, ignore */ }
+        catch (Exception) { /* Ignorer */ }
     }
 
     public void RemoveTab(TabViewModel tab)

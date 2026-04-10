@@ -8,6 +8,12 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private string _title = "New Tab";
 
+        [ObservableProperty]
+        private System.DateTime _lastAccessed = System.DateTime.Now;
+
+        [ObservableProperty]
+        private bool _isDiscarded;
+
         // The active URL of the WebView
         [ObservableProperty]
         private string _url = "https://www.google.com";
@@ -31,6 +37,9 @@ namespace MundoBrowser.ViewModels
         
         [ObservableProperty]
         private bool _isLoading;
+
+        [ObservableProperty]
+        private string? _faviconUrl;
 
         [RelayCommand]
         public void Navigate()

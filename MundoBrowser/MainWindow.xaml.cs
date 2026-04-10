@@ -144,6 +144,10 @@ public partial class MainWindow : Window
         wv.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => 
             SetFullscreen(wv.CoreWebView2.ContainsFullScreenElement, true);
 
+        wv.CoreWebView2.FaviconChanged += (s, args) => {
+            tab.FaviconUrl = wv.CoreWebView2.FaviconUri;
+        };
+
         wv.CoreWebView2.NewWindowRequested += (s, args) => {
             args.Handled = true;
             if (DataContext is MainViewModel vm)

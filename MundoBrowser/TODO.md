@@ -1,1 +1,0 @@
-﻿- Ajouter un système de plugins pour permettre aux utilisateurs d'ajouter des fonctionnalités personnalisées à leur navigateur.
