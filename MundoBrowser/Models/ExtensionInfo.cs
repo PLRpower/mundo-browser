@@ -23,6 +23,9 @@ namespace MundoBrowser.Models
         [ObservableProperty]
         private ImageSource? _iconSource;
 
+        [ObservableProperty]
+        private string? _popupUrl;
+
         public ExtensionInfo(string id, string name, bool isEnabled)
         {
             Id = id;

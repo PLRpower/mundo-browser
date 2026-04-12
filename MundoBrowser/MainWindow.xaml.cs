@@ -3,11 +3,24 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Shell;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
 using MundoBrowser.Models;
 using MundoBrowser.Services;
 using MundoBrowser.ViewModels;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+
+// Ambiguity Resolution Aliases
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using ListBox = System.Windows.Controls.ListBox;
+using TextBox = System.Windows.Controls.TextBox;
+using Button = System.Windows.Controls.Button;
+using MenuItem = System.Windows.Controls.MenuItem;
+using MessageBox = System.Windows.MessageBox;
 
 namespace MundoBrowser;
 
@@ -43,8 +56,8 @@ public partial class MainWindow : Window
     {
         if (msg == 0x0024) // WM_GETMINMAXINFO
         {
-            NativeMethods.WmGetMinMaxInfo(hwnd, lParam, _isFullscreen);
             handled = true;
+            NativeMethods.WmGetMinMaxInfo(hwnd, lParam, _isFullscreen);
         }
         return IntPtr.Zero;
     }
@@ -79,7 +92,6 @@ public partial class MainWindow : Window
                 await SwitchToTabAsync(vm.SelectedTab);
             else if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
             {
-                // In fullscreen, we force sidebar hidden regardless of property
                 if (!_isFullscreen)
                     UpdateSidebarWidth(vm.IsSidebarVisible);
             }
@@ -108,7 +120,6 @@ public partial class MainWindow : Window
             tab.PropertyChanged += OnTabPropertyChanged;
         }
 
-        vm.LoadExtensionRequested += async (_, _) => await OnLoadExtensionRequested();
         vm.NewTabRequested += (_, _) => { AddressTextBox.Focus(); AddressTextBox.SelectAll(); };
     }
 
@@ -131,13 +142,10 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(TabViewModel.Url) && sender is TabViewModel tab)
         {
-            // Run on UI thread as this might be called from VM
             Dispatcher.Invoke(async () => {
                 var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
                 if (webView != null && webView.CoreWebView2 != null)
                 {
-                    // Avoid redundant navigation if the webview is already at this source
-                    // CoreWebView2.Source always returns the normalized URL
                     if (webView.CoreWebView2.Source != tab.Url)
                     {
                         webView.CoreWebView2.Navigate(tab.Url);
@@ -154,19 +162,12 @@ public partial class MainWindow : Window
                 tab.Url = tab.AddressUrl = wv.CoreWebView2.Source;
                 UpdateTitle();
                 vm.HistoryManager.AddEntry(tab.Url, wv.CoreWebView2.DocumentTitle);
-                
-                _isUpdatingAddressBar = true;
-                vm.AddressBarText = tab.AddressUrl;
-                _isUpdatingAddressBar = false;
-            }
-        };
 
-        wv.CoreWebView2.SourceChanged += (_, _) => {
-            tab.AddressUrl = wv.CoreWebView2.Source;
-            if (DataContext is MainViewModel vm && vm.SelectedTab == tab) {
                 _isUpdatingAddressBar = true;
                 vm.AddressBarText = tab.AddressUrl;
                 _isUpdatingAddressBar = false;
+
+                CheckForExtensionStorePage(tab, tab.Url);
             }
         };
 
@@ -174,12 +175,43 @@ public partial class MainWindow : Window
             if (((MainViewModel)DataContext).SelectedTab == tab) UpdateTitle();
         };
 
+        wv.CoreWebView2.SourceChanged += async (_, _) => {
+            tab.AddressUrl = wv.CoreWebView2.Source;
+            if (DataContext is MainViewModel vm && vm.SelectedTab == tab) {
+                _isUpdatingAddressBar = true;
+                vm.AddressBarText = tab.AddressUrl;
+                _isUpdatingAddressBar = false;
+
+                CheckForExtensionStorePage(tab, tab.AddressUrl);
+            }
+            await FetchHighResIconAsync(wv, tab);
+        };
+
+        wv.CoreWebView2.FaviconChanged += async (s, args) => {
+            try 
+            {
+                using var stream = await wv.CoreWebView2.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+                if (stream != null && DataContext is MainViewModel vm)
+                {
+                    var localPath = await vm.SessionManager.SaveFaviconLocally(stream, wv.CoreWebView2.Source);
+                    if (localPath != null) tab.FaviconUrl = localPath;
+                }
+            }
+            catch { }
+            
+            if (string.IsNullOrEmpty(tab.FaviconUrl) || tab.FaviconUrl.StartsWith("http"))
+            {
+                try 
+                {
+                    var uri = new Uri(wv.CoreWebView2.Source);
+                    tab.FaviconUrl = $"https://www.google.com/s2/favicons?sz=64&domain_url={uri.Host}";
+                }
+                catch { tab.FaviconUrl = wv.CoreWebView2.FaviconUri; }
+            }
+        };
+
         wv.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => 
             SetFullscreen(wv.CoreWebView2.ContainsFullScreenElement, true);
-
-        wv.CoreWebView2.FaviconChanged += (s, args) => {
-            tab.FaviconUrl = wv.CoreWebView2.FaviconUri;
-        };
 
         wv.CoreWebView2.NewWindowRequested += (s, args) => {
             args.Handled = true;
@@ -197,6 +229,61 @@ public partial class MainWindow : Window
         };
     }
 
+    private async Task FetchHighResIconAsync(WebView2 wv, TabViewModel tab)
+    {
+        try
+        {
+            string script = @"
+                (function() {
+                    let links = Array.from(document.querySelectorAll('link[rel*=""icon""], link[rel*=""apple-touch-icon""]'));
+                    let best = null;
+                    let maxSize = 0;
+                    links.forEach(l => {
+                        let size = 0;
+                        if (l.sizes && l.sizes.value) {
+                            size = parseInt(l.sizes.value.split('x')[0]);
+                        } else if (l.rel.includes('apple-touch-icon')) {
+                            size = 180;
+                        }
+                        if (size >= maxSize) {
+                            maxSize = size;
+                            best = l.href;
+                        }
+                    });
+                    return best;
+                })()";
+
+            var iconUrl = await wv.CoreWebView2.ExecuteScriptAsync(script);
+            iconUrl = iconUrl?.Trim('\"');
+
+            if (!string.IsNullOrEmpty(iconUrl) && iconUrl != "null")
+            {
+                if (iconUrl.StartsWith("data:"))
+                {
+                    tab.FaviconUrl = iconUrl;
+                    return;
+                }
+
+                if (DataContext is MainViewModel vm)
+                {
+                    using var client = new HttpClient();
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                    
+                    var bytes = await client.GetByteArrayAsync(iconUrl);
+                    using var ms = new MemoryStream(bytes);
+                    var localPath = await vm.SessionManager.SaveFaviconLocally(ms, wv.CoreWebView2.Source);
+                    if (localPath != null) tab.FaviconUrl = localPath;
+                }
+            }
+            else
+            {
+                var host = new Uri(wv.CoreWebView2.Source).Host;
+                tab.FaviconUrl = $"https://www.google.com/s2/favicons?sz=128&domain_url={host}";
+            }
+        }
+        catch { }
+    }
+
     private void UpdateTitle()
     {
         if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm || vm.SelectedTab == null) return;
@@ -205,18 +292,13 @@ public partial class MainWindow : Window
     }
 
     // --- BARRE D'ADRESSE ---
-    private void AddressBar_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void AddressBar_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
-        
         var input = AddressTextBox.Text?.Trim();
         if (string.IsNullOrEmpty(input)) return;
-
-        // Cacher les suggestions immédiatement
         if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
-
         string url = IsUrl(input) ? (input.Contains("://") ? input : "https://" + input) : $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
-        
         if (DataContext is MainViewModel vm) {
             if (vm.IsPendingNewTab) {
                 vm.IsPendingNewTab = false;
@@ -226,8 +308,6 @@ public partial class MainWindow : Window
                 _webViewService.ActiveWebView?.CoreWebView2?.Navigate(url);
             }
         }
-
-        // Enlever le focus de la barre d'adresse pour arrêter le curseur clignotant
         _webViewService.ActiveWebView?.Focus();
     }
 
@@ -237,20 +317,16 @@ public partial class MainWindow : Window
     {
         if (_isUpdatingAddressBar || DataContext is not MainViewModel vm) return;
         if (AddressTextBox == null || SuggestionsPopup == null) return;
-        
         _suggestionCts?.Cancel();
         _suggestionCts = new CancellationTokenSource();
-        
         var query = AddressTextBox.Text;
         if (string.IsNullOrWhiteSpace(query) || query.Length < 2 || !AddressTextBox.IsFocused) {
             SuggestionsPopup.IsOpen = false;
             return;
         }
-
         try {
             await Task.Delay(150, _suggestionCts.Token);
             if (SuggestionsPopup == null || vm.HistoryManager == null) return;
-
             var results = vm.HistoryManager.SearchHistory(query, 5);
             vm.Suggestions.Clear();
             foreach (var r in results) vm.Suggestions.Add(r);
@@ -267,24 +343,17 @@ public partial class MainWindow : Window
 
     private void AddressTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!AddressTextBox.IsFocused)
-        {
-            AddressTextBox.Focus();
-            e.Handled = true;
-        }
+        if (!AddressTextBox.IsFocused) { AddressTextBox.Focus(); e.Handled = true; }
     }
 
     private void AddressTextBox_LostFocus(object sender, RoutedEventArgs e)
     {
-        // Delay closing to allow clicking on suggestions
         Task.Delay(200).ContinueWith(_ => Dispatcher.Invoke(() => SuggestionsPopup.IsOpen = false));
     }
 
-
-
     private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is System.Windows.Controls.ListBox lb && lb.SelectedItem is HistoryEntry entry && DataContext is MainViewModel vm)
+        if (sender is ListBox lb && lb.SelectedItem is HistoryEntry entry && DataContext is MainViewModel vm)
         {
             if (vm.SelectedTab != null)
             {
@@ -307,44 +376,24 @@ public partial class MainWindow : Window
 
         if (enable) {
             _prevWindowState = (WindowState, WindowStyle, ResizeMode);
-
-            // True Fullscreen: Remove WindowChrome to prevent taskbar layer interference
             WindowChrome.SetWindowChrome(this, null);
-
             if (hideUI) {
                 if (TopBar != null) TopBar.Visibility = Visibility.Collapsed;
                 if (EdgeTriggerPopup != null) EdgeTriggerPopup.Visibility = Visibility.Collapsed;
-                UpdateSidebarWidth(false); // Hide sidebar
+                UpdateSidebarWidth(false);
             }
-
             this.WindowStyle = WindowStyle.None;
             this.ResizeMode = ResizeMode.NoResize;
-            
-            // Trigger a state refresh
-            if (this.WindowState == WindowState.Maximized)
-                this.WindowState = WindowState.Normal;
-            
+            if (this.WindowState == WindowState.Maximized) this.WindowState = WindowState.Normal;
             this.WindowState = WindowState.Maximized;
         } else {
-            // Restore Window State
             this.WindowState = _prevWindowState.State;
             this.WindowStyle = _prevWindowState.Style;
             this.ResizeMode = _prevWindowState.Resize;
-
             if (TopBar != null) TopBar.Visibility = Visibility.Visible;
             if (EdgeTriggerPopup != null) EdgeTriggerPopup.Visibility = Visibility.Visible;
-            if (DataContext is MainViewModel vm)
-                UpdateSidebarWidth(vm.IsSidebarVisible);
-
-            // Re-apply WindowChrome for borderless custom window mechanics
-            WindowChrome.SetWindowChrome(this, new WindowChrome { 
-                CaptionHeight = 0, 
-                ResizeBorderThickness = new Thickness(6), 
-                GlassFrameThickness = new Thickness(0), 
-                CornerRadius = new CornerRadius(0) 
-            });
-            
-            // Trigger manual margin updates based on current state
+            if (DataContext is MainViewModel vm) UpdateSidebarWidth(vm.IsSidebarVisible);
+            WindowChrome.SetWindowChrome(this, new WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(6), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0) });
             OnWindowStateChanged();
         }
     }
@@ -352,17 +401,13 @@ public partial class MainWindow : Window
     private void UpdateSidebarWidth(bool visible)
     {
         if (SidebarColumn == null || SplitterColumn == null || DataContext is not MainViewModel vm) return;
-
-        if (visible)
-        {
+        if (visible) {
             if (_isSidebarFloating) HideFloatingSidebar();
             SidebarColumn.Width = new GridLength(vm.SidebarWidth);
             SidebarColumn.MinWidth = 150;
             SplitterColumn.Width = GridLength.Auto;
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Visible;
-        }
-        else
-        {
+        } else {
             SidebarColumn.Width = new GridLength(0);
             SidebarColumn.MinWidth = 0;
             SplitterColumn.Width = new GridLength(0);
@@ -374,16 +419,8 @@ public partial class MainWindow : Window
     {
         if (FloatingSidebarPopup == null || _isSidebarFloating) return;
         _isSidebarFloating = true;
-        
         FloatingSidebarPopup.IsOpen = true;
-
-        var slideIn = new System.Windows.Media.Animation.DoubleAnimation
-        {
-            From = -250,
-            To = 0,
-            Duration = TimeSpan.FromMilliseconds(250),
-            EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
-        };
+        var slideIn = new System.Windows.Media.Animation.DoubleAnimation { From = -250, To = 0, Duration = TimeSpan.FromMilliseconds(250), EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut } };
         FloatingSidebarContent.RenderTransform = new System.Windows.Media.TranslateTransform(-250, 0);
         FloatingSidebarContent.RenderTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slideIn);
     }
@@ -392,66 +429,21 @@ public partial class MainWindow : Window
     {
         if (FloatingSidebarPopup == null || !_isSidebarFloating) return;
         _isSidebarFloating = false;
-
-        var slideOut = new System.Windows.Media.Animation.DoubleAnimation
-        {
-            From = 0,
-            To = -250,
-            Duration = TimeSpan.FromMilliseconds(200),
-            EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
-        };
-        
-        slideOut.Completed += (s, e) => 
-        {
-            if (!_isSidebarFloating)
-                FloatingSidebarPopup.IsOpen = false;
-        };
-
-        if (FloatingSidebarContent.RenderTransform is not System.Windows.Media.TranslateTransform)
-            FloatingSidebarContent.RenderTransform = new System.Windows.Media.TranslateTransform(0, 0);
-
+        var slideOut = new System.Windows.Media.Animation.DoubleAnimation { From = 0, To = -250, Duration = TimeSpan.FromMilliseconds(200), EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn } };
+        slideOut.Completed += (s, e) => { if (!_isSidebarFloating) FloatingSidebarPopup.IsOpen = false; };
+        if (FloatingSidebarContent.RenderTransform is not System.Windows.Media.TranslateTransform) FloatingSidebarContent.RenderTransform = new System.Windows.Media.TranslateTransform(0, 0);
         FloatingSidebarContent.RenderTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slideOut);
     }
 
-    private void FloatingSidebarContent_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (_isSidebarFloating)
-        {
-            HideFloatingSidebar();
-        }
-    }
+    private void FloatingSidebarContent_MouseLeave(object sender, MouseEventArgs e) => HideFloatingSidebar();
 
     private void OnWindowStateChanged()
     {
-        // When maximized, WindowChrome automatically adds margins. 
-        // With our WM_GETMINMAXINFO hook, we just need to handle the hit-test areas.
         bool isMax = WindowState == WindowState.Maximized;
-        MainGrid.Margin = isMax ? new Thickness(0) : new Thickness(0); // Handled by WM_GETMINMAXINFO
-
-        // Adjust TitleBar elements when maximized.
-        if (TopBar != null)
-        {
-            TopBar.Height = isMax ? 40 : 40; // Use same height, WM_GETMINMAXINFO handles the work area
-            
-            WindowControlsStack.Margin = new Thickness(0);
-            
-            MinimizeBtn.Padding = new Thickness(0);
-            MaximizeBtn.Padding = new Thickness(0);
-            CloseBtn.Padding = new Thickness(0);
-
-            NavButtonsStack.Margin = new Thickness(0, 0, 15, 0);
-            UrlBarBorder.Margin = new Thickness(0);
-            ExtensionsControl.Margin = new Thickness(10, 0, 10, 0);
-        }
-
-        // Adjust WindowChrome properties based on state
+        MainGrid.Margin = isMax ? new Thickness(0) : new Thickness(0);
+        if (TopBar != null) { TopBar.Height = 40; WindowControlsStack.Margin = new Thickness(0); NavButtonsStack.Margin = new Thickness(0, 0, 15, 0); UrlBarBorder.Margin = new Thickness(0); ExtensionsControl.Margin = new Thickness(10, 0, 10, 0); }
         var chrome = WindowChrome.GetWindowChrome(this);
-        if (chrome != null)
-        {
-            chrome.ResizeBorderThickness = isMax ? new Thickness(0) : new Thickness(6);
-        }
-
-        // Hide manual resize borders when maximized
+        if (chrome != null) chrome.ResizeBorderThickness = isMax ? new Thickness(0) : new Thickness(6);
         if (RightResizeBorder != null) RightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
         if (BottomResizeBorder != null) BottomResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
         if (BottomRightResizeBorder != null) BottomRightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
@@ -459,197 +451,204 @@ public partial class MainWindow : Window
 
     private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Left)
-        {
-            // Ne permet le drag/double-clic que si on clique sur le "vide" (le Grid lui-même)
-            // et non sur un bouton, la barre d'adresse, etc.
-            if (e.OriginalSource != sender) return;
-
-            if (e.ClickCount == 2)
-            {
-                Maximize_Click(sender, e);
-                _dragStartPos = null;
-            }
-            else
-            {
-                if (WindowState == WindowState.Maximized)
-                {
-                    _dragStartPos = e.GetPosition(this);
-                }
-                else
-                {
-                    try { DragMove(); } catch { }
-                }
-            }
-        }
+        if (e.ChangedButton == MouseButton.Left) { if (e.OriginalSource != sender) return; if (e.ClickCount == 2) { Maximize_Click(sender, e); _dragStartPos = null; } else { if (WindowState == WindowState.Maximized) _dragStartPos = e.GetPosition(this); else try { DragMove(); } catch { } } }
     }
 
     private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
-        if (DataContext is MainViewModel vm && SidebarColumn != null && SidebarColumn.Width.IsAbsolute)
-        {
-            vm.SidebarWidth = SidebarColumn.Width.Value;
-        }
+        if (DataContext is MainViewModel vm && SidebarColumn != null && SidebarColumn.Width.IsAbsolute) vm.SidebarWidth = SidebarColumn.Width.Value;
     }
 
-    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
         var key = e.Key;
-
-        // Ctrl + D: Toggle Sidebar
-        if (key == Key.D && modifiers == ModifierKeys.Control)
-        {
-            if (DataContext is MainViewModel vm)
-            {
-                vm.ToggleSidebarCommand.Execute(null);
-                e.Handled = true;
-            }
-        }
-        // F5 or Ctrl + R: Refresh
-        else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control))
-        {
-            _webViewService.ActiveWebView?.Reload();
-            e.Handled = true;
-        }
-        // F11: Fullscreen
-        else if (key == Key.F11)
-        {
-            SetFullscreen(!_isFullscreen);
-            e.Handled = true;
-        }
-        // Ctrl + T: New Tab
-        else if (key == Key.T && modifiers == ModifierKeys.Control)
-        {
-            if (DataContext is MainViewModel vm)
-            {
-                vm.AddNewTabCommand.Execute(null);
-                e.Handled = true;
-            }
-        }
-        // Ctrl + W: Close Tab
-        else if (key == Key.W && modifiers == ModifierKeys.Control)
-        {
-            if (DataContext is MainViewModel vm && vm.SelectedTab != null)
-            {
-                vm.CloseTabCommand.Execute(vm.SelectedTab);
-                e.Handled = true;
-            }
-        }
-        // Ctrl + L or Alt + D: Focus Address Bar
-        else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt))
-        {
-            AddressTextBox.Focus();
-            AddressTextBox.SelectAll();
-            e.Handled = true;
-        }
-        // Alt + Left or Back: Go Back
-        else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back)
-        {
-            // Only go back if not typing in a text field (Back key)
-            if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return;
-            
-            if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack)
-            {
-                _webViewService.ActiveWebView.GoBack();
-                e.Handled = true;
-            }
-        }
-        // Alt + Right: Go Forward
-        else if (key == Key.Right && modifiers == ModifierKeys.Alt)
-        {
-            if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward)
-            {
-                _webViewService.ActiveWebView.GoForward();
-                e.Handled = true;
-            }
-        }
-        // Ctrl + Tab: Next Tab
-        else if (key == Key.Tab && modifiers == ModifierKeys.Control)
-        {
-            if (DataContext is MainViewModel vm && vm.SelectedTab != null && vm.Tabs.Count > 1)
-            {
-                int nextIndex = (vm.Tabs.IndexOf(vm.SelectedTab) + 1) % vm.Tabs.Count;
-                vm.SelectedTab = vm.Tabs[nextIndex];
-                e.Handled = true;
-            }
-        }
-        // Ctrl + Shift + Tab: Previous Tab
-        else if (key == Key.Tab && modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-        {
-            if (DataContext is MainViewModel vm && vm.SelectedTab != null && vm.Tabs.Count > 1)
-            {
-                int prevIndex = (vm.Tabs.IndexOf(vm.SelectedTab) - 1 + vm.Tabs.Count) % vm.Tabs.Count;
-                vm.SelectedTab = vm.Tabs[prevIndex];
-                e.Handled = true;
-            }
-        }
+        if (key == Key.D && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).ToggleSidebarCommand.Execute(null); e.Handled = true; }
+        else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control)) { _webViewService.ActiveWebView?.Reload(); e.Handled = true; }
+        else if (key == Key.F11) { SetFullscreen(!_isFullscreen); e.Handled = true; }
+        else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
+        else if (key == Key.W && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { vm.CloseTabCommand.Execute(vm.SelectedTab); e.Handled = true; } }
+        else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { AddressTextBox.Focus(); AddressTextBox.SelectAll(); e.Handled = true; }
+        else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
+        else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward) { _webViewService.ActiveWebView.GoForward(); e.Handled = true; } }
     }
 
-    private void Window_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    private void Window_MouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton == MouseButtonState.Pressed && WindowState == WindowState.Maximized && _dragStartPos.HasValue)
         {
             System.Windows.Point currentPos = e.GetPosition(this);
-            if (Math.Abs(currentPos.X - _dragStartPos.Value.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                Math.Abs(currentPos.Y - _dragStartPos.Value.Y) > SystemParameters.MinimumVerticalDragDistance)
+            if (Math.Abs(currentPos.X - _dragStartPos.Value.X) > SystemParameters.MinimumHorizontalDragDistance || Math.Abs(currentPos.Y - _dragStartPos.Value.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
                 var mousePosOnScreen = PointToScreen(currentPos);
                 double xRatio = currentPos.X / ActualWidth;
-
                 _dragStartPos = null;
                 WindowState = WindowState.Normal;
-
                 Left = mousePosOnScreen.X - (ActualWidth * xRatio);
                 Top = mousePosOnScreen.Y - 15;
-
                 try { DragMove(); } catch { }
             }
         }
-        else if (e.LeftButton != MouseButtonState.Pressed)
-        {
-            _dragStartPos = null;
-        }
+        else if (e.LeftButton != MouseButtonState.Pressed) _dragStartPos = null;
     }
 
-    private void Edge_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    private void Edge_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating && !_isFullscreen)
-        {
-            ShowFloatingSidebar();
-        }
+        if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating && !_isFullscreen) ShowFloatingSidebar();
     }
 
-    // --- EXTENSIONS ---
+    private void CheckForExtensionStorePage(TabViewModel tab, string url)
+    {
+        if (string.IsNullOrEmpty(url)) { tab.IsExtensionStorePage = false; tab.InstallableExtensionId = null; return; }
+        var extensionId = ExtensionDownloader.ExtractExtensionIdFromUrl(url);
+        if (DataContext is MainViewModel vm && extensionId != null && vm.InstalledExtensions.Any(e => e.Id == extensionId)) { tab.IsExtensionStorePage = false; tab.InstallableExtensionId = null; return; }
+        tab.InstallableExtensionId = extensionId;
+        tab.IsExtensionStorePage = !string.IsNullOrEmpty(extensionId);
+    }
+
     private async Task LoadExtensionsAsync()
     {
         if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm) return;
-        var exts = await _webViewService.ActiveWebView.CoreWebView2.Profile.GetBrowserExtensionsAsync();
+        var profile = _webViewService.ActiveWebView.CoreWebView2.Profile;
+        var exts = await profile.GetBrowserExtensionsAsync();
         vm.InstalledExtensions.Clear();
-        foreach (var ext in exts) 
-            if (ext.IsEnabled && !ext.Name.Contains("Microsoft"))
-                vm.InstalledExtensions.Add(new Models.ExtensionInfo(ext.Id, ext.Name, true));
-    }
-
-    private async Task OnLoadExtensionRequested()
-    {
-        var dialog = new AddExtensionWindow { Owner = this };
-        if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.ExtensionPath) && _webViewService.ActiveWebView != null) {
-            await _webViewService.ActiveWebView.CoreWebView2.Profile.AddBrowserExtensionAsync(dialog.ExtensionPath);
-            await LoadExtensionsAsync();
-        }
-    }
-
-    private void ExtensionIcon_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.Button btn && btn.Tag is string extensionId)
+        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var extensionsPath = Path.Combine(appDataPath, "MundoBrowser", "Extensions");
+        foreach (var ext in exts)
         {
-            // Show extension popup logic
+            var extName = ext.Name ?? "Extension";
+            if (!ext.IsEnabled || extName.Contains("Microsoft")) continue;
+            var info = new Models.ExtensionInfo(ext.Id, extName, true);
+            if (Directory.Exists(extensionsPath))
+            {
+                foreach (var dir in Directory.GetDirectories(extensionsPath))
+                {
+                    var manifestPath = Path.Combine(dir, "manifest.json");
+                    if (!File.Exists(manifestPath)) continue;
+                    try
+                    {
+                        var json = File.ReadAllText(manifestPath);
+                        using var doc = System.Text.Json.JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        var manifestName = root.TryGetProperty("name", out var n) ? n.GetString() : null;
+                        var shortName = root.TryGetProperty("short_name", out var sn) ? sn.GetString() : null;
+                        var resolvedName = ResolveName(manifestName, dir, root);
+                        var resolvedShortName = ResolveName(shortName, dir, root);
+                        bool isMatch = false;
+                        if (resolvedName != null && ext.Name != null && (ext.Name.Contains(resolvedName) || resolvedName.Contains(ext.Name))) isMatch = true;
+                        else if (resolvedShortName != null && ext.Name != null && ext.Name.Contains(resolvedShortName)) isMatch = true;
+                        else if (ext.Id.Equals(Path.GetFileName(dir), StringComparison.OrdinalIgnoreCase)) isMatch = true;
+                        if (isMatch) { ProcessManifest(root, dir, ext.Id, info); break; }
+                    } catch { continue; }
+                }
+            }
+            vm.InstalledExtensions.Add(info);
         }
     }
 
-    // --- WINDOW CONTROLS ---
-    private void Minimize_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void Maximize_Click(object s, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    private void Close_Click(object s, RoutedEventArgs e) => Close();
+    private string? ResolveName(string? name, string extensionDir, System.Text.Json.JsonElement root)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        if (!name.StartsWith("__MSG_") || !name.EndsWith("__")) return name;
+        var key = name.Substring(6, name.Length - 8);
+        var defaultLocale = root.TryGetProperty("default_locale", out var locale) ? (locale.GetString() ?? "en") : "en";
+        var localesPath = Path.Combine(extensionDir, "_locales");
+        if (!Directory.Exists(localesPath)) return name;
+        string[] searchLocales = { defaultLocale, "fr", "en_US" };
+        foreach (var loc in searchLocales) { var msgPath = Path.Combine(localesPath, loc, "messages.json"); if (File.Exists(msgPath)) { var val = GetMessageValue(msgPath, key); if (val != null) return val; } }
+        return name;
+    }
+
+    private string? GetMessageValue(string messagesPath, string key)
+    {
+        try { var json = File.ReadAllText(messagesPath); using var doc = System.Text.Json.JsonDocument.Parse(json); if (doc.RootElement.TryGetProperty(key, out var msgObj) && msgObj.TryGetProperty("message", out var msg)) return msg.GetString(); }
+        catch { }
+        return null;
+    }
+
+    private void ProcessManifest(System.Text.Json.JsonElement root, string extensionDir, string extensionId, Models.ExtensionInfo info)
+    {
+        string? popupPath = null;
+        if (root.TryGetProperty("action", out var action) && action.TryGetProperty("default_popup", out var dp1)) popupPath = dp1.GetString();
+        else if (root.TryGetProperty("browser_action", out var bAction) && bAction.TryGetProperty("default_popup", out var dp2)) popupPath = dp2.GetString();
+        if (!string.IsNullOrEmpty(popupPath)) info.PopupUrl = $"chrome-extension://{extensionId}/{popupPath.TrimStart('/')}";
+        string? iconPath = null;
+        if (root.TryGetProperty("icons", out var icons)) iconPath = GetBestIconPath(icons);
+        if (!string.IsNullOrEmpty(iconPath))
+        {
+            var fullIconPath = Path.Combine(extensionDir, iconPath.TrimStart('/'));
+            if (File.Exists(fullIconPath)) { try { var bitmap = new System.Windows.Media.Imaging.BitmapImage(); bitmap.BeginInit(); bitmap.UriSource = new Uri(fullIconPath); bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad; bitmap.EndInit(); info.IconSource = bitmap; } catch { } }
+        }
+    }
+
+    private string? GetBestIconPath(System.Text.Json.JsonElement icons)
+    {
+        if (icons.ValueKind == System.Text.Json.JsonValueKind.String) return icons.GetString();
+        if (icons.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            string[] sizes = { "128", "48", "32", "16" };
+            foreach (var size in sizes) if (icons.TryGetProperty(size, out var path)) return path.GetString();
+            return icons.EnumerateObject().FirstOrDefault().Value.GetString();
+        }
+        return null;
+    }
+
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void Maximize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    private async void InstallExtensionFromBar_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && vm.SelectedTab?.InstallableExtensionId != null)
+        {
+            InstallProgressBar.Visibility = Visibility.Visible;
+            InstallStatusText.Visibility = Visibility.Visible;
+            InstallStatusText.Text = "Téléchargement...";
+            try {
+                var downloader = new ExtensionDownloader();
+                var extPath = await downloader.DownloadAndExtractExtension(vm.SelectedTab.InstallableExtensionId);
+                InstallStatusText.Text = "Installation...";
+                
+                // Get profile from active WebView to install extension
+                if (_webViewService.ActiveWebView?.CoreWebView2?.Profile != null)
+                {
+                    await _webViewService.ActiveWebView.CoreWebView2.Profile.AddBrowserExtensionAsync(extPath);
+                    await LoadExtensionsAsync();
+                    vm.SelectedTab.IsExtensionStorePage = false;
+                }
+            } catch (Exception ex) { MessageBox.Show("Erreur installation: " + ex.Message); }
+            finally { InstallProgressBar.Visibility = Visibility.Collapsed; InstallStatusText.Visibility = Visibility.Collapsed; }
+        }
+    }
+
+    private void CloseInstallBar_Click(object sender, RoutedEventArgs e) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) vm.SelectedTab.IsExtensionStorePage = false; }
+
+    private async void ExtensionIcon_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string extId && DataContext is MainViewModel vm)
+        {
+            var ext = vm.InstalledExtensions.FirstOrDefault(x => x.Id == extId);
+            if (ext != null && !string.IsNullOrEmpty(ext.PopupUrl) && _webViewService.WebViewEnvironment != null)
+            {
+                var btnPoint = btn.PointToScreen(new System.Windows.Point(0, btn.ActualHeight));
+                var popup = new ExtensionPopupWindow(ext.PopupUrl, ext.Name, _webViewService.WebViewEnvironment, btnPoint);
+                popup.Owner = this;
+                popup.Show();
+            }
+        }
+    }
+
+    private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem mi && mi.Tag is string extId)
+        {
+            if (_webViewService.ActiveWebView?.CoreWebView2?.Profile != null)
+            {
+                var profile = _webViewService.ActiveWebView.CoreWebView2.Profile;
+                var exts = await profile.GetBrowserExtensionsAsync();
+                var ext = exts.FirstOrDefault(x => x.Id == extId);
+                if (ext != null) { await ext.RemoveAsync(); await LoadExtensionsAsync(); }
+            }
+        }
+    }
 }

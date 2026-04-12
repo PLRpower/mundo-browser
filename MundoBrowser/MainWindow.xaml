@@ -7,8 +7,12 @@
         xmlns:vm="clr-namespace:MundoBrowser.ViewModels"
         xmlns:local="clr-namespace:MundoBrowser"
         mc:Ignorable="d"
-        Title="MundoBrowser" Height="720" Width="1280"
-        WindowStartupLocation="CenterScreen"
+        Title="MundoBrowser" 
+        Width="{Binding WindowWidth, Mode=TwoWay}" 
+        Height="{Binding WindowHeight, Mode=TwoWay}"
+        Left="{Binding WindowLeft, Mode=TwoWay}"
+        Top="{Binding WindowTop, Mode=TwoWay}"
+        WindowState="{Binding WindowState, Mode=TwoWay}"
         WindowStyle="None"
         PreviewKeyDown="Window_PreviewKeyDown"
         Background="#1E1E1E"
@@ -289,7 +293,7 @@
 
                 <!-- Extensions Icons Bar -->
                 <ItemsControl x:Name="ExtensionsControl" Grid.Column="4" ItemsSource="{Binding InstalledExtensions}"
-                              VerticalAlignment="Center" Margin="10,0">
+                               VerticalAlignment="Center" Margin="10,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal"/>
@@ -301,6 +305,15 @@
                                     Background="Transparent" BorderThickness="0"
                                     ToolTip="{Binding Name}" Cursor="Hand"
                                     Click="ExtensionIcon_Click" Tag="{Binding Id}">
+                                <Button.ContextMenu>
+                                    <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
+                                        <MenuItem Header="Supprimer l'extension" Click="RemoveExtension_Click" Tag="{Binding Id}">
+                                            <MenuItem.Icon>
+                                                <TextBlock Text="🗑️" VerticalAlignment="Center" FontSize="12"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
                                         <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="4">
@@ -418,8 +431,32 @@
         <!-- CONTENU PRINCIPAL — WebView (Row 1, Col 2) -->
         <!-- ════════════════════════════════════════════════ -->
         <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="#1E1E1E">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Extension Installation Bar -->
+            <Border x:Name="ExtensionInstallBar" Grid.Row="0" Background="#2D2D30" BorderBrush="#3E3E42" BorderThickness="0,0,0,1"
+                    Visibility="{Binding SelectedTab.IsExtensionStorePage, Converter={StaticResource BoolToVis}}">
+                <Grid Margin="15,8">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🧩" FontSize="18" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Cette extension est compatible avec MundoBrowser." Foreground="White" VerticalAlignment="Center" FontSize="13"/>
+                        <Button x:Name="InstallExtensionBtn" Content="Installer l'extension" Click="InstallExtensionFromBar_Click" 
+                                Margin="15,0" Padding="15,5" Cursor="Hand" Style="{StaticResource NavButtonStyle}" 
+                                Background="#007ACC" FontWeight="SemiBold"/>
+                        <ProgressBar x:Name="InstallProgressBar" Width="100" Height="4" VerticalAlignment="Center" Visibility="Collapsed" IsIndeterminate="True" Margin="10,0"/>
+                        <TextBlock x:Name="InstallStatusText" Foreground="#888" VerticalAlignment="Center" FontSize="12" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" 
+                            Foreground="#888" Click="CloseInstallBar_Click" Width="30" FontSize="16" Cursor="Hand"
+                            Style="{StaticResource GrayHoverButtonStyle}"/>
+                </Grid>
+            </Border>
+
             <!-- Container for multiple WebView2 instances (one per tab) -->
-            <Grid x:Name="WebViewsContainer"/>
+            <Grid x:Name="WebViewsContainer" Grid.Row="1"/>
         </Grid>
              
         <!-- Resize Edge Triggers - Moved to root for better hit testing over WebView2 -->

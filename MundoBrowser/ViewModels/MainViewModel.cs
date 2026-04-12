@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MundoBrowser.Services;
@@ -15,11 +16,6 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private TabViewModel? _selectedTab;
 
-        /// <summary>
-        /// Propriété helper pour la ListBox des onglets normaux.
-        /// On la sépare de SelectedTab pour éviter que la ListBox ne "force" la sélection à null
-        /// lorsqu'un onglet épinglé (qui n'est pas dans la liste des onglets normaux) est sélectionné.
-        /// </summary>
         [ObservableProperty]
         private TabViewModel? _selectedListTab;
 
@@ -44,23 +40,32 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private ObservableCollection<ExtensionInfo> _installedExtensions = new();
 
+        // Window state properties
+        [ObservableProperty]
+        private double _windowWidth = 1280;
+
+        [ObservableProperty]
+        private double _windowHeight = 840;
+
+        [ObservableProperty]
+        private double _windowLeft = 100;
+
+        [ObservableProperty]
+        private double _windowTop = 100;
+
+        [ObservableProperty]
+        private WindowState _windowState = WindowState.Normal;
+
         public HistoryManager HistoryManager { get; }
         public SessionManager SessionManager { get; }
 
         partial void OnSelectedTabChanged(TabViewModel? value)
         {
-            // Synchroniser avec la ListBox : si le nouvel onglet est dans la liste normale, on le sélectionne.
-            // Sinon (onglet épinglé), on désélectionne la ListBox visuellement.
             SelectedListTab = (value != null && Tabs.Contains(value)) ? value : null;
 
             if (value != null)
             {
-                // Sync pinned selection state: highlight slot if its tab is the selected one
-                foreach (var p in PinnedTabs) 
-                {
-                    p.IsSelected = (p.Tab == value);
-                }
-
+                foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == value);
                 IsPendingNewTab = false;
                 AddressBarText = value.AddressUrl;
             }
@@ -72,60 +77,61 @@ namespace MundoBrowser.ViewModels
 
         partial void OnSelectedListTabChanged(TabViewModel? value)
         {
-            // Quand l'utilisateur clique dans la liste des onglets normaux, on met à jour l'onglet actif global.
-            if (value != null)
-            {
-                SelectedTab = value;
-            }
+            if (value != null) SelectedTab = value;
         }
 
         [RelayCommand]
-        public void ToggleSidebar()
-        {
-            IsSidebarVisible = !IsSidebarVisible;
-        }
+        public void ToggleSidebar() => IsSidebarVisible = !IsSidebarVisible;
 
         public MainViewModel()
         {
             HistoryManager = new HistoryManager();
             SessionManager = new SessionManager();
             
-            // Try to load previous session
+            for (int i = 0; i < 6; i++) PinnedTabs.Add(new PinnedTab(i));
+
             var session = SessionManager.LoadSession();
-            if (session != null && session.Tabs.Count > 0)
+            if (session != null)
             {
-                foreach (var tabData in session.Tabs)
-                {
-                    Tabs.Add(new TabViewModel 
-                    { 
-                        Title = tabData.Title, 
-                        Url = tabData.Url,
-                        AddressUrl = tabData.Url // Ensure address bar shows the URL
-                    });
-                }
+                // Restore Window State
+                WindowWidth = session.WindowWidth;
+                WindowHeight = session.WindowHeight;
+                WindowLeft = session.WindowLeft;
+                WindowTop = session.WindowTop;
+                WindowState = (WindowState)session.WindowState;
 
-                if (session.SelectedTabIndex >= 0 && session.SelectedTabIndex < Tabs.Count)
+                if (session.Tabs.Count > 0 || session.PinnedTabs.Count > 0)
                 {
-                    SelectedTab = Tabs[session.SelectedTabIndex];
-                }
-                else
-                {
-                    SelectedTab = Tabs.FirstOrDefault();
-                }
-            }
-            else
-            {
-                // Add a default tab if no session restored
-                CreateDefaultTab();
-            }
+                    foreach (var tabData in session.Tabs)
+                    {
+                        Tabs.Add(new TabViewModel { Title = tabData.Title, Url = tabData.Url, AddressUrl = tabData.Url, FaviconUrl = tabData.FaviconUrl });
+                    }
 
+                    foreach (var pinnedData in session.PinnedTabs)
+                    {
+                        if (pinnedData.SlotIndex >= 0 && pinnedData.SlotIndex < PinnedTabs.Count)
+                        {
+                            PinnedTabs[pinnedData.SlotIndex].Tab = new TabViewModel { Title = pinnedData.Title, Url = pinnedData.Url, AddressUrl = pinnedData.Url, FaviconUrl = pinnedData.FaviconUrl };
+                        }
+                    }
+
+                    if (session.IsSelectedTabPinned)
+                    {
+                        if (session.SelectedTabIndex >= 0 && session.SelectedTabIndex < PinnedTabs.Count)
+                            SelectedTab = PinnedTabs[session.SelectedTabIndex].Tab;
+                    }
+                    else
+                    {
+                        if (session.SelectedTabIndex >= 0 && session.SelectedTabIndex < Tabs.Count)
+                            SelectedTab = Tabs[session.SelectedTabIndex];
+                    }
+                }
+                else CreateDefaultTab();
+            }
+            else CreateDefaultTab();
+
+            if (SelectedTab == null) SelectedTab = Tabs.FirstOrDefault() ?? PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
             if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
-
-            // Initialize 6 empty pinned slots
-            for (int i = 0; i < 6; i++)
-            {
-                PinnedTabs.Add(new PinnedTab(i));
-            }
         }
 
         private void CreateDefaultTab()
@@ -137,7 +143,7 @@ namespace MundoBrowser.ViewModels
         
         public void SaveCurrentSession()
         {
-            SessionManager.SaveSession(Tabs, SelectedTab);
+            SessionManager.SaveSession(this);
         }
 
         public event EventHandler? NewTabRequested;
@@ -160,38 +166,18 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void OpenPinnedTab(PinnedTab pinned)
         {
-            if (pinned == null || pinned.IsEmpty)
-                return;
-
-            // Selecting a pinned tab makes it the active one
-            SelectedTab = pinned.Tab;
+            if (pinned != null && !pinned.IsEmpty) SelectedTab = pinned.Tab;
         }
 
         public void PinTab(TabViewModel tab, int slotIndex)
         {
             if (slotIndex >= 0 && slotIndex < PinnedTabs.Count && tab != null)
             {
-                // Remove tab from regular list if it's there
-                if (Tabs.Contains(tab))
-                {
-                    Tabs.Remove(tab);
-                }
-                
-                // If the slot already had a tab, move it back to regular list
+                if (Tabs.Contains(tab)) Tabs.Remove(tab);
                 var oldTab = PinnedTabs[slotIndex].Tab;
-                if (oldTab != null && !Tabs.Contains(oldTab))
-                {
-                    Tabs.Add(oldTab);
-                }
-
-                // Place tab in slot
+                if (oldTab != null && !Tabs.Contains(oldTab)) Tabs.Add(oldTab);
                 PinnedTabs[slotIndex].Tab = tab;
-                
-                // Ensure selection state is updated
-                if (SelectedTab == tab)
-                {
-                    foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == tab);
-                }
+                if (SelectedTab == tab) foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == tab);
             }
         }
 
@@ -201,44 +187,23 @@ namespace MundoBrowser.ViewModels
             bool wasSelected = (SelectedTab == tab);
             bool removed = false;
 
-            if (Tabs.Contains(tab))
-            {
-                Tabs.Remove(tab);
-                removed = true;
-            }
+            if (Tabs.Contains(tab)) { Tabs.Remove(tab); removed = true; }
             else
             {
-                // Check pinned tabs
                 foreach (var p in PinnedTabs)
                 {
-                    if (p.Tab == tab)
-                    {
-                        p.Tab = null;
-                        removed = true;
-                        break;
-                    }
+                    if (p.Tab == tab) { p.Tab = null; removed = true; break; }
                 }
             }
             
             if (removed && wasSelected)
             {
-                // If we closed the active tab, find another one
-                if (Tabs.Count > 0)
-                {
-                    SelectedTab = Tabs[^1];
-                }
+                if (Tabs.Count > 0) SelectedTab = Tabs[^1];
                 else
                 {
-                    // Check if any other pinned tab can be selected
                     var firstPinned = PinnedTabs.FirstOrDefault(p => !p.IsEmpty);
-                    if (firstPinned != null)
-                    {
-                        SelectedTab = firstPinned.Tab;
-                    }
-                    else
-                    {
-                        CreateDefaultTab();
-                    }
+                    if (firstPinned != null) SelectedTab = firstPinned.Tab;
+                    else CreateDefaultTab();
                 }
             }
         }
@@ -246,29 +211,9 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void CloseOtherTabs()
         {
-            if (SelectedTab == null) return;
-            
-            // Remove all regular tabs except selected
+            // We only clean the "regular" tabs list. Pinned tabs (the grid) are kept.
             var toRemove = Tabs.Where(t => t != SelectedTab).ToList();
             foreach (var tab in toRemove) Tabs.Remove(tab);
-            
-            // Also clear all pinned slots except if selected
-            foreach (var p in PinnedTabs)
-            {
-                if (p.Tab != null && p.Tab != SelectedTab)
-                {
-                    p.Tab = null;
-                }
-            }
-        }
-
-        // Event to notify when extension loading is requested
-        public event EventHandler? LoadExtensionRequested;
-
-        [RelayCommand]
-        public void LoadExtension()
-        {
-            LoadExtensionRequested?.Invoke(this, EventArgs.Empty);
         }
     }
 }

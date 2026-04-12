@@ -9,6 +9,12 @@ namespace MundoBrowser.Services
         private static readonly HttpClient _httpClient = new HttpClient();
         private readonly string _extensionsPath;
 
+        static ExtensionDownloader()
+        {
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+            _httpClient.DefaultRequestHeaders.Add("Referer", "https://chromewebstore.google.com/");
+        }
+
         public ExtensionDownloader()
         {
             // Create a folder for downloaded extensions
@@ -26,20 +32,55 @@ namespace MundoBrowser.Services
         {
             try
             {
-                // Chrome Web Store CRX download URL format
-                // This uses the Chrome Web Store API to download the CRX file
-                var crxUrl = $"https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=119.0.0.0&x=id%3D{extensionId}%26installsource%3Dondemand%26uc";
-
-                // Download the CRX file
-                var crxFilePath = Path.Combine(_extensionsPath, $"{extensionId}.crx");
-                var response = await _httpClient.GetAsync(crxUrl);
-                
-                if (!response.IsSuccessStatusCode)
+                // We try multiple URL variants
+                // AdBlock and other modern extensions often require the more modern googleapis endpoint or precise prodversion
+                var urlVariants = new[]
                 {
-                    throw new Exception($"Failed to download extension. Status code: {response.StatusCode}");
+                    // Variant 1: Modern Google APIs endpoint (MV3 compatible)
+                    $"https://update.googleapis.com/service/update2/crx?response=redirect&acceptformat=crx3&x=id%3D{extensionId}%26uc",
+                    // Variant 2: Classic endpoint with precise version
+                    $"https://clients2.google.com/service/update2/crx?response=redirect&os=win&arch=x64&os_arch=x86-64&nacl_arch=x86-64&prod=chromebrowser&prodchannel=stable&prodversion=123.0.6312.122&acceptformat=crx3&x=id%3D{extensionId}%26installsource%3Dondemand%26uc",
+                    // Variant 3: Ultra-minimalist
+                    $"https://clients2.google.com/service/update2/crx?response=redirect&x=id%3D{extensionId}%26uc"
+                };
+
+                // Download the CRX file with retry and fallback logic
+                var crxFilePath = Path.Combine(_extensionsPath, $"{extensionId}.crx");
+                byte[]? crxBytes = null;
+                
+                foreach (var crxUrl in urlVariants)
+                {
+                    int maxRetries = 1;
+                    for (int i = 0; i <= maxRetries; i++)
+                    {
+                        try
+                        {
+                            var response = await _httpClient.GetAsync(crxUrl);
+                            
+                            // If we get 204 (NoContent) or 404, this URL variant doesn't work for this extension, try next variant
+                            if (response.StatusCode == System.Net.HttpStatusCode.NoContent || response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                                break; 
+                                
+                            if (response.IsSuccessStatusCode)
+                            {
+                                crxBytes = await response.Content.ReadAsByteArrayAsync();
+                                if (crxBytes != null && crxBytes.Length > 0)
+                                    goto DownloadFinished;
+                            }
+                        }
+                        catch (Exception) when (i < maxRetries)
+                        {
+                            await Task.Delay(300);
+                        }
+                    }
                 }
 
-                var crxBytes = await response.Content.ReadAsByteArrayAsync();
+                DownloadFinished:
+                if (crxBytes == null || crxBytes.Length == 0)
+                {
+                    throw new Exception($"Could not download extension {extensionId}. All server attempts returned 'No Content' (204). This usually means the extension is restricted, requires a specific region, or the ID is invalid for direct download.");
+                }
+
                 await File.WriteAllBytesAsync(crxFilePath, crxBytes);
 
                 // Extract the CRX file
@@ -81,12 +122,31 @@ namespace MundoBrowser.Services
                 // - Header data (variable)
                 // - ZIP archive
 
-                // Check for CRX magic number
+                // CRX files are usually ZIP files with a header (Cr24)
+                // However, some download sources might provide the ZIP directly
+
+                // Check if it's already a ZIP file (starts with 'PK' magic number)
+                if (crxBytes.Length >= 4 && crxBytes[0] == 0x50 && crxBytes[1] == 0x4B)
+                {
+                    await ExtractZipBytes(crxBytes, extractPath);
+                    return;
+                }
+
+                // Check for CRX magic number "Cr24"
                 if (crxBytes.Length < 4 || 
                     crxBytes[0] != 'C' || crxBytes[1] != 'r' || 
                     crxBytes[2] != '2' || crxBytes[3] != '4')
                 {
-                    throw new Exception("Invalid CRX file format");
+                    // Try to provide a more helpful error message
+                    var startSnippet = System.Text.Encoding.UTF8.GetString(crxBytes, 0, Math.Min(crxBytes.Length, 100));
+                    
+                    if (startSnippet.Contains("<?xml") || startSnippet.Contains("<g:updateresponse"))
+                        throw new Exception("The server returned an XML error response instead of the extension file. This can happen if the extension ID is invalid or the extension is not available for download.");
+                    
+                    if (startSnippet.Contains("<!DOCTYPE html") || startSnippet.Contains("<html"))
+                        throw new Exception("The server returned an HTML page instead of the extension file. This might be a login page or CAPTCHA.");
+
+                    throw new Exception($"Invalid file format (Not CRX or ZIP). Header: {startSnippet}");
                 }
 
                 int zipStartOffset = 0;
@@ -116,22 +176,35 @@ namespace MundoBrowser.Services
                 var zipBytes = new byte[crxBytes.Length - zipStartOffset];
                 Array.Copy(crxBytes, zipStartOffset, zipBytes, 0, zipBytes.Length);
 
-                // Write to a temporary ZIP file and extract
-                var tempZipPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.zip");
-                await File.WriteAllBytesAsync(tempZipPath, zipBytes);
-
-                try
-                {
-                    ZipFile.ExtractToDirectory(tempZipPath, extractPath);
-                }
-                finally
-                {
-                    File.Delete(tempZipPath);
-                }
+                await ExtractZipBytes(zipBytes, extractPath);
             }
             catch (Exception ex)
             {
                 throw new Exception($"Error extracting CRX file: {ex.Message}", ex);
+            }
+        }
+
+        private async Task ExtractZipBytes(byte[] zipBytes, string extractPath)
+        {
+            // Write to a temporary ZIP file and extract
+            var tempZipPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.zip");
+            await File.WriteAllBytesAsync(tempZipPath, zipBytes);
+
+            try
+            {
+                // Ensure the directory is clean
+                if (Directory.Exists(extractPath))
+                {
+                    try { Directory.Delete(extractPath, true); } catch { }
+                }
+                Directory.CreateDirectory(extractPath);
+                
+                ZipFile.ExtractToDirectory(tempZipPath, extractPath);
+            }
+            finally
+            {
+                if (File.Exists(tempZipPath))
+                    File.Delete(tempZipPath);
             }
         }
 

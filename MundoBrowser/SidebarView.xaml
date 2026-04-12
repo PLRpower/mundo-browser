@@ -51,12 +51,14 @@
                                         </Border.RenderTransform>
                                         <Grid>
                                             <!-- Placeholder Icon -->
-                                            <TextBlock x:Name="EmptyIcon" Text="+" FontSize="18" Foreground="#444" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="EmptyIcon" Text="+" FontSize="10" Foreground="#444" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             
                                             <!-- Pinned Content -->
                                             <Grid x:Name="PinnedContent" Visibility="Collapsed">
                                                 <!-- Image Favicon -->
-                                                <Image Source="{Binding Tab.FaviconUrl}" Width="22" Height="22" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality">
+                                                <Image Source="{Binding Tab.FaviconUrl}" Width="18" Height="18" Stretch="Uniform" 
+                                                       SnapsToDevicePixels="True" UseLayoutRounding="True"
+                                                       RenderOptions.BitmapScalingMode="HighQuality">
                                                     <Image.Style>
                                                         <Style TargetType="Image">
                                                             <Style.Triggers>
@@ -71,7 +73,7 @@
                                                     </Image.Style>
                                                 </Image>
                                                 <!-- Fallback Emoji -->
-                                                <TextBlock Text="🌐" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock Text="🌐" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -255,7 +257,9 @@
                                         </TextBlock.Style>
                                     </TextBlock>
                                     <!-- Actual Favicon -->
-                                    <Image Source="{Binding FaviconUrl}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality">
+                                    <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                           SnapsToDevicePixels="True" UseLayoutRounding="True"
+                                           RenderOptions.BitmapScalingMode="HighQuality">
                                         <Image.Style>
                                             <Style TargetType="Image">
                                                 <Style.Triggers>
@@ -305,26 +309,6 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Load Extension Button -->
-            <Button Command="{Binding LoadExtensionCommand}" Margin="20,0,20,20" Height="40" 
-                    Background="#2D4A2C" Foreground="White" BorderThickness="0" Grid.Row="4" VerticalAlignment="Bottom">
-                <Button.Template>
-                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="8">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#3D6A3C"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="🧩" FontSize="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="Add Extension" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                </StackPanel>
-            </Button>
         </Grid>
     </Border>
 </UserControl>

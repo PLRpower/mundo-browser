@@ -41,6 +41,12 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private string? _faviconUrl;
 
+        [ObservableProperty]
+        private bool _isExtensionStorePage;
+
+        [ObservableProperty]
+        private string? _installableExtensionId;
+
         [RelayCommand]
         public void Navigate()
         {

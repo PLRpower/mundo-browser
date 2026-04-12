@@ -14,7 +14,11 @@ public class WebViewService
     private WebView2? _activeWebView;
     private readonly System.Timers.Timer _memoryTimer;
 
+    private readonly Dictionary<TabViewModel, Task<WebView2>> _initializationTasks = new();
+    private readonly SemaphoreSlim _initSemaphore = new SemaphoreSlim(1, 1);
+
     public WebView2? ActiveWebView => _activeWebView;
+    public CoreWebView2Environment? WebViewEnvironment => _environment;
 
     public WebViewService(System.Windows.Controls.Panel container)
     {
@@ -34,8 +38,6 @@ public class WebViewService
             AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2 --process-per-site"
         };
 
-        // ExclusiveUserDataFolderAccess was removed to prevent E_UNEXPECTED if old processes linger
-
         var userDataFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MundoBrowser", "WebView2Data");
@@ -49,33 +51,65 @@ public class WebViewService
         if (_webViews.TryGetValue(tab, out var existing))
             return existing;
 
-        var webView = new WebView2();
-        webView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
-        
-        _webViews[tab] = webView;
-        _container.Children.Add(webView);
-
-        await webView.EnsureCoreWebView2Async(_environment);
-        
-        // Handle Process Crashes to prevent app crashes and try to recover
-        webView.CoreWebView2.ProcessFailed += (sender, args) =>
+        Task<WebView2>? existingTask = null;
+        lock (_initializationTasks)
         {
-            // If the browser process crashed, we can attempt to reload it
-            if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited || 
-                args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited ||
-                args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+            if (_initializationTasks.TryGetValue(tab, out existingTask)) { }
+        }
+
+        if (existingTask != null) return await existingTask;
+
+        var initTask = InitializeWebViewInternal(tab, setupEvents);
+        lock (_initializationTasks)
+        {
+            _initializationTasks[tab] = initTask;
+        }
+
+        try { return await initTask; }
+        finally
+        {
+            lock (_initializationTasks) { _initializationTasks.Remove(tab); }
+        }
+    }
+
+    private async Task<WebView2> InitializeWebViewInternal(TabViewModel tab, Action<WebView2> setupEvents)
+    {
+        await _initSemaphore.WaitAsync();
+        try
+        {
+            var webView = new WebView2();
+            webView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+            _container.Children.Add(webView);
+
+            try { await webView.EnsureCoreWebView2Async(_environment); }
+            catch (System.Runtime.InteropServices.COMException ex) when (ex.ErrorCode == unchecked((int)0x80004004))
             {
-                // Re-initialize or handle the crash
-                try { webView.Reload(); } catch { }
+                await Task.Delay(150);
+                await webView.EnsureCoreWebView2Async(_environment);
             }
-        };
 
-        setupEvents(webView);
+            webView.CoreWebView2.ProcessFailed += (sender, args) =>
+            {
+                if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited || 
+                    args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited ||
+                    args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+                {
+                    try { webView.Reload(); } catch { }
+                }
+            };
 
-        if (!string.IsNullOrEmpty(tab.Url))
-            webView.CoreWebView2.Navigate(tab.Url);
+            setupEvents(webView);
+            if (!string.IsNullOrEmpty(tab.Url)) webView.CoreWebView2.Navigate(tab.Url);
 
-        return webView;
+            _webViews[tab] = webView;
+            return webView;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"WebView initialization failed: {ex.Message}");
+            throw;
+        }
+        finally { _initSemaphore.Release(); }
     }
 
     private void CheckMemoryOptimization(object? sender, System.Timers.ElapsedEventArgs e)
@@ -84,18 +118,12 @@ public class WebViewService
         {
             var now = DateTime.Now;
             var tabsToDiscard = new List<TabViewModel>();
-            
             foreach(var kvp in _webViews)
             {
                 var tab = kvp.Key;
                 var wv = kvp.Value;
-                // Si l'onglet n'est pas actif et n'a pas été vu depuis 10 minutes, on le libère
-                if (wv != _activeWebView && (now - tab.LastAccessed).TotalMinutes > 10)
-                {
-                    tabsToDiscard.Add(tab);
-                }
+                if (wv != _activeWebView && (now - tab.LastAccessed).TotalMinutes > 10) tabsToDiscard.Add(tab);
             }
-            
             foreach(var tab in tabsToDiscard) DiscardTab(tab);
         });
     }
@@ -120,11 +148,11 @@ public class WebViewService
             {
                 if (_activeWebView.CoreWebView2 != null)
                 {
+                    // Lower memory priority for background tab WITHOUT suspending it (to keep media playing)
                     _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
-                    _activeWebView.CoreWebView2.TrySuspendAsync(); // Extrêmement efficace pour le CPU
                 }
             }
-            catch (Exception) { /* Ignorer les erreurs si le processus est fermé/planté */ }
+            catch { }
         }
 
         _activeWebView = webView;
@@ -136,11 +164,12 @@ public class WebViewService
         {
             if (_activeWebView.CoreWebView2 != null)
             {
+                // Note: We don't need Resume() here anymore since we don't Suspend, but it's safe to keep.
                 _activeWebView.CoreWebView2.Resume();
                 _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
             }
         }
-        catch (Exception) { /* Ignorer */ }
+        catch { }
     }
 
     public void RemoveTab(TabViewModel tab)
@@ -149,7 +178,6 @@ public class WebViewService
         {
             _webViews.Remove(tab);
             if (_activeWebView == webView) _activeWebView = null;
-            
             _container.Children.Remove(webView);
             webView.Dispose();
         }
