@@ -1,6 +1,5 @@
 using System.IO;
 using System.Text.Json;
-using System.Threading;
 using MundoBrowser.ViewModels;
 using System.Collections.ObjectModel;
 

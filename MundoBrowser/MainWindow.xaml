@@ -146,8 +146,8 @@
         <!-- TOP BAR — pleine largeur sur toute la fenêtre (Row 0) -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <Border x:Name="TopBar" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
-                Background="#252526" Height="40" Padding="15,0,0,0" MouseDown="TitleBar_MouseDown">
-            <Grid>
+                Background="#252526" Height="40" Padding="15,0,0,0">
+            <Grid MouseDown="TitleBar_MouseDown" Background="Transparent">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
@@ -195,35 +195,10 @@
                         </Style>
                     </Border.Style>
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Select All Button -->
-                        <Button Grid.Column="0" Width="24" Height="24" Margin="6,0,0,0"
-                                Background="Transparent" BorderThickness="0"
-                                Click="SelectAllUrl_Click" ToolTip="Select All" Cursor="Hand">
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4">
-                                        <Path Data="M2,2 L6,2 L6,6 L2,6 Z M4,4 L8,4 L8,8 L4,8 Z"
-                                              Stroke="#888" StrokeThickness="1.2" Fill="Transparent"
-                                              Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="border" Property="Background" Value="#2D2D30"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Button.Template>
-                        </Button>
-
                         <!-- TextBox + Placeholder -->
-                        <Grid Grid.Column="1">
+                        <Grid>
                             <TextBlock Text="Saisir l'adresse du nouvel onglet..."
-                                       Foreground="#666" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Foreground="#666" VerticalAlignment="Center" Margin="12,0,0,0"
                                        IsHitTestVisible="False" FontSize="13" FontStyle="Italic">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -243,12 +218,13 @@
                             <TextBox x:Name="AddressTextBox"
                                      Text="{Binding AddressBarText, UpdateSourceTrigger=PropertyChanged}"
                                      Background="Transparent" BorderThickness="0" Foreground="White"
-                                     VerticalAlignment="Center" Margin="8,0,15,0" FontSize="14"
+                                     VerticalAlignment="Center" Margin="12,0,15,0" FontSize="14"
                                      CaretBrush="White"
                                      KeyDown="AddressBar_KeyDown"
                                      TextChanged="AddressTextBox_TextChanged"
                                      GotFocus="AddressTextBox_GotFocus"
-                                     LostFocus="AddressTextBox_LostFocus"/>
+                                     LostFocus="AddressTextBox_LostFocus"
+                                     PreviewMouseLeftButtonDown="AddressTextBox_PreviewMouseLeftButtonDown"/>
                         </Grid>
 
                         <!-- Autocomplete Popup -->
@@ -395,7 +371,7 @@
         <!-- Fin TopBar -->
 
         <!-- Normal Sidebar Area (Row 1) -->
-        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="#252526" MouseDown="TitleBar_MouseDown">
+        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="#252526">
             <local:SidebarView.Style>
                 <Style TargetType="local:SidebarView">
                     <Style.Triggers>
@@ -413,7 +389,7 @@
                PopupAnimation="None" 
                Placement="Relative"
                HorizontalOffset="0"
-               VerticalOffset="0"
+               VerticalOffset="40"
                StaysOpen="True"
                Width="250">
             <!-- La hauteur du popup couvre uniquement Row1 (sous la TopBar) -->

@@ -15,8 +15,22 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private TabViewModel? _selectedTab;
 
+        /// <summary>
+        /// Propriété helper pour la ListBox des onglets normaux.
+        /// On la sépare de SelectedTab pour éviter que la ListBox ne "force" la sélection à null
+        /// lorsqu'un onglet épinglé (qui n'est pas dans la liste des onglets normaux) est sélectionné.
+        /// </summary>
+        [ObservableProperty]
+        private TabViewModel? _selectedListTab;
+
+        [ObservableProperty]
+        private ObservableCollection<PinnedTab> _pinnedTabs = new();
+
         [ObservableProperty]
         private bool _isSidebarVisible = true;
+
+        [ObservableProperty]
+        private double _sidebarWidth = 250;
 
         [ObservableProperty]
         private ObservableCollection<HistoryEntry> _suggestions = new();
@@ -35,10 +49,33 @@ namespace MundoBrowser.ViewModels
 
         partial void OnSelectedTabChanged(TabViewModel? value)
         {
+            // Synchroniser avec la ListBox : si le nouvel onglet est dans la liste normale, on le sélectionne.
+            // Sinon (onglet épinglé), on désélectionne la ListBox visuellement.
+            SelectedListTab = (value != null && Tabs.Contains(value)) ? value : null;
+
             if (value != null)
             {
+                // Sync pinned selection state: highlight slot if its tab is the selected one
+                foreach (var p in PinnedTabs) 
+                {
+                    p.IsSelected = (p.Tab == value);
+                }
+
                 IsPendingNewTab = false;
                 AddressBarText = value.AddressUrl;
+            }
+            else
+            {
+                foreach (var p in PinnedTabs) p.IsSelected = false;
+            }
+        }
+
+        partial void OnSelectedListTabChanged(TabViewModel? value)
+        {
+            // Quand l'utilisateur clique dans la liste des onglets normaux, on met à jour l'onglet actif global.
+            if (value != null)
+            {
+                SelectedTab = value;
             }
         }
 
@@ -83,6 +120,12 @@ namespace MundoBrowser.ViewModels
             }
 
             if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
+
+            // Initialize 6 empty pinned slots
+            for (int i = 0; i < 6; i++)
+            {
+                PinnedTabs.Add(new PinnedTab(i));
+            }
         }
 
         private void CreateDefaultTab()
@@ -115,27 +158,85 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
+        public void OpenPinnedTab(PinnedTab pinned)
+        {
+            if (pinned == null || pinned.IsEmpty)
+                return;
+
+            // Selecting a pinned tab makes it the active one
+            SelectedTab = pinned.Tab;
+        }
+
+        public void PinTab(TabViewModel tab, int slotIndex)
+        {
+            if (slotIndex >= 0 && slotIndex < PinnedTabs.Count && tab != null)
+            {
+                // Remove tab from regular list if it's there
+                if (Tabs.Contains(tab))
+                {
+                    Tabs.Remove(tab);
+                }
+                
+                // If the slot already had a tab, move it back to regular list
+                var oldTab = PinnedTabs[slotIndex].Tab;
+                if (oldTab != null && !Tabs.Contains(oldTab))
+                {
+                    Tabs.Add(oldTab);
+                }
+
+                // Place tab in slot
+                PinnedTabs[slotIndex].Tab = tab;
+                
+                // Ensure selection state is updated
+                if (SelectedTab == tab)
+                {
+                    foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == tab);
+                }
+            }
+        }
+
+        [RelayCommand]
         public void CloseTab(TabViewModel tab)
         {
+            bool wasSelected = (SelectedTab == tab);
+            bool removed = false;
+
             if (Tabs.Contains(tab))
             {
-                // Capture if the tab to be closed is the currently selected one
-                // WPF ListBox sets SelectedItem to null immediately when the item is removed,
-                // so we must check this BEFORE removing from the collection.
-                bool wasSelected = (SelectedTab == tab);
-
                 Tabs.Remove(tab);
-                
-                // If we closed the active tab (or if SelectedTab matches passed tab), select another one
-                if (wasSelected)
+                removed = true;
+            }
+            else
+            {
+                // Check pinned tabs
+                foreach (var p in PinnedTabs)
                 {
-                    if (Tabs.Count > 0)
+                    if (p.Tab == tab)
                     {
-                        SelectedTab = Tabs[^1];
+                        p.Tab = null;
+                        removed = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (removed && wasSelected)
+            {
+                // If we closed the active tab, find another one
+                if (Tabs.Count > 0)
+                {
+                    SelectedTab = Tabs[^1];
+                }
+                else
+                {
+                    // Check if any other pinned tab can be selected
+                    var firstPinned = PinnedTabs.FirstOrDefault(p => !p.IsEmpty);
+                    if (firstPinned != null)
+                    {
+                        SelectedTab = firstPinned.Tab;
                     }
                     else
                     {
-                        // Option: Close app or add new tab
                         CreateDefaultTab();
                     }
                 }
@@ -146,10 +247,18 @@ namespace MundoBrowser.ViewModels
         public void CloseOtherTabs()
         {
             if (SelectedTab == null) return;
+            
+            // Remove all regular tabs except selected
             var toRemove = Tabs.Where(t => t != SelectedTab).ToList();
-            foreach (var tab in toRemove)
+            foreach (var tab in toRemove) Tabs.Remove(tab);
+            
+            // Also clear all pinned slots except if selected
+            foreach (var p in PinnedTabs)
             {
-                Tabs.Remove(tab);
+                if (p.Tab != null && p.Tab != SelectedTab)
+                {
+                    p.Tab = null;
+                }
             }
         }
 

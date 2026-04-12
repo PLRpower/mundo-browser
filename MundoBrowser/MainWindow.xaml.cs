@@ -1,13 +1,8 @@
-using System;
 using System.Collections.Specialized;
-using System.ComponentModel;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Shell;
-using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
 using MundoBrowser.Models;
@@ -92,8 +87,26 @@ public partial class MainWindow : Window
 
         vm.Tabs.CollectionChanged += (_, e) => {
             if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
-                foreach (TabViewModel tab in e.OldItems) _webViewService.RemoveTab(tab);
+            {
+                foreach (TabViewModel tab in e.OldItems)
+                {
+                    tab.PropertyChanged -= OnTabPropertyChanged;
+                    _webViewService.RemoveTab(tab);
+                }
+            }
+            else if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (TabViewModel tab in e.NewItems)
+                {
+                    tab.PropertyChanged += OnTabPropertyChanged;
+                }
+            }
         };
+
+        foreach (var tab in vm.Tabs)
+        {
+            tab.PropertyChanged += OnTabPropertyChanged;
+        }
 
         vm.LoadExtensionRequested += async (_, _) => await OnLoadExtensionRequested();
         vm.NewTabRequested += (_, _) => { AddressTextBox.Focus(); AddressTextBox.SelectAll(); };
@@ -111,6 +124,26 @@ public partial class MainWindow : Window
             _isUpdatingAddressBar = true;
             vm.AddressBarText = tab.AddressUrl;
             _isUpdatingAddressBar = false;
+        }
+    }
+
+    private void OnTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TabViewModel.Url) && sender is TabViewModel tab)
+        {
+            // Run on UI thread as this might be called from VM
+            Dispatcher.Invoke(async () => {
+                var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
+                if (webView != null && webView.CoreWebView2 != null)
+                {
+                    // Avoid redundant navigation if the webview is already at this source
+                    // CoreWebView2.Source always returns the normalized URL
+                    if (webView.CoreWebView2.Source != tab.Url)
+                    {
+                        webView.CoreWebView2.Navigate(tab.Url);
+                    }
+                }
+            });
         }
     }
 
@@ -179,6 +212,9 @@ public partial class MainWindow : Window
         var input = AddressTextBox.Text?.Trim();
         if (string.IsNullOrEmpty(input)) return;
 
+        // Cacher les suggestions immédiatement
+        if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
+
         string url = IsUrl(input) ? (input.Contains("://") ? input : "https://" + input) : $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
         
         if (DataContext is MainViewModel vm) {
@@ -190,6 +226,9 @@ public partial class MainWindow : Window
                 _webViewService.ActiveWebView?.CoreWebView2?.Navigate(url);
             }
         }
+
+        // Enlever le focus de la barre d'adresse pour arrêter le curseur clignotant
+        _webViewService.ActiveWebView?.Focus();
     }
 
     private bool IsUrl(string t) => !t.Contains(" ") && (t.Contains(".") || t.Contains("://") || t == "localhost");
@@ -221,8 +260,18 @@ public partial class MainWindow : Window
 
     private void AddressTextBox_GotFocus(object sender, RoutedEventArgs e)
     {
+        AddressTextBox.SelectAll();
         if (DataContext is MainViewModel vm && vm.Suggestions.Count > 0 && SuggestionsPopup != null)
             SuggestionsPopup.IsOpen = true;
+    }
+
+    private void AddressTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!AddressTextBox.IsFocused)
+        {
+            AddressTextBox.Focus();
+            e.Handled = true;
+        }
     }
 
     private void AddressTextBox_LostFocus(object sender, RoutedEventArgs e)
@@ -231,11 +280,7 @@ public partial class MainWindow : Window
         Task.Delay(200).ContinueWith(_ => Dispatcher.Invoke(() => SuggestionsPopup.IsOpen = false));
     }
 
-    private void SelectAllUrl_Click(object sender, RoutedEventArgs e)
-    {
-        AddressTextBox.Focus();
-        AddressTextBox.SelectAll();
-    }
+
 
     private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -306,12 +351,12 @@ public partial class MainWindow : Window
 
     private void UpdateSidebarWidth(bool visible)
     {
-        if (SidebarColumn == null || SplitterColumn == null) return;
+        if (SidebarColumn == null || SplitterColumn == null || DataContext is not MainViewModel vm) return;
 
         if (visible)
         {
             if (_isSidebarFloating) HideFloatingSidebar();
-            SidebarColumn.Width = new GridLength(250);
+            SidebarColumn.Width = new GridLength(vm.SidebarWidth);
             SidebarColumn.MinWidth = 150;
             SplitterColumn.Width = GridLength.Auto;
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Visible;
@@ -416,6 +461,10 @@ public partial class MainWindow : Window
     {
         if (e.ChangedButton == MouseButton.Left)
         {
+            // Ne permet le drag/double-clic que si on clique sur le "vide" (le Grid lui-même)
+            // et non sur un bouton, la barre d'adresse, etc.
+            if (e.OriginalSource != sender) return;
+
             if (e.ClickCount == 2)
             {
                 Maximize_Click(sender, e);
@@ -437,7 +486,10 @@ public partial class MainWindow : Window
 
     private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
-        // Logic for sidebar resizing if needed, but GridSplitter handles it mostly
+        if (DataContext is MainViewModel vm && SidebarColumn != null && SidebarColumn.Width.IsAbsolute)
+        {
+            vm.SidebarWidth = SidebarColumn.Width.Value;
+        }
     }
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

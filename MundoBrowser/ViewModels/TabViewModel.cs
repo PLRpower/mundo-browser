@@ -9,7 +9,7 @@ namespace MundoBrowser.ViewModels
         private string _title = "New Tab";
 
         [ObservableProperty]
-        private System.DateTime _lastAccessed = System.DateTime.Now;
+        private DateTime _lastAccessed = DateTime.Now;
 
         [ObservableProperty]
         private bool _isDiscarded;
