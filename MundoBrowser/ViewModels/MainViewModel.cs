@@ -58,6 +58,7 @@ namespace MundoBrowser.ViewModels
 
         public HistoryManager HistoryManager { get; }
         public SessionManager SessionManager { get; }
+        public FaviconService FaviconService { get; }
 
         partial void OnSelectedTabChanged(TabViewModel? value)
         {
@@ -87,6 +88,7 @@ namespace MundoBrowser.ViewModels
         {
             HistoryManager = new HistoryManager();
             SessionManager = new SessionManager();
+            FaviconService = new FaviconService();
             
             for (int i = 0; i < 6; i++) PinnedTabs.Add(new PinnedTab(i));
 

@@ -34,9 +34,18 @@ public static class NativeMethods
         try
         {
             var hWnd = new WindowInteropHelper(window).Handle;
+            SetWindowCorners(hWnd, preference);
+        }
+        catch { }
+    }
+
+    public static void SetWindowCorners(IntPtr hWnd, DWM_WINDOW_CORNER_PREFERENCE preference)
+    {
+        try
+        {
             DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(uint));
         }
-        catch { /* Fallback pour les versions de Windows plus anciennes */ }
+        catch { }
     }
 
     public static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam, bool isFullScreen)
@@ -98,4 +107,7 @@ public static class NativeMethods
         public int right;
         public int bottom;
     }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 }

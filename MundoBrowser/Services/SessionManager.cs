@@ -13,8 +13,9 @@ namespace MundoBrowser.Services
     {
         public string Title { get; set; } = "New Tab";
         public string Url { get; set; } = "https://www.google.com";
+        public string? FaviconRelativePath { get; set; }
         public string? FaviconUrl { get; set; }
-        public int SlotIndex { get; set; } = -1; // -1 for regular tabs, 0+ for pinned slots
+        public int SlotIndex { get; set; } = -1;
     }
 
     public class SessionData
@@ -70,8 +71,24 @@ namespace MundoBrowser.Services
                     {
                         Title = tab.Title,
                         Url = tab.Url,
+                        FaviconRelativePath = tab.FaviconRelativePath,
                         FaviconUrl = tab.FaviconUrl
                     });
+                }
+
+                foreach (var pinned in vm.PinnedTabs)
+                {
+                    if (pinned.Tab != null)
+                    {
+                        sessionData.PinnedTabs.Add(new TabSessionData
+                        {
+                            Title = pinned.Tab.Title,
+                            Url = pinned.Tab.Url,
+                            FaviconRelativePath = pinned.Tab.FaviconRelativePath,
+                            FaviconUrl = pinned.Tab.FaviconUrl,
+                            SlotIndex = pinned.SlotIndex
+                        });
+                    }
                 }
 
                 // Save pinned tabs

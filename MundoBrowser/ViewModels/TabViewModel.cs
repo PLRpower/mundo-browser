@@ -42,6 +42,9 @@ namespace MundoBrowser.ViewModels
         private string? _faviconUrl;
 
         [ObservableProperty]
+        private string? _faviconRelativePath;
+
+        [ObservableProperty]
         private bool _isExtensionStorePage;
 
         [ObservableProperty]

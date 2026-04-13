@@ -12,6 +12,7 @@ using MundoBrowser.ViewModels;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Windows.Media;
 
 // Ambiguity Resolution Aliases
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -32,7 +33,8 @@ public partial class MainWindow : Window
     private bool _isFullscreen;
     private bool _isSidebarFloating;
     private string? _currentExtensionId;
-    private bool _wasOpenOnMouseDown;
+    private string? _lastClosedExtensionId;
+    private DateTime _lastExtensionPopupClosed = DateTime.MinValue;
     private System.Windows.Point? _dragStartPos;
     private (WindowState State, WindowStyle Style, ResizeMode Resize) _prevWindowState;
 
@@ -70,6 +72,8 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => OnWindowStateChanged();
         Closing += (_, _) => ((MainViewModel)DataContext).SaveCurrentSession();
         
+        AddHandler(PreviewMouseDownEvent, new MouseButtonEventHandler(Window_PreviewMouseDown), true);
+
         // Fix WPF bug: ElementName bindings on Popups often get lost after IsOpen toggles
         FloatingSidebarPopup.PlacementTarget = MainGrid;
         EdgeTriggerPopup.PlacementTarget = MainGrid;
@@ -564,6 +568,50 @@ public partial class MainWindow : Window
         else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { AddressTextBox.Focus(); AddressTextBox.SelectAll(); e.Handled = true; }
         else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
         else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward) { _webViewService.ActiveWebView.GoForward(); e.Handled = true; } }
+        else if (key == Key.Escape && ExtensionPopup.IsOpen) { CloseExtensionPopup(); e.Handled = true; }
+    }
+
+    private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!ExtensionPopup.IsOpen) return;
+
+        if (e.OriginalSource is DependencyObject d && FindAncestor<Button>(d) is Button btn && btn.Tag is string)
+            return;
+
+        var popupChild = ExtensionPopup.Child as FrameworkElement;
+        if (popupChild == null) { CloseExtensionPopup(); return; }
+
+        var popupSource = PresentationSource.FromVisual(popupChild) as System.Windows.Interop.HwndSource;
+        if (popupSource == null) { CloseExtensionPopup(); return; }
+
+        var screenPos = PointToScreen(e.GetPosition(this));
+
+        System.Windows.Rect popupRect;
+        NativeMethods.RECT rect;
+        if (NativeMethods.GetWindowRect(popupSource.Handle, out rect))
+        {
+            popupRect = new System.Windows.Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+        }
+        else
+        {
+            CloseExtensionPopup();
+            return;
+        }
+
+        if (!popupRect.Contains(screenPos))
+        {
+            CloseExtensionPopup();
+        }
+    }
+
+    private static T? FindAncestor<T>(DependencyObject current) where T : DependencyObject
+    {
+        while (current != null)
+        {
+            if (current is T match) return match;
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+        return null;
     }
 
     private void Window_MouseMove(object sender, MouseEventArgs e)
@@ -587,8 +635,6 @@ public partial class MainWindow : Window
 
     private void MainGrid_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        // If we click on the grid background (or any element that doesn't handle the click),
-        // we take focus away from the address bar.
         if (AddressTextBox.IsFocused)
         {
             MainGrid.Focus();
@@ -726,24 +772,21 @@ public partial class MainWindow : Window
 
     private void CloseInstallBar_Click(object sender, RoutedEventArgs e) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) vm.SelectedTab.IsExtensionStorePage = false; }
 
-    private void ExtensionIcon_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is Button btn && btn.Tag is string extId)
-        {
-            // Capture state on MouseDown: was the popup already open for this specific extension?
-            _wasOpenOnMouseDown = ExtensionPopup.IsOpen && _currentExtensionId == extId;
-        }
-    }
-
     private async void ExtensionIcon_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is string extId && DataContext is MainViewModel vm)
         {
-            // Toggle logic: If it was already open on MouseDown, we don't reopen it on Click (MouseUp).
-            if (_wasOpenOnMouseDown)
+            // If the popup was closed very recently (by a MouseDown that triggered this click), 
+            // and it was the SAME extension, don't reopen it immediately.
+            if (DateTime.Now - _lastExtensionPopupClosed < TimeSpan.FromMilliseconds(200) && _lastClosedExtensionId == extId)
             {
-                _wasOpenOnMouseDown = false;
-                _currentExtensionId = null;
+                return;
+            }
+
+            // Toggle logic fallback
+            if (ExtensionPopup.IsOpen && _currentExtensionId == extId)
+            {
+                CloseExtensionPopup();
                 return;
             }
 
@@ -757,16 +800,63 @@ public partial class MainWindow : Window
                 try
                 {
                     await ExtensionPopupWebView.EnsureCoreWebView2Async(_webViewService.WebViewEnvironment);
+                    
+                    // Force interaction settings
+                    ExtensionPopupWebView.CoreWebView2.Settings.IsScriptEnabled = true;
+                    ExtensionPopupWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
+
                     ExtensionPopupWebView.CoreWebView2.Navigate(ext.PopupUrl);
+                    
+                    // Delay to allow loading/rendering then force focus
+                    await Task.Delay(200);
+                    if (ExtensionPopup.IsOpen)
+                    {
+                        ExtensionPopupWebView.Focus();
+                        System.Windows.Input.FocusManager.SetFocusedElement(ExtensionPopup, ExtensionPopupWebView);
+                        ExtensionPopupWebView.MoveFocus(new System.Windows.Input.TraversalRequest(System.Windows.Input.FocusNavigationDirection.First));
+                    }
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Extension popup error: {ex.Message}");
-                    ExtensionPopup.IsOpen = false;
-                    _currentExtensionId = null;
+                    CloseExtensionPopup();
                 }
             }
         }
+    }
+
+    private void ExtensionPopup_Opened(object sender, EventArgs e)
+    {
+        var child = ExtensionPopup.Child as FrameworkElement;
+        if (child != null)
+        {
+            var source = PresentationSource.FromVisual(child) as System.Windows.Interop.HwndSource;
+            if (source != null)
+            {
+                NativeMethods.SetWindowCorners(source.Handle, NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND);
+            }
+        }
+    }
+
+    private void ExtensionPopupWebView_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (ExtensionPopupWebView.CoreWebView2 != null)
+        {
+            ExtensionPopupWebView.Focus();
+        }
+    }
+
+    private void ExtensionPopup_Closed(object sender, EventArgs e)
+    {
+        _lastExtensionPopupClosed = DateTime.Now;
+        _lastClosedExtensionId = _currentExtensionId;
+        _currentExtensionId = null;
+    }
+
+    private void CloseExtensionPopup()
+    {
+        ExtensionPopup.IsOpen = false;
+        _currentExtensionId = null;
     }
 
     private void CloseExtensionPopup_Click(object sender, RoutedEventArgs e)

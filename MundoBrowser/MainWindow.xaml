@@ -308,7 +308,6 @@
                                     Background="Transparent" BorderThickness="0"
                                     ToolTip="{Binding Name}" Cursor="Hand"
                                     Click="ExtensionIcon_Click" 
-                                    PreviewMouseLeftButtonDown="ExtensionIcon_PreviewMouseDown"
                                     Tag="{Binding Id}">
                                 <Button.ContextMenu>
                                     <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
@@ -362,23 +361,6 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- Popup for extensions -->
-                <Popup x:Name="ExtensionPopup"
-                       AllowsTransparency="True"
-                       StaysOpen="False"
-                       Placement="Bottom"
-                       PopupAnimation="Fade"
-                       HorizontalOffset="0"
-                       VerticalOffset="5">
-                    <Border Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="8" Width="400" Height="600">
-                        <Border.Effect>
-                            <DropShadowEffect Color="Black" Opacity="0.5" BlurRadius="15" ShadowDepth="3" Direction="270"/>
-                        </Border.Effect>
-                        <Grid>
-                            <wv2:WebView2 x:Name="ExtensionPopupWebView"/>
-                        </Grid>
-                    </Border>
-                </Popup>
 
                 <!-- Window Controls -->
                 <StackPanel x:Name="WindowControlsStack" Grid.Column="5" Orientation="Horizontal"
@@ -523,6 +505,30 @@
         <Border x:Name="BottomRightResizeBorder" HorizontalAlignment="Right" VerticalAlignment="Bottom" 
                 Width="10" Height="10" Style="{StaticResource ResizeEdgeStyle}" 
                 Grid.ColumnSpan="3" Panel.ZIndex="1001" Cursor="SizeNWSE"/>
+
+        <!-- Popup for extensions - Moved to root for better event handling -->
+        <Popup x:Name="ExtensionPopup"
+               AllowsTransparency="False"
+               StaysOpen="True"
+               Placement="Bottom"
+               Focusable="True"
+               FocusManager.IsFocusScope="True"
+               Opened="ExtensionPopup_Opened"
+               Closed="ExtensionPopup_Closed"
+               HorizontalOffset="0"
+               VerticalOffset="5">
+            <Border Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1" 
+                    Width="400" Height="600" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                <Grid Background="#1E1E1E">
+                    <wv2:WebView2 x:Name="ExtensionPopupWebView" 
+                                  DefaultBackgroundColor="White"
+                                  HorizontalAlignment="Stretch" 
+                                  VerticalAlignment="Stretch"
+                                  MinWidth="400" MinHeight="600"
+                                  Loaded="ExtensionPopupWebView_Loaded"/>
+                </Grid>
+            </Border>
+        </Popup>
 
     </Grid>
 </Window>
