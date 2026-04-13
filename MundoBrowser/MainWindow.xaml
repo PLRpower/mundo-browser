@@ -135,7 +135,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid x:Name="MainGrid" MouseMove="Window_MouseMove">
+    <Grid x:Name="MainGrid" MouseMove="Window_MouseMove" MouseDown="MainGrid_MouseDown" Focusable="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- TopBar : pleine largeur -->
             <RowDefinition Height="*"/>    <!-- Sidebar + WebView -->
@@ -195,6 +195,9 @@
                                         </Setter.Value>
                                     </Setter>
                                 </DataTrigger>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter Property="BorderBrush" Value="#007ACC"/>
+                                </Trigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
@@ -304,7 +307,9 @@
                             <Button x:Name="ExtensionButton" Width="28" Height="28" Margin="2,0"
                                     Background="Transparent" BorderThickness="0"
                                     ToolTip="{Binding Name}" Cursor="Hand"
-                                    Click="ExtensionIcon_Click" Tag="{Binding Id}">
+                                    Click="ExtensionIcon_Click" 
+                                    PreviewMouseLeftButtonDown="ExtensionIcon_PreviewMouseDown"
+                                    Tag="{Binding Id}">
                                 <Button.ContextMenu>
                                     <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
                                         <MenuItem Header="Supprimer l'extension" Click="RemoveExtension_Click" Tag="{Binding Id}">
@@ -356,6 +361,24 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- Popup for extensions -->
+                <Popup x:Name="ExtensionPopup"
+                       AllowsTransparency="True"
+                       StaysOpen="False"
+                       Placement="Bottom"
+                       PopupAnimation="Fade"
+                       HorizontalOffset="0"
+                       VerticalOffset="5">
+                    <Border Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="8" Width="400" Height="600">
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" Opacity="0.5" BlurRadius="15" ShadowDepth="3" Direction="270"/>
+                        </Border.Effect>
+                        <Grid>
+                            <wv2:WebView2 x:Name="ExtensionPopupWebView"/>
+                        </Grid>
+                    </Border>
+                </Popup>
 
                 <!-- Window Controls -->
                 <StackPanel x:Name="WindowControlsStack" Grid.Column="5" Orientation="Horizontal"

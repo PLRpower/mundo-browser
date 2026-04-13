@@ -31,6 +31,8 @@ public partial class MainWindow : Window
     private bool _isUpdatingAddressBar;
     private bool _isFullscreen;
     private bool _isSidebarFloating;
+    private string? _currentExtensionId;
+    private bool _wasOpenOnMouseDown;
     private System.Windows.Point? _dragStartPos;
     private (WindowState State, WindowStyle Style, ResizeMode Resize) _prevWindowState;
 
@@ -267,7 +269,7 @@ public partial class MainWindow : Window
                 if (DataContext is MainViewModel vm)
                 {
                     using var client = new HttpClient();
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, gridClick/537.36) Chrome/120.0.0.0 Safari/537.36");
                     
                     var bytes = await client.GetByteArrayAsync(iconUrl);
                     using var ms = new MemoryStream(bytes);
@@ -294,20 +296,73 @@ public partial class MainWindow : Window
     // --- BARRE D'ADRESSE ---
     private void AddressBar_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter) return;
-        var input = AddressTextBox.Text?.Trim();
-        if (string.IsNullOrEmpty(input)) return;
-        if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
-        string url = IsUrl(input) ? (input.Contains("://") ? input : "https://" + input) : $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
-        if (DataContext is MainViewModel vm) {
-            if (vm.IsPendingNewTab) {
-                vm.IsPendingNewTab = false;
-                vm.AddTabWithUrl(url);
-            } else if (vm.SelectedTab != null) {
-                vm.SelectedTab.Url = vm.SelectedTab.AddressUrl = url;
-                _webViewService.ActiveWebView?.CoreWebView2?.Navigate(url);
+        if (DataContext is not MainViewModel vm) return;
+
+        if (e.Key == Key.Escape)
+        {
+            vm.IsPendingNewTab = false;
+            if (vm.SelectedTab != null)
+            {
+                _isUpdatingAddressBar = true;
+                vm.AddressBarText = vm.SelectedTab.AddressUrl;
+                _isUpdatingAddressBar = false;
+            }
+            if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
+            _webViewService.ActiveWebView?.Focus();
+            e.Handled = true;
+            return;
+        }
+
+        // Suggestions navigation with Arrows
+        if (SuggestionsPopup != null && SuggestionsPopup.IsOpen)
+        {
+            if (e.Key == Key.Down)
+            {
+                if (SuggestionsListBox.SelectedIndex < SuggestionsListBox.Items.Count - 1)
+                {
+                    SuggestionsListBox.SelectedIndex++;
+                    SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
+                }
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Up)
+            {
+                if (SuggestionsListBox.SelectedIndex > 0)
+                {
+                    SuggestionsListBox.SelectedIndex--;
+                    SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
+                }
+                e.Handled = true;
+                return;
             }
         }
+
+        if (e.Key != Key.Enter) return;
+
+        string url;
+        // If an item is selected in suggestions, use it
+        if (SuggestionsPopup != null && SuggestionsPopup.IsOpen && SuggestionsListBox.SelectedItem is HistoryEntry selectedEntry)
+        {
+            url = selectedEntry.Url;
+        }
+        else
+        {
+            var input = AddressTextBox.Text?.Trim();
+            if (string.IsNullOrEmpty(input)) return;
+            url = IsUrl(input) ? (input.Contains("://") ? input : "https://" + input) : $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
+        }
+
+        if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
+
+        if (vm.IsPendingNewTab) {
+            vm.IsPendingNewTab = false;
+            vm.AddTabWithUrl(url);
+        } else if (vm.SelectedTab != null) {
+            vm.SelectedTab.Url = vm.SelectedTab.AddressUrl = url;
+            _webViewService.ActiveWebView?.CoreWebView2?.Navigate(url);
+        }
+        
         _webViewService.ActiveWebView?.Focus();
     }
 
@@ -330,7 +385,16 @@ public partial class MainWindow : Window
             var results = vm.HistoryManager.SearchHistory(query, 5);
             vm.Suggestions.Clear();
             foreach (var r in results) vm.Suggestions.Add(r);
-            SuggestionsPopup.IsOpen = vm.Suggestions.Count > 0;
+            
+            if (vm.Suggestions.Count > 0)
+            {
+                SuggestionsListBox.SelectedIndex = -1; // Reset selection
+                SuggestionsPopup.IsOpen = true;
+            }
+            else
+            {
+                SuggestionsPopup.IsOpen = false;
+            }
         } catch (TaskCanceledException) { }
     }
 
@@ -338,7 +402,10 @@ public partial class MainWindow : Window
     {
         AddressTextBox.SelectAll();
         if (DataContext is MainViewModel vm && vm.Suggestions.Count > 0 && SuggestionsPopup != null)
+        {
+            SuggestionsListBox.SelectedIndex = -1;
             SuggestionsPopup.IsOpen = true;
+        }
     }
 
     private void AddressTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -348,19 +415,45 @@ public partial class MainWindow : Window
 
     private void AddressTextBox_LostFocus(object sender, RoutedEventArgs e)
     {
-        Task.Delay(200).ContinueWith(_ => Dispatcher.Invoke(() => SuggestionsPopup.IsOpen = false));
+        if (DataContext is MainViewModel vm)
+        {
+            vm.IsPendingNewTab = false;
+            if (vm.SelectedTab != null && AddressTextBox.Text != vm.SelectedTab.AddressUrl)
+            {
+                // Only restore URL if we are not clicking on a suggestion
+                // We use a small delay to let the suggestion click process
+                Dispatcher.BeginInvoke(new Action(() => {
+                    if (!AddressTextBox.IsFocused && (SuggestionsPopup == null || !SuggestionsPopup.IsOpen))
+                    {
+                        _isUpdatingAddressBar = true;
+                        vm.AddressBarText = vm.SelectedTab.AddressUrl;
+                        _isUpdatingAddressBar = false;
+                    }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+        }
+        Task.Delay(200).ContinueWith(_ => Dispatcher.Invoke(() => { if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false; }));
     }
 
     private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is ListBox lb && lb.SelectedItem is HistoryEntry entry && DataContext is MainViewModel vm)
+        // Find the actual item clicked
+        var item = ItemsControl.ContainerFromElement(SuggestionsListBox, e.OriginalSource as DependencyObject) as ListBoxItem;
+        if (item != null && item.DataContext is HistoryEntry entry && DataContext is MainViewModel vm)
         {
-            if (vm.SelectedTab != null)
+            if (vm.IsPendingNewTab)
+            {
+                vm.IsPendingNewTab = false;
+                vm.AddTabWithUrl(entry.Url);
+            }
+            else if (vm.SelectedTab != null)
             {
                 vm.SelectedTab.Url = vm.SelectedTab.AddressUrl = entry.Url;
                 _webViewService.ActiveWebView?.CoreWebView2?.Navigate(entry.Url);
             }
-            SuggestionsPopup.IsOpen = false;
+            if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
+            _webViewService.ActiveWebView?.Focus();
+            e.Handled = true;
         }
     }
 
@@ -490,6 +583,16 @@ public partial class MainWindow : Window
             }
         }
         else if (e.LeftButton != MouseButtonState.Pressed) _dragStartPos = null;
+    }
+
+    private void MainGrid_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // If we click on the grid background (or any element that doesn't handle the click),
+        // we take focus away from the address bar.
+        if (AddressTextBox.IsFocused)
+        {
+            MainGrid.Focus();
+        }
     }
 
     private void Edge_MouseEnter(object sender, MouseEventArgs e)
@@ -623,19 +726,53 @@ public partial class MainWindow : Window
 
     private void CloseInstallBar_Click(object sender, RoutedEventArgs e) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) vm.SelectedTab.IsExtensionStorePage = false; }
 
+    private void ExtensionIcon_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string extId)
+        {
+            // Capture state on MouseDown: was the popup already open for this specific extension?
+            _wasOpenOnMouseDown = ExtensionPopup.IsOpen && _currentExtensionId == extId;
+        }
+    }
+
     private async void ExtensionIcon_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is string extId && DataContext is MainViewModel vm)
         {
+            // Toggle logic: If it was already open on MouseDown, we don't reopen it on Click (MouseUp).
+            if (_wasOpenOnMouseDown)
+            {
+                _wasOpenOnMouseDown = false;
+                _currentExtensionId = null;
+                return;
+            }
+
             var ext = vm.InstalledExtensions.FirstOrDefault(x => x.Id == extId);
             if (ext != null && !string.IsNullOrEmpty(ext.PopupUrl) && _webViewService.WebViewEnvironment != null)
             {
-                var btnPoint = btn.PointToScreen(new System.Windows.Point(0, btn.ActualHeight));
-                var popup = new ExtensionPopupWindow(ext.PopupUrl, ext.Name, _webViewService.WebViewEnvironment, btnPoint);
-                popup.Owner = this;
-                popup.Show();
+                _currentExtensionId = extId;
+                ExtensionPopup.PlacementTarget = btn;
+                ExtensionPopup.IsOpen = true;
+
+                try
+                {
+                    await ExtensionPopupWebView.EnsureCoreWebView2Async(_webViewService.WebViewEnvironment);
+                    ExtensionPopupWebView.CoreWebView2.Navigate(ext.PopupUrl);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Extension popup error: {ex.Message}");
+                    ExtensionPopup.IsOpen = false;
+                    _currentExtensionId = null;
+                }
             }
         }
+    }
+
+    private void CloseExtensionPopup_Click(object sender, RoutedEventArgs e)
+    {
+        ExtensionPopup.IsOpen = false;
+        _currentExtensionId = null;
     }
 
     private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
@@ -652,3 +789,4 @@ public partial class MainWindow : Window
         }
     }
 }
+
