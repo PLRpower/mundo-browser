@@ -20,6 +20,8 @@ public class WebViewService
     public WebView2? ActiveWebView => _activeWebView;
     public CoreWebView2Environment? WebViewEnvironment => _environment;
 
+    public WebView2? GetWebViewForTab(TabViewModel tab) => _webViews.TryGetValue(tab, out var wv) ? wv : null;
+
     public WebViewService(System.Windows.Controls.Panel container)
     {
         _container = container;

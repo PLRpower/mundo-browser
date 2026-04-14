@@ -48,6 +48,48 @@ namespace MundoBrowser.ViewModels
         private bool _isExtensionStorePage;
 
         [ObservableProperty]
+        private bool _isPlayingAudio;
+        
+        [ObservableProperty]
+        private bool _isMediaPaused;
+
+        [ObservableProperty]
+        private string? _mediaTitle;
+
+        [ObservableProperty]
+        private string? _mediaArtist;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(MediaPositionText))]
+        [NotifyPropertyChangedFor(nameof(MediaProgressRatio))]
+        private double _mediaPosition;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(MediaDurationText))]
+        [NotifyPropertyChangedFor(nameof(MediaProgressRatio))]
+        private double _mediaDuration;
+
+        public double MediaProgressRatio => MediaDuration > 0 ? (MediaPosition / MediaDuration) * 100 : 0;
+
+        [ObservableProperty]
+        private bool _isSeeking;
+
+        [ObservableProperty]
+        private bool _isMediaMuted;
+
+        public string MediaPositionText => FormatTime(MediaPosition);
+        public string MediaDurationText => FormatTime(MediaDuration);
+
+        private string FormatTime(double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds)) return "0:00";
+            var time = TimeSpan.FromSeconds(seconds);
+            return time.TotalHours >= 1 
+                ? time.ToString(@"h\:mm\:ss") 
+                : time.ToString(@"m\:ss");
+        }
+
+        [ObservableProperty]
         private string? _installableExtensionId;
 
         [RelayCommand]

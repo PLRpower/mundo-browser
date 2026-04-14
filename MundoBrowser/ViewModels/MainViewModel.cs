@@ -40,6 +40,46 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private ObservableCollection<ExtensionInfo> _installedExtensions = new();
 
+        [ObservableProperty]
+        private TabViewModel? _activeMediaTab;
+
+        partial void OnActiveMediaTabChanged(TabViewModel? value)
+        {
+            if (value != null) IsMediaBarVisible = true;
+        }
+
+        [ObservableProperty]
+        private bool _isMediaBarVisible = true;
+
+        [RelayCommand]
+        private void CloseMediaBar() => IsMediaBarVisible = false;
+
+        [RelayCommand]
+        private void MediaPlayPause()
+        {
+            if (ActiveMediaTab != null) ActiveMediaTab.IsMediaPaused = !ActiveMediaTab.IsMediaPaused;
+            RequestMediaAction("playPause");
+        }
+
+        [RelayCommand]
+        private void MediaNext() => RequestMediaAction("next");
+
+        [RelayCommand]
+        private void MediaPrevious() => RequestMediaAction("previous");
+
+        [RelayCommand]
+        private void MediaVolume()
+        {
+            if (ActiveMediaTab != null) ActiveMediaTab.IsMediaMuted = !ActiveMediaTab.IsMediaMuted;
+            RequestMediaAction("volume");
+        }
+
+        [RelayCommand]
+        private void MediaSeek(double percent) => RequestMediaAction($"seek:{percent.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+
+        public event EventHandler<string>? MediaActionRequested;
+        private void RequestMediaAction(string action) => MediaActionRequested?.Invoke(this, action);
+
         // Window state properties
         [ObservableProperty]
         private double _windowWidth = 1280;
@@ -197,6 +237,8 @@ namespace MundoBrowser.ViewModels
                     if (p.Tab == tab) { p.Tab = null; removed = true; break; }
                 }
             }
+            
+            if (removed && ActiveMediaTab == tab) ActiveMediaTab = null;
             
             if (removed && wasSelected)
             {

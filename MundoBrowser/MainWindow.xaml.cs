@@ -127,6 +127,73 @@ public partial class MainWindow : Window
         }
 
         vm.NewTabRequested += (_, _) => { AddressTextBox.Focus(); AddressTextBox.SelectAll(); };
+        vm.MediaActionRequested += OnMediaActionRequested;
+    }
+
+    private async void OnMediaActionRequested(object? sender, string action)
+    {
+        if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null) return;
+        
+        var webView = _webViewService.GetWebViewForTab(vm.ActiveMediaTab);
+        if (webView?.CoreWebView2 == null) return;
+
+        string script = "";
+        if (action.StartsWith("seek:"))
+        {
+            var parts = action.Split(':');
+            if (parts.Length == 2 && double.TryParse(parts[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double percent))
+            {
+                script = $@"
+                    (function() {{
+                        const media = document.querySelector('video, audio');
+                        if (media && media.duration > 0 && media.duration !== Infinity) {{
+                            media.currentTime = media.duration * ({percent.ToString(System.Globalization.CultureInfo.InvariantCulture)} / 100);
+                        }}
+                    }})()";
+            }
+        }
+        else
+        {
+            script = action switch
+            {
+                "playPause" => @"
+                    (function() {
+                        const video = document.querySelector('video, audio');
+                        if (video) {
+                            if (video.paused) video.play();
+                            else video.pause();
+                        } else {
+                            const btn = document.querySelector('#play-pause-button') || document.querySelector('.play-pause-button') || document.querySelector('.ytp-play-button');
+                            if (btn) btn.click();
+                        }
+                    })()",
+                "next" => @"
+                    (function() {
+                        const btn = document.querySelector('.next-button') || document.querySelector('[aria-label=""Suivant""]') || document.querySelector('[aria-label=""Next""]') || document.querySelector('.ytp-next-button');
+                        if (btn) btn.click();
+                    })()",
+                "previous" => @"
+                    (function() {
+                        const btn = document.querySelector('.previous-button') || document.querySelector('[aria-label=""Précédent""]') || document.querySelector('[aria-label=""Previous""]') || document.querySelector('.ytp-prev-button');
+                        if (btn) btn.click();
+                    })()",
+                "volume" => @"
+                    (function() {
+                        const video = document.querySelector('video, audio');
+                        if (video) video.muted = !video.muted;
+                        else {
+                            const btn = document.querySelector('.volume-button') || document.querySelector('.ytp-mute-button') || document.querySelector('[aria-label=""Mute""]') || document.querySelector('[aria-label=""Désactiver le son""]');
+                            if (btn) btn.click();
+                        }
+                    })()",
+                _ => ""
+            };
+        }
+
+        if (!string.IsNullOrEmpty(script))
+        {
+            try { await webView.CoreWebView2.ExecuteScriptAsync(script); } catch { }
+        }
     }
 
     private async Task SwitchToTabAsync(TabViewModel tab)
@@ -163,6 +230,72 @@ public partial class MainWindow : Window
 
     private void SetupWebViewEvents(WebView2 wv, TabViewModel tab)
     {
+        wv.CoreWebView2.IsDocumentPlayingAudioChanged += (s, e) =>
+        {
+            tab.IsPlayingAudio = wv.CoreWebView2.IsDocumentPlayingAudio;
+            if (tab.IsPlayingAudio && DataContext is MainViewModel vm)
+            {
+                vm.ActiveMediaTab = tab;
+                vm.IsMediaBarVisible = true; // Re-show if it was manually closed and music starts again
+            }
+        };
+
+        // Periodically update media info if this is or was the active media tab
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += async (s, e) =>
+        {
+            if (DataContext is not MainViewModel vm || vm.ActiveMediaTab != tab || wv.CoreWebView2 == null || tab.IsSeeking) return;
+            // We update even if !tab.IsPlayingAudio so we can see progress on pause
+            
+            try 
+            {
+                string script = @"
+                    (function() {
+                        const media = document.querySelector('video, audio');
+                        const metadata = navigator.mediaSession && navigator.mediaSession.metadata;
+                        return JSON.stringify({
+                            title: (metadata && metadata.title) || document.title,
+                            artist: (metadata && metadata.artist) || '',
+                            position: media ? media.currentTime : 0,
+                            duration: media ? (media.duration === Infinity ? 0 : media.duration) : 0,
+                            muted: media ? media.muted : false,
+                            paused: media ? media.paused : true,
+                            hasMedia: !!media && media.duration > 0
+                        });
+                    })()";
+                string resultJson = await wv.CoreWebView2.ExecuteScriptAsync(script);
+                if (!string.IsNullOrEmpty(resultJson) && resultJson != "null")
+                {
+                    // CoreWebView2.ExecuteScriptAsync returns a JSON string.
+                    // If the JS returns JSON.stringify, resultJson is a double-quoted JSON string.
+                    var rawJson = System.Text.Json.JsonSerializer.Deserialize<string>(resultJson);
+                    var data = System.Text.Json.JsonSerializer.Deserialize<MediaData>(rawJson);
+                    if (data != null && !tab.IsSeeking)
+                    {
+                        tab.MediaTitle = data.title;
+                        tab.MediaArtist = data.artist;
+                        tab.MediaPosition = data.position;
+                        tab.MediaDuration = data.duration;
+                        tab.IsMediaMuted = data.muted;
+                        
+                        // Force update playing status from DOM for reliable play/pause icon toggling
+                        if (data.hasMedia) {
+                            tab.IsMediaPaused = data.paused;
+                        }
+
+                        // Sticky logic: if this tab has media, it's eligible to stay the active media tab
+                        if (data.hasMedia && DataContext is MainViewModel mainVm)
+                        {
+                            if (mainVm.ActiveMediaTab == null || (tab.IsPlayingAudio && mainVm.ActiveMediaTab != tab))
+                                mainVm.ActiveMediaTab = tab;
+                        }
+                    }
+                }
+            }
+            catch { /* Ignore script errors */ }
+        };
+        timer.Start();
+
         wv.CoreWebView2.NavigationCompleted += (_, args) => {
             if (args.IsSuccess && DataContext is MainViewModel vm && vm.SelectedTab == tab) {
                 tab.Url = tab.AddressUrl = wv.CoreWebView2.Source;
@@ -233,6 +366,8 @@ public partial class MainWindow : Window
                 vm.CloseTab(tab);
             }
         };
+
+
     }
 
     private async Task FetchHighResIconAsync(WebView2 wv, TabViewModel tab)
@@ -538,7 +673,7 @@ public partial class MainWindow : Window
     {
         bool isMax = WindowState == WindowState.Maximized;
         MainGrid.Margin = isMax ? new Thickness(0) : new Thickness(0);
-        if (TopBar != null) { TopBar.Height = 40; WindowControlsStack.Margin = new Thickness(0); NavButtonsStack.Margin = new Thickness(0, 0, 15, 0); UrlBarBorder.Margin = new Thickness(0); ExtensionsControl.Margin = new Thickness(10, 0, 10, 0); }
+        if (TopBar != null) { TopBar.Height = 40; WindowControlsStack.Margin = new Thickness(0); UrlBarBorder.Margin = new Thickness(0); ExtensionsControl.Margin = new Thickness(10, 0, 10, 0); }
         var chrome = WindowChrome.GetWindowChrome(this);
         if (chrome != null) chrome.ResizeBorderThickness = isMax ? new Thickness(0) : new Thickness(6);
         if (RightResizeBorder != null) RightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
@@ -641,9 +776,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Edge_MouseEnter(object sender, MouseEventArgs e)
+    private void EdgeTrigger_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating && !_isFullscreen) ShowFloatingSidebar();
+        if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating) ShowFloatingSidebar();
     }
 
     private void CheckForExtensionStorePage(TabViewModel tab, string url)
@@ -877,6 +1012,17 @@ public partial class MainWindow : Window
                 if (ext != null) { await ext.RemoveAsync(); await LoadExtensionsAsync(); }
             }
         }
+    }
+
+    public class MediaData
+    {
+        public string title { get; set; } = "";
+        public string artist { get; set; } = "";
+        public double position { get; set; }
+        public double duration { get; set; }
+        public bool muted { get; set; }
+        public bool paused { get; set; }
+        public bool hasMedia { get; set; }
     }
 }
 

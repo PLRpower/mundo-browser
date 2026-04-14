@@ -150,19 +150,20 @@
         <!-- TOP BAR — pleine largeur sur toute la fenêtre (Row 0) -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <Border x:Name="TopBar" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
-                Background="#252526" Height="40" Padding="15,0,0,0">
+                Background="#252526" Height="40">
             <Grid MouseDown="TitleBar_MouseDown" Background="Transparent">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="3*"/>    <!-- URL Box takes 60% -->
-                    <ColumnDefinition Width="*"/>     <!-- Empty space -->
+                    <!-- Col 0: Synced with sidebar but has a MinWidth to keep Nav buttons visible when sidebar is hidden -->
+                    <ColumnDefinition Width="{Binding Width, ElementName=SidebarColumn}" MinWidth="140"/>
+                    <ColumnDefinition Width="{Binding Width, ElementName=SplitterColumn}"/>
+                    <ColumnDefinition Width="1.5*"/>    <!-- URL Box size reduced -->
+                    <ColumnDefinition Width="*"/>       <!-- Empty space -->
                     <ColumnDefinition Width="Auto"/>  <!-- Extensions Icons -->
                     <ColumnDefinition Width="Auto"/>  <!-- Window Controls Column -->
                 </Grid.ColumnDefinitions>
                 
                 <!-- Nav Buttons -->
-                <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="0,0,15,0" VerticalAlignment="Center" x:Name="NavButtonsStack">
+                <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="15,0,0,0" VerticalAlignment="Center" x:Name="NavButtonsStack">
                     <Button x:Name="BackButton" Width="30" Height="30" Style="{StaticResource NavButtonStyle}" Click="Back_Click">
                         <Viewbox Width="16" Height="16">
                             <Path Data="{StaticResource IconLeft}" Fill="White" Width="20" Height="20"/>
@@ -412,7 +413,7 @@
                Width="250">
             <!-- La hauteur du popup couvre uniquement Row1 (sous la TopBar) -->
             <Grid Width="250" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
-                <Border x:Name="FloatingSidebarContent" Background="#252526" CornerRadius="0,10,10,0" Margin="0,5,0,15">
+                <Border x:Name="FloatingSidebarContent" Background="#252526" CornerRadius="0" Margin="0">
                     <Border.RenderTransform>
                         <TranslateTransform X="0" />
                     </Border.RenderTransform>
