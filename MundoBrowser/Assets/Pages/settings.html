@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>about:preferences</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --sidebar-color: #1e1e1e;
+            --accent-color: #007ACC;
+            --text-color: #e0e0e0;
+            --secondary-text: #b0b0b0;
+            --border-color: #333;
+            --hover-color: #2d2d2d;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: var(--sidebar-color);
+            border-right: 1px solid var(--border-color);
+            padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-item {
+            padding: 12px 25px;
+            cursor: pointer;
+            transition: background 0.2s;
+            color: var(--secondary-text);
+            display: flex;
+            align-items: center;
+        }
+
+        .sidebar-item:hover {
+            background-color: var(--hover-color);
+            color: white;
+        }
+
+        .sidebar-item.active {
+            border-left: 4px solid var(--accent-color);
+            background-color: var(--hover-color);
+            color: white;
+            padding-left: 21px;
+        }
+
+        .content {
+            flex: 1;
+            padding: 40px 60px;
+            overflow-y: auto;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 30px;
+            font-weight: 400;
+        }
+
+        section {
+            margin-bottom: 40px;
+            max-width: 800px;
+        }
+
+        h2 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #222;
+        }
+
+        .setting-info {
+            flex: 1;
+            padding-right: 20px;
+        }
+
+        .setting-title {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+
+        .setting-description {
+            font-size: 14px;
+            color: var(--secondary-text);
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 22px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #444;
+            transition: .4s;
+            border-radius: 22px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        select, input[type="text"], input[type="number"] {
+            background-color: #2d2d2d;
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        button.btn-primary {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        button.btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .extension-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #333;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-item active" onclick="showPage('general')">Général</div>
+        <div class="sidebar-item" onclick="showPage('appearance')">Apparence</div>
+        <div class="sidebar-item" onclick="showPage('privacy')">Confidentialité</div>
+        <div class="sidebar-item" onclick="showPage('extensions')">Extensions</div>
+        <div class="sidebar-item" onclick="showPage('about')">À propos</div>
+    </div>
+    
+    <div class="content">
+        <!-- GENERAL -->
+        <div id="page-general" class="page active">
+            <h1>Général</h1>
+            <section>
+                <h2>Démarrage</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Page de démarrage</div>
+                        <div class="setting-description">L'URL qui s'ouvre lors de la création d'un nouvel onglet.</div>
+                    </div>
+                    <input type="text" id="start-page" value="https://www.google.com" style="width: 250px;">
+                </div>
+            </section>
+
+            <section>
+                <h2>Performance</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Économie de Mémoire (EcoMode)</div>
+                        <div class="setting-description">Met en veille les onglets inactifs pour libérer de la RAM.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="ecomode-enabled" checked onchange="updateSetting('ecoModeEnabled', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Délai d'inactivité</div>
+                        <div class="setting-description">Durée avant qu'un onglet ne soit mis en veille (en minutes).</div>
+                    </div>
+                    <select id="ecomode-duration" onchange="updateSetting('ecoModeDuration', this.value)">
+                        <option value="1">1 minute</option>
+                        <option value="5">5 minutes</option>
+                        <option value="10" selected>10 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 heure</option>
+                    </select>
+                </div>
+            </section>
+        </div>
+
+        <!-- APPEARANCE -->
+        <div id="page-appearance" class="page">
+            <h1>Apparence</h1>
+            <section>
+                <h2>Thème</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Mode sombre</div>
+                        <div class="setting-description">Utiliser une interface sombre pour reposer vos yeux.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" checked disabled>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </section>
+            <section>
+                <h2>Interface</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Largeur de la barre latérale</div>
+                        <div class="setting-description">Ajuster la taille par défaut de la barre latérale.</div>
+                    </div>
+                    <input type="number" value="250" style="width: 80px;">
+                </div>
+            </section>
+        </div>
+
+        <!-- PRIVACY -->
+        <div id="page-privacy" class="page">
+            <h1>Confidentialité et Sécurité</h1>
+            <section>
+                <h2>Navigation</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Effacer les données de navigation</div>
+                        <div class="setting-description">Supprimer l'historique, les cookies et le cache.</div>
+                    </div>
+                    <button class="btn-primary" onclick="alert('Données effacées !')">Effacer maintenant</button>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Envoyer "Do Not Track"</div>
+                        <div class="setting-description">Demander aux sites de ne pas vous suivre.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </section>
+        </div>
+
+        <!-- EXTENSIONS -->
+        <div id="page-extensions" class="page">
+            <h1>Extensions</h1>
+            <section>
+                <div id="extensions-list">
+                    <p style="color: var(--secondary-text)">Gérez vos extensions installées depuis le Chrome Web Store.</p>
+                    <!-- Liste dynamique à venir ou statique pour le moment -->
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <div class="setting-title">Accéder au catalogue</div>
+                            <div class="setting-description">Trouvez de nouvelles extensions sur le Chrome Web Store.</div>
+                        </div>
+                        <button class="btn-primary" onclick="window.location.href='https://chromewebstore.google.com/'">Parcourir</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ABOUT -->
+        <div id="page-about" class="page">
+            <h1>À propos de MundoBrowser</h1>
+            <section>
+                <div style="text-align: center; padding: 40px 0;">
+                    <h2 style="border: none; margin-bottom: 10px;">MundoBrowser</h2>
+                    <p style="color: var(--secondary-text)">Version 1.0.0 (Build stable)</p>
+                    <p style="margin-top: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                        Un navigateur moderne, rapide et élégant basé sur WebView2 et .NET.
+                    </p>
+                    <div style="margin-top: 40px;">
+                        <button class="btn-primary" onclick="alert('Vous êtes à jour !')">Rechercher des mises à jour</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        function showPage(pageId, updateHash = true) {
+            // Update sidebar
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('onclick')?.includes(`'${pageId}'`)) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Update content
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            const targetPage = document.getElementById('page-' + pageId);
+            if (targetPage) targetPage.classList.add('active');
+
+            if (updateHash) {
+                window.location.hash = pageId;
+                updateSetting('subPage', pageId);
+            }
+        }
+
+        // Handle initial hash and back/forward
+        window.addEventListener('hashchange', () => {
+            const hash = window.location.hash.substring(1) || 'general';
+            showPage(hash, false);
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const hash = window.location.hash.substring(1) || 'general';
+            showPage(hash, false);
+        });
+
+        function updateSetting(key, value) {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                    type: 'settingChanged',
+                    key: key,
+                    value: value
+                });
+            }
+            console.log("Setting changed:", key, value);
+        }
+
+        // Écouter les messages venant du C# (si besoin)
+        if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', event => {
+                const data = event.data;
+                if (data.type === 'initSettings') {
+                    // Initialiser les valeurs du formulaire avec les données du navigateur
+                    if (data.ecoModeDuration) {
+                        document.getElementById('ecomode-duration').value = data.ecoModeDuration;
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

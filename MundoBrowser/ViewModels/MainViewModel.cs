@@ -124,6 +124,12 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void ToggleSidebar() => IsSidebarVisible = !IsSidebarVisible;
 
+        [RelayCommand]
+        public void OpenSettings()
+        {
+            AddTabWithUrl("about:preferences");
+        }
+
         public MainViewModel()
         {
             HistoryManager = new HistoryManager();
@@ -146,14 +152,24 @@ namespace MundoBrowser.ViewModels
                 {
                     foreach (var tabData in session.Tabs)
                     {
-                        Tabs.Add(new TabViewModel { Title = tabData.Title, Url = tabData.Url, AddressUrl = tabData.Url, FaviconUrl = tabData.FaviconUrl });
+                        Tabs.Add(new TabViewModel { 
+                            Title = tabData.Title ?? "New Tab", 
+                            Url = tabData.Url ?? "https://www.google.com", 
+                            AddressUrl = tabData.Url ?? "https://www.google.com", 
+                            FaviconUrl = tabData.FaviconUrl 
+                        });
                     }
 
                     foreach (var pinnedData in session.PinnedTabs)
                     {
                         if (pinnedData.SlotIndex >= 0 && pinnedData.SlotIndex < PinnedTabs.Count)
                         {
-                            PinnedTabs[pinnedData.SlotIndex].Tab = new TabViewModel { Title = pinnedData.Title, Url = pinnedData.Url, AddressUrl = pinnedData.Url, FaviconUrl = pinnedData.FaviconUrl };
+                            PinnedTabs[pinnedData.SlotIndex].Tab = new TabViewModel { 
+                                Title = pinnedData.Title ?? "New Tab", 
+                                Url = pinnedData.Url ?? "https://www.google.com", 
+                                AddressUrl = pinnedData.Url ?? "https://www.google.com", 
+                                FaviconUrl = pinnedData.FaviconUrl 
+                            };
                         }
                     }
 
@@ -178,14 +194,14 @@ namespace MundoBrowser.ViewModels
 
         private void CreateDefaultTab()
         {
-            var newTab = new TabViewModel { Title = "New Tab", Url = "https://www.google.com" };
+            var newTab = new TabViewModel { Title = "New Tab", Url = "https://www.google.com", IsDiscarded = false };
             Tabs.Add(newTab);
             SelectedTab = newTab;
         }
-        
-        public void SaveCurrentSession()
+
+        public async Task SaveCurrentSessionAsync()
         {
-            SessionManager.SaveSession(this);
+            await SessionManager.SaveSessionAsync(this);
         }
 
         public event EventHandler? NewTabRequested;
@@ -200,7 +216,7 @@ namespace MundoBrowser.ViewModels
 
         public void AddTabWithUrl(string url)
         {
-            var newTab = new TabViewModel { Title = "Loading...", Url = url, AddressUrl = url };
+            var newTab = new TabViewModel { Title = "Loading...", Url = url, AddressUrl = url, IsDiscarded = false };
             Tabs.Add(newTab);
             SelectedTab = newTab;
         }

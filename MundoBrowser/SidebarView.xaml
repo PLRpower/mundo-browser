@@ -7,7 +7,7 @@
              mc:Ignorable="d" 
              d:DesignHeight="720" d:DesignWidth="250">
     <UserControl.Resources>
-        <local:BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="MediaButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -151,6 +151,9 @@
                                         <Trigger Property="IsPressed" Value="True">
                                             <Setter TargetName="border" Property="Background" Value="#1E1E1E"/>
                                         </Trigger>
+                                        <DataTrigger Binding="{Binding Tab.IsDiscarded}" Value="True">
+                                            <Setter TargetName="PinnedContent" Property="Opacity" Value="0.4"/>
+                                        </DataTrigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
                             </Button.Template>
@@ -257,7 +260,7 @@
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Grid>
+                        <Grid x:Name="TabContent">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -333,9 +336,36 @@
                                 </Button.Template>
                             </Button>
                         </Grid>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsDiscarded}" Value="True">
+                                <Setter TargetName="TabContent" Property="Opacity" Value="0.4"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+
+            <!-- Bottom Actions (Row 4) -->
+            <StackPanel Grid.Row="4" Margin="10,0,10,5">
+                <Button Command="{Binding OpenSettingsCommand}" 
+                        Background="Transparent" Foreground="#666" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Left">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="8">
+                                <Viewbox Width="18" Height="18">
+                                    <Path Data="{StaticResource IconSettings}" Fill="{TemplateBinding Foreground}"/>
+                                </Viewbox>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#2D2D30"/>
+                                    <Setter Property="Foreground" Value="#CCC"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
 
             <!-- Media Control Bar (Row 5) -->
             <Border Grid.Row="5" x:Name="MediaBar" Background="#0A0A0A" CornerRadius="12" Margin="10,5,10,15" Padding="12,10">

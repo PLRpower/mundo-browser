@@ -12,7 +12,7 @@ namespace MundoBrowser.ViewModels
         private DateTime _lastAccessed = DateTime.Now;
 
         [ObservableProperty]
-        private bool _isDiscarded;
+        private bool _isDiscarded = true;
 
         // The active URL of the WebView
         [ObservableProperty]

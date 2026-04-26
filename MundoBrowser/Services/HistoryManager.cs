@@ -1,10 +1,11 @@
 using System.IO;
 using System.Text.Json;
 using MundoBrowser.Models;
+using MundoBrowser.Interfaces;
 
 namespace MundoBrowser.Services
 {
-    public class HistoryManager
+    public class HistoryManager : IHistoryManager
     {
         private readonly string _historyFilePath;
         private readonly List<HistoryEntry> _history;

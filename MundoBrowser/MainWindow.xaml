@@ -141,7 +141,7 @@
             <RowDefinition Height="*"/>    <!-- Sidebar + WebView -->
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="SidebarColumn" Width="250" MaxWidth="400" /> <!-- Sidebar Column -->
+            <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="200" MaxWidth="400" /> <!-- Sidebar Column -->
             <ColumnDefinition x:Name="SplitterColumn" Width="Auto" /> <!-- Splitter -->
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
@@ -153,9 +153,9 @@
                 Background="#252526" Height="40">
             <Grid MouseDown="TitleBar_MouseDown" Background="Transparent">
                 <Grid.ColumnDefinitions>
-                    <!-- Col 0: Synced with sidebar but has a MinWidth to keep Nav buttons visible when sidebar is hidden -->
-                    <ColumnDefinition Width="{Binding Width, ElementName=SidebarColumn}" MinWidth="140"/>
-                    <ColumnDefinition Width="{Binding Width, ElementName=SplitterColumn}"/>
+                    <!-- Col 0: Fixed width matching SidebarWidth to keep Nav buttons and URL box in place even when sidebar is hidden -->
+                    <ColumnDefinition Width="{Binding SidebarWidth}" MinWidth="140"/>
+                    <ColumnDefinition Width="5"/>
                     <ColumnDefinition Width="1.5*"/>    <!-- URL Box size reduced -->
                     <ColumnDefinition Width="*"/>       <!-- Empty space -->
                     <ColumnDefinition Width="Auto"/>  <!-- Extensions Icons -->
@@ -163,7 +163,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <!-- Nav Buttons -->
-                <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="15,0,0,0" VerticalAlignment="Center" x:Name="NavButtonsStack">
+                <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="12,0,15,0" VerticalAlignment="Center" HorizontalAlignment="Left" x:Name="NavButtonsStack">
                     <Button x:Name="BackButton" Width="30" Height="30" Style="{StaticResource NavButtonStyle}" Click="Back_Click">
                         <Viewbox Width="16" Height="16">
                             <Path Data="{StaticResource IconLeft}" Fill="White" Width="20" Height="20"/>
@@ -228,7 +228,7 @@
                                      Background="Transparent" BorderThickness="0" Foreground="White"
                                      VerticalAlignment="Center" Margin="12,0,15,0" FontSize="14"
                                      CaretBrush="White"
-                                     KeyDown="AddressBar_KeyDown"
+                                     PreviewKeyDown="AddressBar_KeyDown"
                                      TextChanged="AddressTextBox_TextChanged"
                                      GotFocus="AddressTextBox_GotFocus"
                                      LostFocus="AddressTextBox_LostFocus"
@@ -237,11 +237,12 @@
 
                         <!-- Autocomplete Popup -->
                         <Popup x:Name="SuggestionsPopup"
-                               PlacementTarget="{Binding ElementName=AddressTextBox}"
+                               PlacementTarget="{Binding ElementName=UrlBarBorder}"
                                Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
-                               VerticalOffset="5" HorizontalOffset="-40">
+                               VerticalOffset="5">
                             <Border Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1"
-                                    CornerRadius="12" Padding="4" Width="600">
+                                    CornerRadius="12" Padding="4" 
+                                    Width="{Binding ActualWidth, ElementName=UrlBarBorder}">
                                 <Border.Effect>
                                     <DropShadowEffect Color="Black" Opacity="0.5" BlurRadius="15" ShadowDepth="3" Direction="270"/>
                                 </Border.Effect>
@@ -279,14 +280,28 @@
                                     </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="🔗" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                <TextBlock Text="{Binding Title}" FontWeight="Normal" FontSize="13" Foreground="White"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="200"/>
-                                                <TextBlock Text=" • " FontSize="13" Foreground="#555" VerticalAlignment="Center" Margin="4,0"/>
-                                                <TextBlock Text="{Binding Url}" FontSize="12" Foreground="#888"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                            </StackPanel>
+                                            <Grid Margin="0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="32"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                
+                                                <TextBlock x:Name="IconBlock" Text="🔗" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" Grid.Column="0"/>
+                                                
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" Foreground="White"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock x:Name="UrlBlock" Text="{Binding Url}" FontSize="11" Foreground="#888"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding VisitCount}" Value="-1">
+                                                    <Setter TargetName="IconBlock" Property="Text" Value="🔍"/>
+                                                    <Setter TargetName="IconBlock" Property="Foreground" Value="#4285F4"/>
+                                                    <Setter TargetName="UrlBlock" Property="Text" Value="Recherche Google"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>

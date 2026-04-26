@@ -6,34 +6,14 @@ using System.Threading.Tasks;
 using System.Security.Cryptography;
 using MundoBrowser.ViewModels;
 using MundoBrowser.Models;
+using MundoBrowser.Interfaces;
 
 namespace MundoBrowser.Services
 {
-    public class TabSessionData
-    {
-        public string Title { get; set; } = "New Tab";
-        public string Url { get; set; } = "https://www.google.com";
-        public string? FaviconRelativePath { get; set; }
-        public string? FaviconUrl { get; set; }
-        public int SlotIndex { get; set; } = -1;
-    }
-
-    public class SessionData
-    {
-        public List<TabSessionData> Tabs { get; set; } = new();
-        public List<TabSessionData> PinnedTabs { get; set; } = new();
-        public int SelectedTabIndex { get; set; } = 0;
-        public bool IsSelectedTabPinned { get; set; } = false;
-        
-        // Window State
-        public double WindowWidth { get; set; } = 1280;
-        public double WindowHeight { get; set; } = 800;
-        public double WindowLeft { get; set; } = 100;
-        public double WindowTop { get; set; } = 100;
-        public int WindowState { get; set; } = 0; // 0: Normal, 1: Minimized, 2: Maximized
-    }
-
-    public class SessionManager
+    /// <summary>
+    /// Default implementation of ISessionManager for browser session persistence.
+    /// </summary>
+    public class SessionManager : ISessionManager
     {
         private readonly string _sessionFilePath;
         private readonly string _faviconsPath;
@@ -50,7 +30,8 @@ namespace MundoBrowser.Services
             Directory.CreateDirectory(_faviconsPath);
         }
 
-        public async void SaveSession(MainViewModel vm)
+        /// <inheritdoc/>
+        public async Task SaveSessionAsync(MainViewModel vm)
         {
             await _saveLock.WaitAsync();
             try
@@ -76,21 +57,6 @@ namespace MundoBrowser.Services
                     });
                 }
 
-                foreach (var pinned in vm.PinnedTabs)
-                {
-                    if (pinned.Tab != null)
-                    {
-                        sessionData.PinnedTabs.Add(new TabSessionData
-                        {
-                            Title = pinned.Tab.Title,
-                            Url = pinned.Tab.Url,
-                            FaviconRelativePath = pinned.Tab.FaviconRelativePath,
-                            FaviconUrl = pinned.Tab.FaviconUrl,
-                            SlotIndex = pinned.SlotIndex
-                        });
-                    }
-                }
-
                 // Save pinned tabs
                 foreach (var pinned in vm.PinnedTabs)
                 {
@@ -100,6 +66,7 @@ namespace MundoBrowser.Services
                         {
                             Title = pinned.Tab.Title,
                             Url = pinned.Tab.Url,
+                            FaviconRelativePath = pinned.Tab.FaviconRelativePath,
                             FaviconUrl = pinned.Tab.FaviconUrl,
                             SlotIndex = pinned.SlotIndex
                         });
@@ -140,6 +107,7 @@ namespace MundoBrowser.Services
             }
         }
 
+        /// <inheritdoc/>
         public SessionData? LoadSession()
         {
             try
@@ -156,35 +124,6 @@ namespace MundoBrowser.Services
             }
             return null;
         }
-
-        public async Task<string?> SaveFaviconLocally(Stream stream, string url)
-        {
-            if (stream == null || string.IsNullOrEmpty(url)) return null;
-
-            try
-            {
-                string hash = GetStringHash(url);
-                string fileName = $"{hash}.png";
-                string fullPath = Path.Combine(_faviconsPath, fileName);
-
-                using (var fileStream = File.Create(fullPath))
-                {
-                    await stream.CopyToAsync(fileStream);
-                }
-
-                return new Uri(fullPath).AbsoluteUri;
-            }
-            catch { return null; }
-        }
-
-        private string GetStringHash(string text)
-        {
-            using (var md5 = MD5.Create())
-            {
-                byte[] inputBytes = System.Text.Encoding.ASCII.GetBytes(text);
-                byte[] hashBytes = md5.ComputeHash(inputBytes);
-                return Convert.ToHexString(hashBytes);
-            }
-        }
     }
 }
+

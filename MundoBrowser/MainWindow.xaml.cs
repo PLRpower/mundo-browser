@@ -43,7 +43,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         
         var vm = (MainViewModel)DataContext;
-        _webViewService = new WebViewService(WebViewsContainer);
+        _webViewService = new WebViewService();
 
         InitializeWindow();
         InitializeEvents(vm);
@@ -52,6 +52,7 @@ public partial class MainWindow : Window
         SourceInitialized += (s, e) =>
         {
             var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            NativeMethods.SetWindowAppId(handle, "MundoBrowser.App");
             System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
         };
     }
@@ -70,7 +71,12 @@ public partial class MainWindow : Window
     {
         NativeMethods.SetWindowCorners(this, NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND);
         StateChanged += (_, _) => OnWindowStateChanged();
-        Closing += (_, _) => ((MainViewModel)DataContext).SaveCurrentSession();
+        Closing += async (_, _) => {
+            if (DataContext is MainViewModel vm)
+            {
+                await vm.SaveCurrentSessionAsync();
+            }
+        };
         
         AddHandler(PreviewMouseDownEvent, new MouseButtonEventHandler(Window_PreviewMouseDown), true);
 
@@ -81,7 +87,7 @@ public partial class MainWindow : Window
             quickPopup.PlacementTarget = MainGrid;
 
         ContentRendered += async (_, _) => {
-            await _webViewService.InitializeAsync();
+            await _webViewService.InitializeAsync(WebViewsContainer);
             if (DataContext is MainViewModel vm && vm.SelectedTab != null)
             {
                 await SwitchToTabAsync(vm.SelectedTab);
@@ -201,7 +207,7 @@ public partial class MainWindow : Window
         if (tab == null) return;
 
         var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-        _webViewService.SwitchToTab(tab, webView);
+        await _webViewService.SwitchToTabAsync(tab, webView);
 
         if (DataContext is MainViewModel vm)
         {
@@ -217,12 +223,9 @@ public partial class MainWindow : Window
         {
             Dispatcher.Invoke(async () => {
                 var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-                if (webView != null && webView.CoreWebView2 != null)
+                if (webView.CoreWebView2.Source != tab.Url)
                 {
-                    if (webView.CoreWebView2.Source != tab.Url)
-                    {
-                        webView.CoreWebView2.Navigate(tab.Url);
-                    }
+                    webView.CoreWebView2.Navigate(tab.Url);
                 }
             });
         }
@@ -269,25 +272,28 @@ public partial class MainWindow : Window
                     // CoreWebView2.ExecuteScriptAsync returns a JSON string.
                     // If the JS returns JSON.stringify, resultJson is a double-quoted JSON string.
                     var rawJson = System.Text.Json.JsonSerializer.Deserialize<string>(resultJson);
-                    var data = System.Text.Json.JsonSerializer.Deserialize<MediaData>(rawJson);
-                    if (data != null && !tab.IsSeeking)
+                    if (rawJson != null)
                     {
-                        tab.MediaTitle = data.title;
-                        tab.MediaArtist = data.artist;
-                        tab.MediaPosition = data.position;
-                        tab.MediaDuration = data.duration;
-                        tab.IsMediaMuted = data.muted;
-                        
-                        // Force update playing status from DOM for reliable play/pause icon toggling
-                        if (data.hasMedia) {
-                            tab.IsMediaPaused = data.paused;
-                        }
-
-                        // Sticky logic: if this tab has media, it's eligible to stay the active media tab
-                        if (data.hasMedia && DataContext is MainViewModel mainVm)
+                        var data = System.Text.Json.JsonSerializer.Deserialize<MediaData>(rawJson);
+                        if (data != null && !tab.IsSeeking)
                         {
-                            if (mainVm.ActiveMediaTab == null || (tab.IsPlayingAudio && mainVm.ActiveMediaTab != tab))
-                                mainVm.ActiveMediaTab = tab;
+                            tab.MediaTitle = data.title;
+                            tab.MediaArtist = data.artist;
+                            tab.MediaPosition = data.position;
+                            tab.MediaDuration = data.duration;
+                            tab.IsMediaMuted = data.muted;
+                            
+                            // Force update playing status from DOM for reliable play/pause icon toggling
+                            if (data.hasMedia) {
+                                tab.IsMediaPaused = data.paused;
+                            }
+
+                            // Sticky logic: if this tab has media, it's eligible to stay the active media tab
+                            if (data.hasMedia && DataContext is MainViewModel mainVm)
+                            {
+                                if (mainVm.ActiveMediaTab == null || (tab.IsPlayingAudio && mainVm.ActiveMediaTab != tab))
+                                    mainVm.ActiveMediaTab = tab;
+                            }
                         }
                     }
                 }
@@ -298,7 +304,21 @@ public partial class MainWindow : Window
 
         wv.CoreWebView2.NavigationCompleted += (_, args) => {
             if (args.IsSuccess && DataContext is MainViewModel vm && vm.SelectedTab == tab) {
-                tab.Url = tab.AddressUrl = wv.CoreWebView2.Source;
+                var source = wv.CoreWebView2.Source;
+                if (source.Contains("internals.mundobrowser"))
+                {
+                    // For settings, we trust SourceChanged or initial mapping
+                    if (string.IsNullOrEmpty(tab.AddressUrl) || !tab.AddressUrl.StartsWith("about:preferences"))
+                    {
+                        string hash = source.Contains("#") ? source.Substring(source.IndexOf("#")) : "#general";
+                        tab.AddressUrl = "about:preferences" + hash;
+                    }
+                }
+                else
+                {
+                    tab.Url = tab.AddressUrl = source;
+                }
+                
                 UpdateTitle();
                 vm.HistoryManager.AddEntry(tab.Url, wv.CoreWebView2.DocumentTitle);
 
@@ -315,7 +335,27 @@ public partial class MainWindow : Window
         };
 
         wv.CoreWebView2.SourceChanged += async (_, _) => {
-            tab.AddressUrl = wv.CoreWebView2.Source;
+            var source = wv.CoreWebView2.Source;
+            // Precise detection for our settings page
+            if (wv.CoreWebView2.DocumentTitle == "about:preferences" || source.Contains("internals.mundobrowser"))
+            {
+                // If it's our internal settings URL, parse the hash
+                if (source.Contains("settings.html"))
+                {
+                    string hash = source.Contains("#") ? source.Substring(source.IndexOf("#")) : "#general";
+                    tab.AddressUrl = "about:preferences" + hash;
+                }
+                // Otherwise keep current AddressUrl if it's already about:preferences
+                else if (string.IsNullOrEmpty(tab.AddressUrl) || !tab.AddressUrl.StartsWith("about:preferences"))
+                {
+                    tab.AddressUrl = "about:preferences#general";
+                }
+            }
+            else if (source != "about:blank")
+            {
+                tab.AddressUrl = source;
+            }
+
             if (DataContext is MainViewModel vm && vm.SelectedTab == tab) {
                 _isUpdatingAddressBar = true;
                 vm.AddressBarText = tab.AddressUrl;
@@ -323,29 +363,16 @@ public partial class MainWindow : Window
 
                 CheckForExtensionStorePage(tab, tab.AddressUrl);
             }
-            await FetchHighResIconAsync(wv, tab);
+            if (DataContext is MainViewModel mainVm)
+            {
+                await mainVm.FaviconService.ResolveFaviconAsync(wv, tab);
+            }
         };
 
         wv.CoreWebView2.FaviconChanged += async (s, args) => {
-            try 
+            if (DataContext is MainViewModel vm)
             {
-                using var stream = await wv.CoreWebView2.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
-                if (stream != null && DataContext is MainViewModel vm)
-                {
-                    var localPath = await vm.SessionManager.SaveFaviconLocally(stream, wv.CoreWebView2.Source);
-                    if (localPath != null) tab.FaviconUrl = localPath;
-                }
-            }
-            catch { }
-            
-            if (string.IsNullOrEmpty(tab.FaviconUrl) || tab.FaviconUrl.StartsWith("http"))
-            {
-                try 
-                {
-                    var uri = new Uri(wv.CoreWebView2.Source);
-                    tab.FaviconUrl = $"https://www.google.com/s2/favicons?sz=64&domain_url={uri.Host}";
-                }
-                catch { tab.FaviconUrl = wv.CoreWebView2.FaviconUri; }
+                await vm.FaviconService.ResolveFaviconAsync(wv, tab, forceReload: true);
             }
         };
 
@@ -368,61 +395,6 @@ public partial class MainWindow : Window
         };
 
 
-    }
-
-    private async Task FetchHighResIconAsync(WebView2 wv, TabViewModel tab)
-    {
-        try
-        {
-            string script = @"
-                (function() {
-                    let links = Array.from(document.querySelectorAll('link[rel*=""icon""], link[rel*=""apple-touch-icon""]'));
-                    let best = null;
-                    let maxSize = 0;
-                    links.forEach(l => {
-                        let size = 0;
-                        if (l.sizes && l.sizes.value) {
-                            size = parseInt(l.sizes.value.split('x')[0]);
-                        } else if (l.rel.includes('apple-touch-icon')) {
-                            size = 180;
-                        }
-                        if (size >= maxSize) {
-                            maxSize = size;
-                            best = l.href;
-                        }
-                    });
-                    return best;
-                })()";
-
-            var iconUrl = await wv.CoreWebView2.ExecuteScriptAsync(script);
-            iconUrl = iconUrl?.Trim('\"');
-
-            if (!string.IsNullOrEmpty(iconUrl) && iconUrl != "null")
-            {
-                if (iconUrl.StartsWith("data:"))
-                {
-                    tab.FaviconUrl = iconUrl;
-                    return;
-                }
-
-                if (DataContext is MainViewModel vm)
-                {
-                    using var client = new HttpClient();
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, gridClick/537.36) Chrome/120.0.0.0 Safari/537.36");
-                    
-                    var bytes = await client.GetByteArrayAsync(iconUrl);
-                    using var ms = new MemoryStream(bytes);
-                    var localPath = await vm.SessionManager.SaveFaviconLocally(ms, wv.CoreWebView2.Source);
-                    if (localPath != null) tab.FaviconUrl = localPath;
-                }
-            }
-            else
-            {
-                var host = new Uri(wv.CoreWebView2.Source).Host;
-                tab.FaviconUrl = $"https://www.google.com/s2/favicons?sz=128&domain_url={host}";
-            }
-        }
-        catch { }
     }
 
     private void UpdateTitle()
@@ -462,6 +434,11 @@ public partial class MainWindow : Window
                     SuggestionsListBox.SelectedIndex++;
                     SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
                 }
+                else if (SuggestionsListBox.Items.Count > 0)
+                {
+                    SuggestionsListBox.SelectedIndex = 0;
+                    SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
+                }
                 e.Handled = true;
                 return;
             }
@@ -471,6 +448,10 @@ public partial class MainWindow : Window
                 {
                     SuggestionsListBox.SelectedIndex--;
                     SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
+                }
+                else
+                {
+                    SuggestionsListBox.SelectedIndex = -1;
                 }
                 e.Handled = true;
                 return;
@@ -489,7 +470,14 @@ public partial class MainWindow : Window
         {
             var input = AddressTextBox.Text?.Trim();
             if (string.IsNullOrEmpty(input)) return;
-            url = IsUrl(input) ? (input.Contains("://") ? input : "https://" + input) : $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
+            if (IsUrl(input))
+            {
+                url = (input.Contains("://") || input.StartsWith("about:")) ? input : "https://" + input;
+            }
+            else
+            {
+                url = $"https://www.google.com/search?q={Uri.EscapeDataString(input)}";
+            }
         }
 
         if (SuggestionsPopup != null) SuggestionsPopup.IsOpen = false;
@@ -505,7 +493,7 @@ public partial class MainWindow : Window
         _webViewService.ActiveWebView?.Focus();
     }
 
-    private bool IsUrl(string t) => !t.Contains(" ") && (t.Contains(".") || t.Contains("://") || t == "localhost");
+    private bool IsUrl(string t) => !t.Contains(" ") && (t.Contains(".") || t.Contains("://") || t == "localhost" || t.StartsWith("about:"));
 
     private async void AddressTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -525,9 +513,17 @@ public partial class MainWindow : Window
             vm.Suggestions.Clear();
             foreach (var r in results) vm.Suggestions.Add(r);
             
+            // ALWAYS add Google Search suggestion as the last item
+            vm.Suggestions.Add(new HistoryEntry 
+            { 
+                Title = $"Rechercher \"{query}\" avec Google", 
+                Url = $"https://www.google.com/search?q={Uri.EscapeDataString(query)}",
+                VisitCount = -1 // Special flag to identify search suggestions
+            });
+
             if (vm.Suggestions.Count > 0)
             {
-                SuggestionsListBox.SelectedIndex = -1; // Reset selection
+                SuggestionsListBox.SelectedIndex = 0; // Pre-select first result
                 SuggestionsPopup.IsOpen = true;
             }
             else
@@ -636,7 +632,7 @@ public partial class MainWindow : Window
         if (visible) {
             if (_isSidebarFloating) HideFloatingSidebar();
             SidebarColumn.Width = new GridLength(vm.SidebarWidth);
-            SidebarColumn.MinWidth = 150;
+            SidebarColumn.MinWidth = 200;
             SplitterColumn.Width = GridLength.Auto;
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Visible;
         } else {
@@ -776,7 +772,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void EdgeTrigger_MouseEnter(object sender, MouseEventArgs e)
+    private void Edge_MouseEnter(object sender, MouseEventArgs e)
     {
         if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating) ShowFloatingSidebar();
     }

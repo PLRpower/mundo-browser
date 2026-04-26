@@ -1,5 +1,50 @@
+## Build and Output
 bin/
 obj/
-/packages/
-riderModule.iml
-/_ReSharper.Caches/
+[Rr]elease/
+[Dd]ebug/
+x64/
+x86/
+build/
+
+## Rider / IntelliJ / JetBrains
+.idea/
+*.sln.DotSettings.user
+*.idea
+*.shfbproj.user
+_ReSharper.Caches/
+
+## Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.vssscc
+*.vspscc
+
+## WebView2 / Browser Data
+# Ignore user data folders created by WebView2
+MundoBrowser/WebView2Data/
+*/WebView2Data/
+EBWebView/
+# Ignore the generated assets or temporary web files if any
+*.log
+
+## NuGet / Packages
+packages/
+*.nuget.props
+*.nuget.targets
+node_modules/
+
+## OS Files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+## Others
+*.bak
+*.cache
+*.tmp
+*.user
+*.swp
