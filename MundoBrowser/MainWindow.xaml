@@ -14,12 +14,13 @@
         Top="{Binding WindowTop, Mode=TwoWay}"
         WindowState="{Binding WindowState, Mode=TwoWay}"
         WindowStyle="None"
+        AllowsTransparency="False"
         PreviewKeyDown="Window_PreviewKeyDown"
-        Background="#1E1E1E"
+        Background="Transparent"
         Foreground="White">
     
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0"/>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="-1" CornerRadius="0"/>
     </WindowChrome.WindowChrome>
 
     <Window.DataContext>
@@ -150,7 +151,7 @@
         <!-- TOP BAR — pleine largeur sur toute la fenêtre (Row 0) -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <Border x:Name="TopBar" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
-                Background="#252526" Height="40">
+                Background="#B31E1E1E" Height="40">
             <Grid MouseDown="TitleBar_MouseDown" Background="Transparent">
                 <Grid.ColumnDefinitions>
                     <!-- Col 0: Fixed width matching SidebarWidth to keep Nav buttons and URL box in place even when sidebar is hidden -->
@@ -182,7 +183,7 @@
                 </StackPanel>
 
                 <!-- URL Box -->
-                <Border x:Name="UrlBarBorder" Grid.Column="2" Background="#1E1E1E" CornerRadius="15" Height="30" VerticalAlignment="Center">
+                <Border x:Name="UrlBarBorder" Grid.Column="2" Background="#1E1E1E" CornerRadius="17" Height="34" VerticalAlignment="Center" Margin="0,2">
                     <Border.Style>
                         <Style TargetType="Border">
                             <Setter Property="BorderBrush" Value="Transparent"/>
@@ -190,6 +191,7 @@
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsPendingNewTab}" Value="True">
                                     <Setter Property="BorderBrush" Value="#007ACC"/>
+                                    <Setter Property="CornerRadius" Value="17"/>
                                     <Setter Property="Effect">
                                         <Setter.Value>
                                             <DropShadowEffect Color="#007ACC" BlurRadius="10" ShadowDepth="0" Opacity="0.5"/>
@@ -405,7 +407,7 @@
         <!-- Fin TopBar -->
 
         <!-- Normal Sidebar Area (Row 1) -->
-        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="#252526">
+        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="#B31E1E1E">
             <local:SidebarView.Style>
                 <Style TargetType="local:SidebarView">
                     <Style.Triggers>
@@ -426,11 +428,12 @@
                VerticalOffset="40"
                StaysOpen="True"
                Width="250">
-            <!-- La hauteur du popup couvre uniquement Row1 (sous la TopBar) -->
+            <!-- La hauteur du popup est réduite par rapport au contenu principal -->
             <Grid Width="250" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
-                <Border x:Name="FloatingSidebarContent" Background="#252526" CornerRadius="0" Margin="0">
+                <Border x:Name="FloatingSidebarContent" Background="#252525" 
+                        CornerRadius="0,15,15,0" Margin="0,20,0,20">
                     <Border.RenderTransform>
-                        <TranslateTransform X="0" />
+                        <TranslateTransform x:Name="FloatingSidebarTransform" X="0" />
                     </Border.RenderTransform>
                     <local:SidebarView />
                 </Border>
@@ -443,7 +446,7 @@
                       Cursor="SizeWE"
                       Visibility="{Binding IsSidebarVisible, Converter={StaticResource BoolToVis}}"
                       DragDelta="GridSplitter_DragDelta"
-                      Background="#252526"
+                      Background="#B31E1E1E"
                       BorderThickness="0"
                       ResizeBehavior="PreviousAndNext"
                       ResizeDirection="Columns"/>
@@ -451,7 +454,7 @@
         <!-- ════════════════════════════════════════════════ -->
         <!-- CONTENU PRINCIPAL — WebView (Row 1, Col 2) -->
         <!-- ════════════════════════════════════════════════ -->
-        <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="#1E1E1E">
+        <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="#CC121212">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>

@@ -41,7 +41,13 @@ public class WebViewService : IWebViewService
         var options = new CoreWebView2EnvironmentOptions
         {
             AreBrowserExtensionsEnabled = true,
-            AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2 --process-per-site --app-id=MundoBrowser.App --app-name=\"MundoBrowser\""
+            AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2 " +
+                                         "--disable-frame-rate-limit --disable-gpu-vsync " +
+                                         "--enable-gpu-rasterization --ignore-gpu-blocklist " +
+                                         "--enable-zero-copy --enable-gpu-compositing " +
+                                         "--enable-native-gpu-memory-buffers --gpu-rasterization-msaa-sample-count=4 " +
+                                         "--disable-background-timer-throttling --disable-renderer-backgrounding " +
+                                         "--app-id=MundoBrowser.App --app-name=\"MundoBrowser\""
         };
 
         var userDataFolder = Path.Combine(
@@ -71,7 +77,14 @@ public class WebViewService : IWebViewService
             _initializationTasks[tab] = initTask;
         }
 
-        try { return await initTask; }
+        try { 
+            var wv = await initTask;
+            if (wv.CoreWebView2 != null)
+            {
+                wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+            }
+            return wv;
+        }
         finally
         {
             lock (_initializationTasks) { _initializationTasks.Remove(tab); }

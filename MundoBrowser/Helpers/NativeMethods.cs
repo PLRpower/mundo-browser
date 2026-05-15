@@ -9,7 +9,10 @@ public static class NativeMethods
 {
     public enum DWMWINDOWATTRIBUTE
     {
-        DWMWA_WINDOW_CORNER_PREFERENCE = 33
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33,
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20,
+        DWMWA_SYSTEMBACKDROP_TYPE = 38,
+        DWMWA_MICA_EFFECT = 1029
     }
 
     public enum DWM_WINDOW_CORNER_PREFERENCE
@@ -18,6 +21,15 @@ public static class NativeMethods
         DWMWCP_DONOTROUND = 1,
         DWMWCP_ROUND = 2,
         DWMWCP_ROUNDSMALL = 3
+    }
+
+    public enum DWM_SYSTEMBACKDROP_TYPE
+    {
+        DWMSBT_AUTO = 0,
+        DWMSBT_NONE = 1,
+        DWMSBT_MAINWINDOW = 2,      // Mica
+        DWMSBT_TRANSIENTWINDOW = 3, // Acrylic
+        DWMSBT_TABBEDWINDOW = 4     // Mica Alt
     }
 
     [DllImport("shell32.dll", SetLastError = true)]
@@ -83,6 +95,9 @@ public static class NativeMethods
     [DllImport("dwmapi.dll", PreserveSig = false)]
     private static extern void DwmSetWindowAttribute(IntPtr hwnd, DWMWINDOWATTRIBUTE attribute, ref DWM_WINDOW_CORNER_PREFERENCE pvAttribute, uint cbAttribute);
 
+    [DllImport("dwmapi.dll", PreserveSig = false)]
+    private static extern void DwmSetWindowAttribute(IntPtr hwnd, DWMWINDOWATTRIBUTE attribute, ref int pvAttribute, uint cbAttribute);
+
     [DllImport("user32.dll")]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, MONITORINFO lpmi);
 
@@ -104,6 +119,28 @@ public static class NativeMethods
         try
         {
             DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(uint));
+        }
+        catch { }
+    }
+
+    public static void SetWindowBackdrop(Window window, DWM_SYSTEMBACKDROP_TYPE backdropType)
+    {
+        try
+        {
+            var hWnd = new WindowInteropHelper(window).Handle;
+            int backdrop = (int)backdropType;
+            DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(uint));
+        }
+        catch { }
+    }
+
+    public static void SetWindowDarkMode(Window window, bool enable)
+    {
+        try
+        {
+            var hWnd = new WindowInteropHelper(window).Handle;
+            int darkMode = enable ? 1 : 0;
+            DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(uint));
         }
         catch { }
     }
