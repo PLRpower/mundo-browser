@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace MundoBrowser.Models
 {
     public class TabSessionData

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using MundoBrowser.Models;
 
 namespace MundoBrowser.Interfaces

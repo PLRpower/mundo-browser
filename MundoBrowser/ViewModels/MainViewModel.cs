@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -50,6 +49,34 @@ namespace MundoBrowser.ViewModels
 
         [ObservableProperty]
         private bool _isMediaBarVisible = true;
+
+        public bool IsAdBlockerEnabled
+        {
+            get => CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>()?.IsAdBlockerEnabled ?? true;
+            set
+            {
+                var service = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>();
+                if (service != null)
+                {
+                    service.IsAdBlockerEnabled = value;
+                    OnPropertyChanged(nameof(IsAdBlockerEnabled));
+                }
+            }
+        }
+
+        public bool IsCookieBlockerEnabled
+        {
+            get => CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>()?.IsCookieBlockerEnabled ?? true;
+            set
+            {
+                var service = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>();
+                if (service != null)
+                {
+                    service.IsCookieBlockerEnabled = value;
+                    OnPropertyChanged(nameof(IsCookieBlockerEnabled));
+                }
+            }
+        }
 
         [RelayCommand]
         private void CloseMediaBar() => IsMediaBarVisible = false;

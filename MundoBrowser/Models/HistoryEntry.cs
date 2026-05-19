@@ -1,5 +1,3 @@
-using System;
-
 namespace MundoBrowser.Models
 {
     public class HistoryEntry

@@ -176,22 +176,48 @@ public class FaviconService : IFaviconService
     {
         string script = @"
             (function() {
-                let links = Array.from(document.querySelectorAll('link[rel*=""icon""], link[rel*=""apple-touch-icon""]'));
-                let best = null;
-                let maxSize = 0;
-                links.forEach(l => {
-                    let size = 0;
-                    if (l.sizes && l.sizes.value) {
-                        size = parseInt(l.sizes.value.split('x')[0]);
-                    } else if (l.rel.includes('apple-touch-icon')) {
-                        size = 180;
+                try {
+                    let links = Array.from(document.querySelectorAll('link[rel~=""icon""], link[rel~=""apple-touch-icon""], link[rel=""shortcut icon""]'));
+                    let best = null;
+                    let maxScore = -1;
+                    
+                    links.forEach(l => {
+                        let score = 0;
+                        let href = l.href || l.getAttribute('href');
+                        if (!href) return;
+                        
+                        let type = l.type || '';
+                        let isSvg = type === 'image/svg+xml' || href.split('?')[0].toLowerCase().endsWith('.svg');
+                        let isApple = l.rel && l.rel.toLowerCase().includes('apple-touch-icon');
+                        
+                        if (l.sizes && l.sizes.length > 0 && l.sizes.value && l.sizes.value !== 'any') {
+                            let sizeStr = l.sizes.value.toLowerCase().split('x')[0];
+                            let s = parseInt(sizeStr);
+                            if (!isNaN(s)) score = s;
+                        }
+                        
+                        if (score === 0) {
+                            if (isApple) score = 180;
+                            else if (isSvg) score = 150;
+                            else score = 16;
+                        } else {
+                            if (isSvg && score < 150) score = 150;
+                            if (isApple && score < 180) score = 180;
+                        }
+                        
+                        if (score > maxScore) {
+                            maxScore = score;
+                            best = href;
+                        }
+                    });
+                    
+                    if (best) {
+                        return new URL(best, window.location.href).href;
                     }
-                    if (size >= maxSize) {
-                        maxSize = size;
-                        best = l.href;
-                    }
-                });
-                return best;
+                    return window.location.origin + '/favicon.ico';
+                } catch (e) {
+                    return window.location.origin + '/favicon.ico';
+                }
             })()";
 
         var iconUrl = await wv.CoreWebView2.ExecuteScriptAsync(script);
@@ -222,11 +248,23 @@ public class FaviconService : IFaviconService
 
         try
         {
-            var response = await _httpClient.GetAsync(iconUrl, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            // Set up a request with basic browser headers to avoid 403 Forbidden on some sites
+            var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
+            request.Headers.Add("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (!response.IsSuccessStatusCode) return null;
+            
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
             var ext = GetExtensionFromContentType(contentType);
+            
+            // Re-detect extension from URL if contentType is generic
+            if (ext == "png" && contentType == "application/octet-stream" && iconUrl.Contains(".ico")) ext = "ico";
+            if (ext == "png" && iconUrl.Contains(".svg")) ext = "svg";
+            
             var bytes = await response.Content.ReadAsByteArrayAsync();
+            if (bytes.Length == 0) return null;
+            
             using var ms = new MemoryStream(bytes);
             return await SaveFaviconAsync(ms, domain, ext, QualityHighRes);
         }
@@ -237,6 +275,36 @@ public class FaviconService : IFaviconService
     {
         try
         {
+            // Convert SVG to high-quality PNG on the fly
+            if (extension == "svg")
+            {
+                try
+                {
+                    stream.Position = 0;
+                    var svgDoc = Svg.SvgDocument.Open<Svg.SvgDocument>(stream);
+                    if (svgDoc != null)
+                    {
+                        var bitmap = svgDoc.Draw(128, 128); // Force high res 128x128
+                        var pngStream = new MemoryStream();
+                        bitmap.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
+                        pngStream.Position = 0;
+                        
+                        stream.Dispose(); // We don't need the SVG stream anymore
+                        stream = pngStream;
+                        extension = "png";
+                        quality = QualityHighRes; // Boost quality
+                    }
+                    else
+                    {
+                        return null; // Failed to parse SVG
+                    }
+                }
+                catch
+                {
+                    return null; // Ignore invalid SVGs
+                }
+            }
+
             // Don't overwrite with lower quality
             if (_domainQuality.TryGetValue(domain, out var currentQuality) && quality < currentQuality)
             {

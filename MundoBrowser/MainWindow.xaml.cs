@@ -1,11 +1,6 @@
-using System;
 using System.Collections.Specialized;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Shell;
-using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
 using MundoBrowser.Services;
@@ -16,8 +11,6 @@ namespace MundoBrowser;
 public partial class MainWindow : Window
 {
     private readonly WebViewService _webViewService;
-    private CancellationTokenSource? _suggestionCts;
-    private bool _isUpdatingAddressBar;
     private bool _isFullscreen;
     private bool _isSidebarFloating;
     private string? _currentExtensionId;
@@ -27,9 +20,11 @@ public partial class MainWindow : Window
     private (WindowState State, WindowStyle Style, ResizeMode Resize) _prevWindowState;
 
     private readonly System.Windows.Threading.DispatcherTimer _globalMediaTimer;
+    private readonly string[]? _startArgs;
 
-    public MainWindow()
+    public MainWindow(string[]? args = null)
     {
+        _startArgs = args;
         InitializeComponent();
         
         var vm = (MainViewModel)DataContext;
@@ -88,12 +83,29 @@ public partial class MainWindow : Window
 
         ContentRendered += async (_, _) => {
             await _webViewService.InitializeAsync(WebViewsContainer);
-            if (DataContext is MainViewModel vm && vm.SelectedTab != null)
+            
+            if (DataContext is MainViewModel vm)
             {
-                await SwitchToTabAsync(vm.SelectedTab);
-                UpdateSidebarWidth(vm.IsSidebarVisible);
+                // Process startup arguments (URLs or files)
+                if (_startArgs != null && _startArgs.Length > 0)
+                {
+                    string input = _startArgs[0];
+                    // Handle local paths for PDF or HTML files
+                    if (System.IO.File.Exists(input))
+                    {
+                        input = new Uri(System.IO.Path.GetFullPath(input)).AbsoluteUri;
+                    }
+                    
+                    vm.AddTabWithUrl(input);
+                }
+                else if (vm.SelectedTab != null)
+                {
+                    await SwitchToTabAsync(vm.SelectedTab);
+                    UpdateSidebarWidth(vm.IsSidebarVisible);
+                }
+                
+                await LoadExtensionsAsync();
             }
-            await LoadExtensionsAsync();
         };
     }
 
@@ -132,7 +144,7 @@ public partial class MainWindow : Window
             tab.PropertyChanged += OnTabPropertyChanged;
         }
 
-        vm.NewTabRequested += (_, _) => { AddressTextBox.Focus(); AddressTextBox.SelectAll(); };
+        vm.NewTabRequested += (_, _) => { TopBarControl.AddressBar.Focus(); TopBarControl.AddressBar.SelectAll(); };
         vm.MediaActionRequested += OnMediaActionRequested;
     }
 
@@ -145,9 +157,8 @@ public partial class MainWindow : Window
 
         if (DataContext is MainViewModel vm)
         {
-            _isUpdatingAddressBar = true;
+            TopBarControl?.SetAddressBarText(tab.AddressUrl);
             vm.AddressBarText = tab.AddressUrl;
-            _isUpdatingAddressBar = false;
         }
     }
 
@@ -197,9 +208,11 @@ public partial class MainWindow : Window
                 UpdateTitle();
                 vm.HistoryManager.AddEntry(tab.Url, wv.CoreWebView2.DocumentTitle);
 
-                _isUpdatingAddressBar = true;
-                vm.AddressBarText = tab.AddressUrl;
-                _isUpdatingAddressBar = false;
+                if (TopBarControl?.AddressBar.IsFocused == false)
+                {
+                    TopBarControl?.SetAddressBarText(tab.AddressUrl);
+                    vm.AddressBarText = tab.AddressUrl;
+                }
 
                 CheckForExtensionStorePage(tab, tab.Url);
             }
@@ -232,9 +245,11 @@ public partial class MainWindow : Window
             }
 
             if (DataContext is MainViewModel vm && vm.SelectedTab == tab) {
-                _isUpdatingAddressBar = true;
-                vm.AddressBarText = tab.AddressUrl;
-                _isUpdatingAddressBar = false;
+                if (TopBarControl?.AddressBar.IsFocused == false)
+                {
+                    TopBarControl?.SetAddressBarText(tab.AddressUrl);
+                    vm.AddressBarText = tab.AddressUrl;
+                }
 
                 CheckForExtensionStorePage(tab, tab.AddressUrl);
             }
@@ -275,5 +290,50 @@ public partial class MainWindow : Window
         if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm || vm.SelectedTab == null) return;
         var title = _webViewService.ActiveWebView.CoreWebView2.DocumentTitle;
         vm.SelectedTab.Title = !string.IsNullOrWhiteSpace(title) ? title : (vm.SelectedTab.Url ?? "New Tab");
+    }
+
+    public Microsoft.Web.WebView2.Wpf.WebView2? GetActiveWebView() => _webViewService.ActiveWebView;
+
+    public void HandleExternalArguments(string[] args)
+    {
+        if (args.Length > 0 && DataContext is MainViewModel vm)
+        {
+            string input = args[0];
+            if (System.IO.File.Exists(input))
+            {
+                input = new Uri(System.IO.Path.GetFullPath(input)).AbsoluteUri;
+            }
+            
+            vm.AddTabWithUrl(input);
+            
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            
+            ForceForeground(handle);
+            
+            Activate();
+            Focus();
+        }
+    }
+
+    private void ForceForeground(IntPtr hWnd)
+    {
+        // 1. Try standard Restore
+        NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+
+        // 2. Aggressive Thread Attachment
+        IntPtr foregroundWnd = NativeMethods.GetForegroundWindow();
+        uint foregroundThreadId = NativeMethods.GetWindowThreadProcessId(foregroundWnd, IntPtr.Zero);
+        uint currentThreadId = NativeMethods.GetCurrentThreadId();
+
+        if (foregroundThreadId != currentThreadId)
+        {
+            NativeMethods.AttachThreadInput(currentThreadId, foregroundThreadId, true);
+            NativeMethods.SetForegroundWindow(hWnd);
+            NativeMethods.AttachThreadInput(currentThreadId, foregroundThreadId, false);
+        }
+        else
+        {
+            NativeMethods.SetForegroundWindow(hWnd);
+        }
     }
 }

@@ -1,7 +1,7 @@
-using System;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using System.Windows.Shell;
 using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
@@ -10,10 +10,6 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
-    private void Back_Click(object sender, RoutedEventArgs e) => _webViewService.ActiveWebView?.GoBack();
-    private void Forward_Click(object sender, RoutedEventArgs e) => _webViewService.ActiveWebView?.GoForward();
-    private void Reload_Click(object sender, RoutedEventArgs e) => _webViewService.ActiveWebView?.Reload();
-    
     private void SetFullscreen(bool enable, bool hideUI = false)
     {
         if (enable == _isFullscreen) return;
@@ -30,7 +26,7 @@ public partial class MainWindow
             WindowChrome.SetWindowChrome(this, null);
             
             if (hideUI) {
-                if (TopBar != null) TopBar.Visibility = Visibility.Collapsed;
+                if (TopBarControl != null) TopBarControl.Visibility = Visibility.Collapsed;
                 if (EdgeTriggerPopup != null) EdgeTriggerPopup.Visibility = Visibility.Collapsed;
                 UpdateSidebarWidth(false);
             }
@@ -59,7 +55,7 @@ public partial class MainWindow
                 this.WindowState = _prevWindowState.State;
             }
             
-            if (TopBar != null) TopBar.Visibility = Visibility.Visible;
+            if (TopBarControl != null) TopBarControl.Visibility = Visibility.Visible;
             if (EdgeTriggerPopup != null) EdgeTriggerPopup.Visibility = Visibility.Visible;
             if (DataContext is MainViewModel vm) UpdateSidebarWidth(vm.IsSidebarVisible);
             
@@ -133,7 +129,7 @@ public partial class MainWindow
     {
         bool isMax = WindowState == WindowState.Maximized;
         MainGrid.Margin = isMax ? new Thickness(0) : new Thickness(0);
-        if (TopBar != null) { TopBar.Height = 40; WindowControlsStack.Margin = new Thickness(0); UrlBarBorder.Margin = new Thickness(0); ExtensionsControl.Margin = new Thickness(10, 0, 10, 0); }
+        if (TopBarControl != null) { TopBarControl.Height = 40; }
         var chrome = WindowChrome.GetWindowChrome(this);
         if (chrome != null) chrome.ResizeBorderThickness = isMax ? new Thickness(0) : new Thickness(6);
         if (RightResizeBorder != null) RightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
@@ -144,7 +140,10 @@ public partial class MainWindow
     private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (_isFullscreen) return;
-        if (e.ChangedButton == MouseButton.Left) { if (e.OriginalSource != sender) return; if (e.ClickCount == 2) { Maximize_Click(sender, e); _dragStartPos = null; } else { if (WindowState == WindowState.Maximized) _dragStartPos = e.GetPosition(this); else try { DragMove(); } catch { } } }
+        if (e.ChangedButton == MouseButton.Left) { if (e.OriginalSource != sender) return; if (e.ClickCount == 2) { 
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            _dragStartPos = null; 
+        } else { if (WindowState == WindowState.Maximized) _dragStartPos = e.GetPosition(this); else try { DragMove(); } catch { } } }
     }
 
     private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
@@ -161,17 +160,42 @@ public partial class MainWindow
         else if (key == Key.F11) { SetFullscreen(!_isFullscreen); e.Handled = true; }
         else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
         else if (key == Key.W && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { vm.CloseTabCommand.Execute(vm.SelectedTab); e.Handled = true; } }
-        else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { AddressTextBox.Focus(); AddressTextBox.SelectAll(); e.Handled = true; }
-        else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
+        else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { TopBarControl.AddressBar.Focus(); TopBarControl.AddressBar.SelectAll(); e.Handled = true; }
+        else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
         else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward) { _webViewService.ActiveWebView.GoForward(); e.Handled = true; } }
         else if (key == Key.Escape && ExtensionPopup.IsOpen) { CloseExtensionPopup(); e.Handled = true; }
+        else if (modifiers == ModifierKeys.Control)
+        {
+            if (key == Key.OemPlus || key == Key.Add) { AdjustZoom(0.1); e.Handled = true; }
+            else if (key == Key.OemMinus || key == Key.Subtract) { AdjustZoom(-0.1); e.Handled = true; }
+            else if (key == Key.D0 || key == Key.NumPad0) { ResetZoom(); e.Handled = true; }
+        }
+    }
+
+    private void AdjustZoom(double delta)
+    {
+        if (DataContext is MainViewModel vm && vm.SelectedTab != null && _webViewService.ActiveWebView != null)
+        {
+            double newZoom = Math.Clamp(vm.SelectedTab.ZoomFactor + delta, 0.25, 5.0);
+            vm.SelectedTab.ZoomFactor = newZoom;
+            _webViewService.ActiveWebView.ZoomFactor = newZoom;
+        }
+    }
+
+    private void ResetZoom()
+    {
+        if (DataContext is MainViewModel vm && vm.SelectedTab != null && _webViewService.ActiveWebView != null)
+        {
+            vm.SelectedTab.ZoomFactor = 1.0;
+            _webViewService.ActiveWebView.ZoomFactor = 1.0;
+        }
     }
 
     private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (!ExtensionPopup.IsOpen) return;
 
-        if (e.OriginalSource is DependencyObject d && FindAncestor<Button>(d) is Button btn && btn.Tag is string)
+        if (e.OriginalSource is DependencyObject d && FindAncestor<System.Windows.Controls.Button>(d) is System.Windows.Controls.Button btn && btn.Tag is string)
             return;
 
         var popupChild = ExtensionPopup.Child as FrameworkElement;
@@ -232,7 +256,7 @@ public partial class MainWindow
 
     private void MainGrid_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (AddressTextBox.IsFocused)
+        if (TopBarControl != null && TopBarControl.AddressBar.IsFocused)
         {
             MainGrid.Focus();
         }
@@ -240,10 +264,7 @@ public partial class MainWindow
 
     private void Edge_MouseEnter(object sender, MouseEventArgs e)
     {
+        if (!this.IsActive) return;
         if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating) ShowFloatingSidebar();
     }
-
-    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void Maximize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

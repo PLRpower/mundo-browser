@@ -1,8 +1,7 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
+using MessageBox = System.Windows.MessageBox;
+using Button = System.Windows.Controls.Button;
+using MenuItem = System.Windows.Controls.MenuItem;
 using MundoBrowser.Services;
 using MundoBrowser.ViewModels;
 
@@ -60,9 +59,9 @@ public partial class MainWindow
 
     private void CloseInstallBar_Click(object sender, RoutedEventArgs e) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) vm.SelectedTab.IsExtensionStorePage = false; }
 
-    private async void ExtensionIcon_Click(object sender, RoutedEventArgs e)
+    public async void ShowExtensionPopup(string extId, Button btn)
     {
-        if (sender is Button btn && btn.Tag is string extId && DataContext is MainViewModel vm)
+        if (DataContext is MainViewModel vm)
         {
             // If the popup was closed very recently (by a MouseDown that triggered this click), 
             // and it was the SAME extension, don't reopen it immediately.
@@ -110,6 +109,14 @@ public partial class MainWindow
                     CloseExtensionPopup();
                 }
             }
+        }
+    }
+
+    private void ExtensionIcon_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string extId)
+        {
+            ShowExtensionPopup(extId, btn);
         }
     }
 

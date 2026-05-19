@@ -92,6 +92,12 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private string? _installableExtensionId;
 
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ZoomPercentage))]
+        private double _zoomFactor = 1.0;
+
+        public string ZoomPercentage => $"{(int)(Math.Round(ZoomFactor * 100))}%";
+
         [RelayCommand]
         public void Navigate()
         {

@@ -1,5 +1,3 @@
-using System.Threading.Tasks;
-using MundoBrowser.Services;
 using MundoBrowser.ViewModels;
 using MundoBrowser.Models;
 

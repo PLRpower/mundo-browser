@@ -1,6 +1,5 @@
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.ViewModels;
@@ -42,12 +41,11 @@ public class WebViewService : IWebViewService
         {
             AreBrowserExtensionsEnabled = true,
             AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2 " +
-                                         "--disable-frame-rate-limit --disable-gpu-vsync " +
                                          "--enable-gpu-rasterization --ignore-gpu-blocklist " +
                                          "--enable-zero-copy --enable-gpu-compositing " +
                                          "--enable-native-gpu-memory-buffers --gpu-rasterization-msaa-sample-count=4 " +
                                          "--disable-background-timer-throttling --disable-renderer-backgrounding " +
-                                         "--app-id=MundoBrowser.App --app-name=\"MundoBrowser\""
+                                         "--app-id=MundoBrowser.App --app-name=\"Mundo Browser\""
         };
 
         var userDataFolder = Path.Combine(
@@ -79,10 +77,14 @@ public class WebViewService : IWebViewService
 
         try { 
             var wv = await initTask;
-            if (wv.CoreWebView2 != null)
+            try
             {
-                wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+                if (wv.CoreWebView2 != null)
+                {
+                    wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+                }
             }
+            catch (ObjectDisposedException) { }
             return wv;
         }
         finally
@@ -99,7 +101,7 @@ public class WebViewService : IWebViewService
         try
         {
             var webView = new WebView2();
-            webView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+            webView.DefaultBackgroundColor = System.Drawing.Color.White;
             _container.Children.Add(webView);
 
             try { await webView.EnsureCoreWebView2Async(_environment); }
@@ -107,6 +109,116 @@ public class WebViewService : IWebViewService
             {
                 await Task.Delay(150);
                 await webView.EnsureCoreWebView2Async(_environment);
+            }
+
+            // Modernize Scrollbars via Persistent CSS Injection
+            await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
+                (function() {
+                    const css = `
+                        ::-webkit-scrollbar {
+                            width: 10px !important;
+                            height: 10px !important;
+                        }
+                        ::-webkit-scrollbar-button {
+                            display: none !important;
+                        }
+                        ::-webkit-scrollbar-track {
+                            background: transparent !important;
+                        }
+                        ::-webkit-scrollbar-thumb {
+                            background: rgba(128, 128, 128, 0.3) !important;
+                            border-radius: 10px !important;
+                            border: 3px solid transparent !important;
+                            background-clip: content-box !important;
+                        }
+                        ::-webkit-scrollbar-thumb:hover {
+                            background: rgba(128, 128, 128, 0.6) !important;
+                            background-clip: content-box !important;
+                        }
+                        ::-webkit-scrollbar-corner {
+                            background: transparent !important;
+                        }
+                    `;
+
+                    function inject() {
+                        if (document.head || document.documentElement) {
+                            const style = document.createElement('style');
+                            style.id = 'mundo-custom-scrollbar';
+                            style.textContent = css;
+                            (document.head || document.documentElement).appendChild(style);
+                            return true;
+                        }
+                        return false;
+                    }
+
+                    if (!inject()) {
+                        const observer = new MutationObserver(() => {
+                            if (inject()) observer.disconnect();
+                        });
+                        observer.observe(document, { childList: true, subtree: true });
+                    }
+                })();
+            ");
+
+            // AdBlocker Integration (Network and Cosmetic)
+            var adBlocker = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IAdBlockerService>();
+            if (adBlocker != null)
+            {
+                // Network Filtering
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+                webView.CoreWebView2.WebResourceRequested += (s, e) =>
+                {
+                    if (adBlocker.ShouldBlockRequest(e.Request.Uri))
+                    {
+                        var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
+                            null, 403, "Blocked by MundoBrowser", "Content-Type: text/plain"
+                        );
+                        e.Response = response;
+                    }
+                };
+
+                // Cosmetic Filtering (CSS + JS)
+                webView.CoreWebView2.NavigationStarting += async (s, e) =>
+                {
+                    try
+                    {
+                        string combinedCss = adBlocker.GetCosmeticCss() + adBlocker.GetCookieCosmeticCss();
+                        if (!string.IsNullOrWhiteSpace(combinedCss))
+                        {
+                            string jsInject = $@"
+                                (function() {{
+                                    const css = `{combinedCss.Replace("`", "\\`")}`;
+                                    const injectAdBlock = () => {{
+                                        if (!document.getElementById('mundo-adblock-css')) {{
+                                            const style = document.createElement('style');
+                                            style.id = 'mundo-adblock-css';
+                                            style.textContent = css;
+                                            (document.head || document.documentElement).appendChild(style);
+                                        }}
+                                    }};
+                                    injectAdBlock();
+                                    const obs = new MutationObserver(injectAdBlock);
+                                    obs.observe(document, {{ childList: true, subtree: true }});
+                                }})();
+                            ";
+                            await webView.CoreWebView2.ExecuteScriptAsync(jsInject);
+                        }
+
+                        string cookieJs = adBlocker.GetCookieRemovalScript();
+                        if (!string.IsNullOrWhiteSpace(cookieJs))
+                        {
+                            await webView.CoreWebView2.ExecuteScriptAsync(cookieJs);
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // WebView2 was disposed while we were awaiting. Just ignore.
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore other errors during script injection
+                    }
+                };
             }
 
             // Mapping virtuel pour les pages internes
@@ -159,6 +271,15 @@ public class WebViewService : IWebViewService
                                 EcoModeMinutes = int.Parse(value.GetString() ?? "10");
                             else
                                 EcoModeMinutes = value.GetInt32();
+                        }
+                        else if (key == "makeDefault")
+                        {
+                            try
+                            {
+                                // Open Windows Default Apps settings
+                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:defaultapps") { UseShellExecute = true });
+                            }
+                            catch { }
                         }
                         else if (key == "subPage")
                         {
