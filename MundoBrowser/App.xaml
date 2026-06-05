@@ -1,8 +1,15 @@
 <Application x:Class="MundoBrowser.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:MundoBrowser">
+             xmlns:local="clr-namespace:MundoBrowser"
+             xmlns:ui="clr-namespace:Wpf.Ui.Markup;assembly=Wpf.Ui">
     <Application.Resources>
+        <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ui:ThemesDictionary Theme="Dark" />
+            <ui:ControlsDictionary />
+        </ResourceDictionary.MergedDictionaries>
+
         <!-- Converters -->
         <local:NullToBoolConverter x:Key="NullToBoolConverter" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
@@ -108,5 +115,6 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="IsTabStop" Value="False"/>
         </Style>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

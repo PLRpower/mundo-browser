@@ -8,16 +8,19 @@ using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly WebViewService _webViewService;
     private bool _isFullscreen;
+    private bool _isApplyingFullscreenBounds;
+    private bool _isRestoringFromFullscreen;
+    private bool _fullscreenHidesUi;
+    private bool _resizeOverlaysOpen;
     private bool _isSidebarFloating;
     private string? _currentExtensionId;
     private string? _lastClosedExtensionId;
     private DateTime _lastExtensionPopupClosed = DateTime.MinValue;
-    private System.Windows.Point? _dragStartPos;
-    private (WindowState State, WindowStyle Style, ResizeMode Resize) _prevWindowState;
+    private (WindowState State, WindowStyle Style, ResizeMode Resize, Wpf.Ui.Controls.WindowBackdropType Backdrop, Wpf.Ui.Controls.WindowCornerPreference Corners, bool Topmost, double Left, double Top, double Width, double Height) _prevWindowState;
 
     private readonly System.Windows.Threading.DispatcherTimer _globalMediaTimer;
     private readonly string[]? _startArgs;
@@ -43,29 +46,20 @@ public partial class MainWindow : Window
         {
             var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
             NativeMethods.SetWindowAppId(handle, "MundoBrowser.App");
+            UpdateWindowFrameVisuals();
             
-            // Apply Windows 11 Backdrop effects
-            NativeMethods.SetWindowCorners(handle, NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND);
-            NativeMethods.SetWindowBackdrop(this, NativeMethods.DWM_SYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW); // Acrylic
-            NativeMethods.SetWindowDarkMode(this, true);
-
             System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
         };
     }
 
-    private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (msg == 0x0024) // WM_GETMINMAXINFO
-        {
-            handled = true;
-            NativeMethods.WmGetMinMaxInfo(hwnd, lParam, _isFullscreen);
-        }
-        return IntPtr.Zero;
-    }
-
     private void InitializeWindow()
     {
-        StateChanged += (_, _) => OnWindowStateChanged();
+        StateChanged += (_, _) => OnWindowStateChanged(forceResizeOverlayReopen: true);
+        LocationChanged += (_, _) => KeepFullscreenBounds();
+        SizeChanged += (_, _) => {
+            KeepFullscreenBounds();
+            UpdateResizeOverlayState();
+        };
         Closing += async (_, _) => {
             if (DataContext is MainViewModel vm)
             {
@@ -78,10 +72,15 @@ public partial class MainWindow : Window
         // Fix WPF bug: ElementName bindings on Popups often get lost after IsOpen toggles
         FloatingSidebarPopup.PlacementTarget = MainGrid;
         EdgeTriggerPopup.PlacementTarget = MainGrid;
+        InitializeResizeOverlays();
         if (FindName("QuickUrlPopup") is System.Windows.Controls.Primitives.Popup quickPopup)
             quickPopup.PlacementTarget = MainGrid;
 
         ContentRendered += async (_, _) => {
+            WindowTitleBar.PreviewMouseLeftButtonDown += BlockFullscreenTitleBarDrag;
+            WindowTitleBar.PreviewMouseMove += BlockFullscreenTitleBarDrag;
+            UpdateResizeOverlayState(forceReopen: true);
+
             await _webViewService.InitializeAsync(WebViewsContainer);
             
             if (DataContext is MainViewModel vm)
@@ -116,8 +115,7 @@ public partial class MainWindow : Window
                 await SwitchToTabAsync(vm.SelectedTab);
             else if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
             {
-                if (!_isFullscreen)
-                    UpdateSidebarWidth(vm.IsSidebarVisible);
+                UpdateSidebarWidth(vm.IsSidebarVisible);
             }
         };
 

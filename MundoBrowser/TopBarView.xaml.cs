@@ -23,23 +23,6 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         InitializeComponent();
     }
 
-    private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton == MouseButton.Left)
-        {
-            var win = Window.GetWindow(this);
-            if (win != null && win.WindowState != WindowState.Maximized) win.DragMove();
-        }
-    }
-
-    private void Minimize_Click(object sender, RoutedEventArgs e) => Window.GetWindow(this).WindowState = WindowState.Minimized;
-    private void Maximize_Click(object sender, RoutedEventArgs e) 
-    {
-        var win = Window.GetWindow(this);
-        win.WindowState = win.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    }
-    private void Close_Click(object sender, RoutedEventArgs e) => Window.GetWindow(this).Close();
-
     private void Back_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoBack();
     private void Forward_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoForward();
     private void Reload_Click(object sender, RoutedEventArgs e) => GetWebView()?.Reload();
@@ -121,7 +104,7 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         }
     }
 
-    private void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    private async void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         if (_isUpdatingAddressBar || DataContext is not MainViewModel vm) return;
         
@@ -137,29 +120,35 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         _suggestionCts = new CancellationTokenSource();
         var token = _suggestionCts.Token;
 
-        Task.Run(async () => {
-            try {
-                await Task.Delay(200, token);
-                if (token.IsCancellationRequested) return;
-                
-                var results = vm.HistoryManager.SearchHistory(text);
-                
-                Dispatcher.Invoke(() => {
-                    if (token.IsCancellationRequested || !AddressTextBox.IsFocused) return;
-                    
-                    vm.Suggestions.Clear();
-                    // Add Google Search as the first suggestion if it's not a URL
-                    bool isUrl = text.StartsWith("http") || text.Contains("://") || (text.Contains(".") && !text.Contains(" "));
-                    if (!isUrl)
-                    {
-                        vm.Suggestions.Add(new Models.HistoryEntry { Title = text, Url = text, VisitCount = -1 });
-                    }
-                    
-                    foreach (var res in results.Take(7)) vm.Suggestions.Add(res);
-                    SuggestionsPopup.IsOpen = vm.Suggestions.Any();
-                });
-            } catch (OperationCanceledException) { }
-        }, token);
+        try
+        {
+            await Task.Delay(200, token);
+            if (token.IsCancellationRequested || !AddressTextBox.IsFocused)
+                return;
+
+            var results = vm.HistoryManager.SearchHistory(text, maxResults: 7);
+            if (token.IsCancellationRequested || !AddressTextBox.IsFocused)
+                return;
+
+            vm.Suggestions.Clear();
+
+            bool isUrl = text.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                         || text.Contains("://")
+                         || (text.Contains('.') && !text.Contains(' '));
+            if (!isUrl)
+            {
+                vm.Suggestions.Add(new Models.HistoryEntry { Title = text, Url = text, VisitCount = -1 });
+            }
+
+            foreach (var result in results)
+                vm.Suggestions.Add(result);
+
+            SuggestionsPopup.IsOpen = vm.Suggestions.Any();
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer keystroke scheduled a fresher query.
+        }
     }
 
     private void AddressTextBox_GotFocus(object sender, RoutedEventArgs e)

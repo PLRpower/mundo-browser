@@ -14,6 +14,7 @@ public class WebViewService : IWebViewService
     private CoreWebView2Environment? _environment;
     private WebView2? _activeWebView;
     private readonly System.Timers.Timer _memoryTimer;
+    private int _memoryOptimizationRunning;
 
     public bool EcoModeEnabled { get; set; } = true;
     public int EcoModeMinutes { get; set; } = 10;
@@ -324,19 +325,27 @@ public class WebViewService : IWebViewService
     private void CheckMemoryOptimization(object? sender, System.Timers.ElapsedEventArgs e)
     {
         if (!EcoModeEnabled) return;
+        if (Interlocked.Exchange(ref _memoryOptimizationRunning, 1) == 1) return;
 
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
         {
-            var now = DateTime.Now;
-            var tabsToDiscard = new List<TabViewModel>();
-            foreach(var kvp in _webViews)
+            try
             {
-                var tab = kvp.Key;
-                var wv = kvp.Value;
-                if (wv != _activeWebView && (now - tab.LastAccessed).TotalMinutes > EcoModeMinutes) tabsToDiscard.Add(tab);
+                var now = DateTime.Now;
+                var tabsToDiscard = new List<TabViewModel>();
+                foreach(var kvp in _webViews)
+                {
+                    var tab = kvp.Key;
+                    var wv = kvp.Value;
+                    if (wv != _activeWebView && (now - tab.LastAccessed).TotalMinutes > EcoModeMinutes) tabsToDiscard.Add(tab);
+                }
+                foreach(var tab in tabsToDiscard) DiscardTab(tab);
             }
-            foreach(var tab in tabsToDiscard) DiscardTab(tab);
-        });
+            finally
+            {
+                Volatile.Write(ref _memoryOptimizationRunning, 0);
+            }
+        }));
     }
 
     private void DiscardTab(TabViewModel tab)

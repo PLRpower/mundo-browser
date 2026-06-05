@@ -6,8 +6,8 @@
              mc:Ignorable="d" 
              d:DesignHeight="40" d:DesignWidth="1200">
     
-    <Border Background="#B31E1E1E" Height="40">
-        <Grid MouseDown="TitleBar_MouseDown" Background="Transparent">
+    <Border Background="Transparent" Height="40">
+        <Grid Background="Transparent">
             <Grid.ColumnDefinitions>
                 <!-- Col 0: Navigation Buttons (Matches Sidebar Width) -->
                 <ColumnDefinition Width="{Binding SidebarWidth}" MinWidth="140"/>
@@ -20,8 +20,6 @@
                 <ColumnDefinition Width="Auto"/>
                 <!-- Col 5: Extensions -->
                 <ColumnDefinition Width="Auto"/>
-                <!-- Col 6: Window Controls (Fixed Width to avoid overlap) -->
-                <ColumnDefinition Width="140"/>
             </Grid.ColumnDefinitions>
 
             <!-- Nav Buttons -->
@@ -52,7 +50,6 @@
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsPendingNewTab}" Value="True">
                                 <Setter Property="BorderBrush" Value="#007ACC"/>
-                                <Setter Property="CornerRadius" Value="17"/>
                                 <Setter Property="Effect">
                                     <Setter.Value>
                                         <DropShadowEffect Color="#007ACC" BlurRadius="10" ShadowDepth="0" Opacity="0.5"/>
@@ -62,6 +59,12 @@
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter Property="BorderBrush" Value="#007ACC"/>
                             </Trigger>
+                            <!-- Changement de l'arrondi quand les suggestions sont ouvertes pour faire un bloc unifié -->
+                            <DataTrigger Binding="{Binding ElementName=SuggestionsPopup, Path=IsOpen}" Value="True">
+                                <Setter Property="CornerRadius" Value="17,17,0,0"/>
+                                <Setter Property="BorderThickness" Value="1.5,1.5,1.5,0"/>
+                                <Setter Property="BorderBrush" Value="#007ACC"/>
+                            </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
@@ -131,69 +134,75 @@
                     <Popup x:Name="SuggestionsPopup"
                            PlacementTarget="{Binding ElementName=UrlBarBorder}"
                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
-                           VerticalOffset="5">
-                        <Border Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1"
-                                CornerRadius="12" Padding="4" 
+                           VerticalOffset="0">
+                        <Border Background="#1E1E1E" BorderBrush="#007ACC" BorderThickness="1.5,0,1.5,1.5"
+                                CornerRadius="0,0,17,17" Padding="0,0,0,8"
                                 Width="{Binding ActualWidth, ElementName=UrlBarBorder}">
                             <Border.Effect>
-                                <DropShadowEffect Color="Black" Opacity="0.5" BlurRadius="15" ShadowDepth="3" Direction="270"/>
+                                <DropShadowEffect Color="Black" Opacity="0.3" BlurRadius="10" ShadowDepth="4" Direction="270"/>
                             </Border.Effect>
-                            <ListBox x:Name="SuggestionsListBox"
-                                     ItemsSource="{Binding Suggestions}"
-                                     Background="Transparent" BorderThickness="0" Foreground="White"
-                                     MaxHeight="200" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     PreviewMouseDown="SuggestionsList_PreviewMouseDown"
-                                     PreviewKeyDown="SuggestionsList_PreviewKeyDown">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="10,6"/>
-                                        <Setter Property="Margin" Value="2"/>
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Border x:Name="ItemBorder"
-                                                            Background="{TemplateBinding Background}"
-                                                            Padding="{TemplateBinding Padding}"
-                                                            CornerRadius="6" Margin="{TemplateBinding Margin}">
-                                                        <ContentPresenter/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#2D2D30"/>
-                                                        </Trigger>
-                                                        <Trigger Property="IsSelected" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#3E3E42"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="32"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="IconBlock" Text="🔗" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" Grid.Column="0"/>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" Foreground="White" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock x:Name="UrlBlock" Text="{Binding Url}" FontSize="11" Foreground="#888" TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                        </Grid>
-                                        <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding VisitCount}" Value="-1">
-                                                <Setter TargetName="IconBlock" Property="Text" Value="🔍"/>
-                                                <Setter TargetName="IconBlock" Property="Foreground" Value="#4285F4"/>
-                                                <Setter TargetName="UrlBlock" Property="Text" Value="Recherche Google"/>
-                                            </DataTrigger>
-                                        </DataTemplate.Triggers>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                            <!-- Séparateur visuel subtil entre la barre et la liste -->
+                            <Grid>
+                                <Border Height="1" Background="#33FFFFFF" VerticalAlignment="Top" Margin="10,0,10,0"/>
+                                <ListBox x:Name="SuggestionsListBox"
+                                         ItemsSource="{Binding Suggestions}"
+                                         Background="Transparent" BorderThickness="0" Foreground="White"
+                                         MaxHeight="250" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         PreviewMouseDown="SuggestionsList_PreviewMouseDown"
+                                         PreviewKeyDown="SuggestionsList_PreviewKeyDown"
+                                         Margin="0,4,0,0">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Height" Value="34"/> <!-- Même hauteur que la barre de recherche -->
+                                            <Setter Property="Padding" Value="12,0"/>
+                                            <Setter Property="Margin" Value="0"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="ItemBorder"
+                                                                Background="{TemplateBinding Background}"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ItemBorder" Property="Background" Value="#1AFFFFFF"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="ItemBorder" Property="Background" Value="#33007ACC"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="30"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="IconBlock" Text="🔗" FontSize="14" Foreground="#AAA" VerticalAlignment="Center" HorizontalAlignment="Center" Grid.Column="0"/>
+                                                <TextBlock Text="{Binding Title}" FontSize="13" Foreground="White" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" VerticalAlignment="Center" Grid.Column="1" FontWeight="SemiBold"/>
+                                                <TextBlock x:Name="UrlBlock" Text="{Binding Url}" FontSize="12" Foreground="#007ACC" Opacity="0.8" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Grid.Column="2"/>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding VisitCount}" Value="-1">
+                                                    <Setter TargetName="IconBlock" Property="Text" Value="🔍"/>
+                                                    <Setter TargetName="IconBlock" Property="Foreground" Value="#007ACC"/>
+                                                    <Setter TargetName="UrlBlock" Property="Text" Value="Recherche web"/>
+                                                    <Setter TargetName="UrlBlock" Property="Foreground" Value="#888"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
                         </Border>
                     </Popup>
                 </Grid>
@@ -271,18 +280,6 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- Window Controls (Fixed Alignment) -->
-            <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Stretch" HorizontalAlignment="Right">
-                <Button Click="Minimize_Click" Width="45" Style="{StaticResource GrayHoverButtonStyle}">
-                    <Path Data="M0,2 L10,2" Stroke="White" StrokeThickness="1.5" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Button>
-                <Button Click="Maximize_Click" Width="45" Style="{StaticResource GrayHoverButtonStyle}">
-                    <Path Data="M1,1 L9,1 L9,9 L1,9 Z" Stroke="White" StrokeThickness="1.5" Fill="Transparent" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Button>
-                <Button Click="Close_Click" Width="45" Style="{StaticResource RedHoverButtonStyle}">
-                    <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="White" StrokeThickness="1.5" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Button>
-            </StackPanel>
         </Grid>
     </Border>
 </UserControl>

@@ -13,7 +13,6 @@ public class FaviconService : IFaviconService
 {
     private readonly string _faviconsPath;
     private readonly HttpClient _httpClient;
-    private readonly HashSet<string> _resolvedDomains = [];
     private readonly Dictionary<string, string> _domainToRelativePath = [];
     private readonly Dictionary<string, int> _domainQuality = [];
 
@@ -64,7 +63,6 @@ public class FaviconService : IFaviconService
             {
                 _domainToRelativePath[domain] = relativePath;
                 _domainQuality[domain] = quality;
-                _resolvedDomains.Add(domain);
             }
         }
     }
@@ -249,10 +247,10 @@ public class FaviconService : IFaviconService
         try
         {
             // Set up a request with basic browser headers to avoid 403 Forbidden on some sites
-            var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
+            using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
             request.Headers.Add("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
             
-            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode) return null;
             
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
@@ -337,7 +335,6 @@ public class FaviconService : IFaviconService
             var relativePath = $"Favicons/{fileName}";
             _domainToRelativePath[domain] = relativePath;
             _domainQuality[domain] = quality;
-            _resolvedDomains.Add(domain);
 
             return new Uri(fullPath).AbsoluteUri;
         }
@@ -385,7 +382,6 @@ public class FaviconService : IFaviconService
                     }
                     _domainToRelativePath.Remove(kvp.Key);
                     _domainQuality.Remove(kvp.Key);
-                    _resolvedDomains.Remove(kvp.Key);
                 }
             }
         }

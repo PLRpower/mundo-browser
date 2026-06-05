@@ -11,6 +11,9 @@ namespace MundoBrowser.Services
         private readonly List<HistoryEntry> _history;
         private const int MaxHistoryEntries = 1000;
         private readonly SemaphoreSlim _saveLock = new SemaphoreSlim(1, 1);
+        private readonly object _historyLock = new();
+        private CancellationTokenSource? _saveDebounceCts;
+        private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
         public HistoryManager()
         {
@@ -44,24 +47,45 @@ namespace MundoBrowser.Services
 
         private void SaveHistory()
         {
-            Task.Run(async () =>
+            _saveDebounceCts?.Cancel();
+
+            var cts = new CancellationTokenSource();
+            _saveDebounceCts = cts;
+            _ = SaveHistoryAsync(cts.Token);
+        }
+
+        private async Task SaveHistoryAsync(CancellationToken cancellationToken)
+        {
+            bool lockTaken = false;
+
+            try
             {
-                await _saveLock.WaitAsync();
-                try
+                await Task.Delay(300, cancellationToken);
+                await _saveLock.WaitAsync(cancellationToken);
+                lockTaken = true;
+
+                List<HistoryEntry> snapshot;
+                lock (_historyLock)
                 {
-                    var options = new JsonSerializerOptions { WriteIndented = true };
-                    var json = JsonSerializer.Serialize(_history, options);
-                    await File.WriteAllTextAsync(_historyFilePath, json);
+                    snapshot = _history.ToList();
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error saving history: {ex.Message}");
-                }
-                finally
-                {
+
+                var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+                await File.WriteAllTextAsync(_historyFilePath, json, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer save is already scheduled.
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error saving history: {ex.Message}");
+            }
+            finally
+            {
+                if (lockTaken)
                     _saveLock.Release();
-                }
-            });
+            }
         }
 
         public void AddEntry(string url, string title = "")
@@ -71,33 +95,36 @@ namespace MundoBrowser.Services
 
             // Normalize URL
             url = url.Trim();
-            
-            // Check if URL already exists
-            var existing = _history.FirstOrDefault(h => h.Url.Equals(url, StringComparison.OrdinalIgnoreCase));
-            
-            if (existing != null)
+
+            lock (_historyLock)
             {
-                // Update existing entry
-                existing.VisitCount++;
-                existing.VisitedAt = DateTime.Now;
-                if (!string.IsNullOrWhiteSpace(title))
-                    existing.Title = title;
-            }
-            else
-            {
-                // Add new entry
-                _history.Insert(0, new HistoryEntry
+                // Check if URL already exists
+                var existing = _history.FirstOrDefault(h => h.Url.Equals(url, StringComparison.OrdinalIgnoreCase));
+
+                if (existing != null)
                 {
-                    Url = url,
-                    Title = title,
-                    VisitedAt = DateTime.Now,
-                    VisitCount = 1
-                });
-                
-                // Limit history size
-                if (_history.Count > MaxHistoryEntries)
+                    // Update existing entry
+                    existing.VisitCount++;
+                    existing.VisitedAt = DateTime.Now;
+                    if (!string.IsNullOrWhiteSpace(title))
+                        existing.Title = title;
+                }
+                else
                 {
-                    _history.RemoveRange(MaxHistoryEntries, _history.Count - MaxHistoryEntries);
+                    // Add new entry
+                    _history.Insert(0, new HistoryEntry
+                    {
+                        Url = url,
+                        Title = title,
+                        VisitedAt = DateTime.Now,
+                        VisitCount = 1
+                    });
+
+                    // Limit history size
+                    if (_history.Count > MaxHistoryEntries)
+                    {
+                        _history.RemoveRange(MaxHistoryEntries, _history.Count - MaxHistoryEntries);
+                    }
                 }
             }
             
@@ -109,39 +136,50 @@ namespace MundoBrowser.Services
             if (string.IsNullOrWhiteSpace(query))
                 return new List<HistoryEntry>();
 
-            query = query.ToLower();
-            
-            return _history
-                .Where(h => 
-                    h.Url.ToLower().Contains(query) || 
-                    (!string.IsNullOrWhiteSpace(h.Title) && h.Title.ToLower().Contains(query))
-                )
-                .OrderByDescending(h => h.VisitCount)
-                .ThenByDescending(h => h.VisitedAt)
-                .Take(maxResults)
-                .ToList();
+            lock (_historyLock)
+            {
+                return _history
+                    .Where(h =>
+                        h.Url.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrWhiteSpace(h.Title) && h.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    )
+                    .OrderByDescending(h => h.VisitCount)
+                    .ThenByDescending(h => h.VisitedAt)
+                    .Take(maxResults)
+                    .ToList();
+            }
         }
 
         public List<HistoryEntry> GetRecentHistory(int count = 20)
         {
-            return _history
-                .OrderByDescending(h => h.VisitedAt)
-                .Take(count)
-                .ToList();
+            lock (_historyLock)
+            {
+                return _history
+                    .OrderByDescending(h => h.VisitedAt)
+                    .Take(count)
+                    .ToList();
+            }
         }
 
         public List<HistoryEntry> GetMostVisited(int count = 10)
         {
-            return _history
-                .OrderByDescending(h => h.VisitCount)
-                .ThenByDescending(h => h.VisitedAt)
-                .Take(count)
-                .ToList();
+            lock (_historyLock)
+            {
+                return _history
+                    .OrderByDescending(h => h.VisitCount)
+                    .ThenByDescending(h => h.VisitedAt)
+                    .Take(count)
+                    .ToList();
+            }
         }
 
         public void ClearHistory()
         {
-            _history.Clear();
+            lock (_historyLock)
+            {
+                _history.Clear();
+            }
+
             SaveHistory();
         }
     }

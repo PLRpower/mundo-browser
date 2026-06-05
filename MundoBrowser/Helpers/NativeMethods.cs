@@ -9,9 +9,8 @@ public static class NativeMethods
     public enum DWMWINDOWATTRIBUTE
     {
         DWMWA_WINDOW_CORNER_PREFERENCE = 33,
-        DWMWA_USE_IMMERSIVE_DARK_MODE = 20,
-        DWMWA_SYSTEMBACKDROP_TYPE = 38,
-        DWMWA_MICA_EFFECT = 1029
+        DWMWA_BORDER_COLOR = 34,
+        DWMWA_CAPTION_COLOR = 35
     }
 
     public enum DWM_WINDOW_CORNER_PREFERENCE
@@ -20,15 +19,6 @@ public static class NativeMethods
         DWMWCP_DONOTROUND = 1,
         DWMWCP_ROUND = 2,
         DWMWCP_ROUNDSMALL = 3
-    }
-
-    public enum DWM_SYSTEMBACKDROP_TYPE
-    {
-        DWMSBT_AUTO = 0,
-        DWMSBT_NONE = 1,
-        DWMSBT_MAINWINDOW = 2,      // Mica
-        DWMSBT_TRANSIENTWINDOW = 3, // Acrylic
-        DWMSBT_TABBEDWINDOW = 4     // Mica Alt
     }
 
     [DllImport("shell32.dll", SetLastError = true)]
@@ -85,8 +75,15 @@ public static class NativeMethods
             SHGetPropertyStoreForWindow(hwnd, ref guid, out var store);
             var key = new PropertyKey(new Guid("9F4C1853-C90B-4D97-A417-E78590E07DF9"), 5); // PKEY_AppUserModel_ID
             var pv = PropVariant.FromString(appId);
-            store.SetValue(ref key, ref pv);
-            store.Commit();
+            try
+            {
+                store.SetValue(ref key, ref pv);
+                store.Commit();
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(pv.ptr);
+            }
         }
         catch { }
     }
@@ -122,24 +119,21 @@ public static class NativeMethods
         catch { }
     }
 
-    public static void SetWindowBackdrop(Window window, DWM_SYSTEMBACKDROP_TYPE backdropType)
+    public static void SuppressAccentBorder(Window window)
     {
-        try
-        {
-            var hWnd = new WindowInteropHelper(window).Handle;
-            int backdrop = (int)backdropType;
-            DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(uint));
-        }
-        catch { }
+        SetWindowFrameColors(window, showSubtleBorder: false);
     }
 
-    public static void SetWindowDarkMode(Window window, bool enable)
+    public static void SetWindowFrameColors(Window window, bool showSubtleBorder)
     {
         try
         {
             var hWnd = new WindowInteropHelper(window).Handle;
-            int darkMode = enable ? 1 : 0;
-            DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(uint));
+            int noColor = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+            int borderColor = showSubtleBorder ? 0x00303030 : noColor;
+
+            DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR, ref borderColor, sizeof(uint));
+            DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_CAPTION_COLOR, ref noColor, sizeof(uint));
         }
         catch { }
     }
@@ -167,6 +161,29 @@ public static class NativeMethods
         }
 
         Marshal.StructureToPtr(mmi, lParam, true);
+    }
+
+    public static RECT GetMonitorRect(IntPtr hwnd, bool useWorkArea)
+    {
+        const int MONITOR_DEFAULTTONEAREST = 0x00000002;
+        IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+
+        if (monitor != IntPtr.Zero)
+        {
+            MONITORINFO monitorInfo = new MONITORINFO();
+            if (GetMonitorInfo(monitor, monitorInfo))
+            {
+                return useWorkArea ? monitorInfo.rcWork : monitorInfo.rcMonitor;
+            }
+        }
+
+        return new RECT
+        {
+            left = 0,
+            top = 0,
+            right = (int)SystemParameters.PrimaryScreenWidth,
+            bottom = (int)SystemParameters.PrimaryScreenHeight
+        };
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -204,6 +221,18 @@ public static class NativeMethods
         public int bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINDOWPOS
+    {
+        public IntPtr hwnd;
+        public IntPtr hwndInsertAfter;
+        public int x;
+        public int y;
+        public int cx;
+        public int cy;
+        public uint flags;
+    }
+
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
@@ -215,6 +244,15 @@ public static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
@@ -230,4 +268,12 @@ public static class NativeMethods
 
     public const int SW_RESTORE = 9;
     public const int ASW_ANY = -1;
+    public const int WM_NCLBUTTONDOWN = 0x00A1;
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+    public static readonly IntPtr HWND_NOTOPMOST = new(-2);
+    public const uint SWP_NOZORDER = 0x0004;
+    public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_FRAMECHANGED = 0x0020;
+    public const uint SWP_SHOWWINDOW = 0x0040;
+    public const uint SWP_NOOWNERZORDER = 0x0200;
 }

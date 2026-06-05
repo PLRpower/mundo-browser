@@ -104,14 +104,14 @@ namespace MundoBrowser.Services
             
             var key = name.Substring(6, name.Length - 8);
             var defaultLocale = root.TryGetProperty("default_locale", out var locale) ? (locale.GetString() ?? "en") : "en";
-            var localesPath = Path.Combine(extensionDir, "_locales");
+            var localesPath = ResolveExtensionPath(extensionDir, "_locales");
             
-            if (!Directory.Exists(localesPath)) return name;
+            if (localesPath == null || !Directory.Exists(localesPath)) return name;
             
             string[] searchLocales = { defaultLocale, "fr", "en_US" };
             foreach (var loc in searchLocales)
             {
-                var msgPath = Path.Combine(localesPath, loc, "messages.json");
+                var msgPath = ResolveExtensionPath(extensionDir, Path.Combine("_locales", loc, "messages.json"));
                 if (File.Exists(msgPath))
                 {
                     var val = GetMessageValue(msgPath, key);
@@ -151,8 +151,8 @@ namespace MundoBrowser.Services
                 
             if (!string.IsNullOrEmpty(iconPath))
             {
-                var fullIconPath = Path.Combine(extensionDir, iconPath.TrimStart('/'));
-                if (File.Exists(fullIconPath))
+                var fullIconPath = ResolveExtensionPath(extensionDir, iconPath);
+                if (fullIconPath != null && File.Exists(fullIconPath))
                 {
                     try
                     {
@@ -167,6 +167,28 @@ namespace MundoBrowser.Services
                     catch { }
                 }
             }
+        }
+
+        private static string? ResolveExtensionPath(string extensionDir, string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                return null;
+
+            var root = EnsureTrailingDirectorySeparator(Path.GetFullPath(extensionDir));
+            var normalizedRelativePath = relativePath
+                .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                .Replace('/', Path.DirectorySeparatorChar);
+
+            var fullPath = Path.GetFullPath(Path.Combine(root, normalizedRelativePath));
+            return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? fullPath : null;
+        }
+
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
+                ? path
+                : path + Path.DirectorySeparatorChar;
         }
 
         private string? GetBestIconPath(JsonElement icons)

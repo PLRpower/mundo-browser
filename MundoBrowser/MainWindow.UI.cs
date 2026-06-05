@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Input;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
-using System.Windows.Shell;
 using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 
@@ -10,66 +9,6 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
-    private void SetFullscreen(bool enable, bool hideUI = false)
-    {
-        if (enable == _isFullscreen) return;
-        _isFullscreen = enable;
-
-        if (enable) {
-            _prevWindowState = (WindowState, WindowStyle, ResizeMode);
-            
-            // Disable rounding and transparency effects for true fullscreen to avoid artifacts
-            NativeMethods.SetWindowCorners(this, NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_DONOTROUND);
-            NativeMethods.SetWindowBackdrop(this, NativeMethods.DWM_SYSTEMBACKDROP_TYPE.DWMSBT_NONE);
-            this.Background = System.Windows.Media.Brushes.Black;
-
-            WindowChrome.SetWindowChrome(this, null);
-            
-            if (hideUI) {
-                if (TopBarControl != null) TopBarControl.Visibility = Visibility.Collapsed;
-                if (EdgeTriggerPopup != null) EdgeTriggerPopup.Visibility = Visibility.Collapsed;
-                UpdateSidebarWidth(false);
-            }
-
-            this.WindowStyle = WindowStyle.None;
-            this.ResizeMode = ResizeMode.NoResize;
-            
-            // Force re-calculation of min/max info (rcMonitor will be used)
-            if (this.WindowState == WindowState.Maximized) this.WindowState = WindowState.Normal;
-            this.WindowState = WindowState.Maximized;
-        } else {
-            // Restore Acrylic transparency and rounding
-            NativeMethods.SetWindowCorners(this, NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND);
-            NativeMethods.SetWindowBackdrop(this, NativeMethods.DWM_SYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW);
-            this.Background = System.Windows.Media.Brushes.Transparent;
-
-            // Restore window style first to let Windows know we are no longer "borderless fullscreen"
-            this.WindowStyle = _prevWindowState.Style;
-            this.ResizeMode = _prevWindowState.Resize;
-
-            // Force a transition to Normal then back to previous state to ensure taskbar respect
-            if (_prevWindowState.State == WindowState.Maximized) {
-                this.WindowState = WindowState.Normal;
-                this.WindowState = WindowState.Maximized;
-            } else {
-                this.WindowState = _prevWindowState.State;
-            }
-            
-            if (TopBarControl != null) TopBarControl.Visibility = Visibility.Visible;
-            if (EdgeTriggerPopup != null) EdgeTriggerPopup.Visibility = Visibility.Visible;
-            if (DataContext is MainViewModel vm) UpdateSidebarWidth(vm.IsSidebarVisible);
-            
-            WindowChrome.SetWindowChrome(this, new WindowChrome { 
-                CaptionHeight = 0, 
-                ResizeBorderThickness = new Thickness(6), 
-                GlassFrameThickness = new Thickness(-1), 
-                CornerRadius = new CornerRadius(0) 
-            });
-
-            OnWindowStateChanged();
-        }
-    }
-
     private void UpdateSidebarWidth(bool visible)
     {
         if (SidebarColumn == null || SplitterColumn == null || DataContext is not MainViewModel vm) return;
@@ -81,13 +20,39 @@ public partial class MainWindow
             SidebarColumn.MinWidth = 0;
             SplitterColumn.Width = new GridLength(0);
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Collapsed;
-            
+
+            if (_fullscreenHidesUi)
+            {
+                if (_isSidebarFloating)
+                    HideFloatingSidebar();
+                else if (FloatingSidebarPopup != null)
+                    FloatingSidebarPopup.IsOpen = false;
+
+                return;
+            }
+
+            if (FloatingSidebarPopup != null)
+                FloatingSidebarPopup.VerticalOffset = WindowTitleBar?.Visibility == Visibility.Visible ? 40 : 0;
+
             // If the user toggles it visible in F11, we show the floating one
-            if (visible && !_isSidebarFloating) ShowFloatingSidebar();
-            else if (!visible && _isSidebarFloating) HideFloatingSidebar();
+            if (visible)
+            {
+                if (!_isSidebarFloating) ShowFloatingSidebar();
+            }
+            else if (_isSidebarFloating)
+            {
+                HideFloatingSidebar();
+            }
+            else if (FloatingSidebarPopup != null)
+            {
+                FloatingSidebarPopup.IsOpen = false;
+            }
             
             return;
         }
+
+        if (FloatingSidebarPopup != null)
+            FloatingSidebarPopup.VerticalOffset = 40;
 
         if (visible) {
             if (_isSidebarFloating) HideFloatingSidebar();
@@ -105,8 +70,11 @@ public partial class MainWindow
 
     private void ShowFloatingSidebar()
     {
-        if (FloatingSidebarPopup == null || _isSidebarFloating) return;
+        if (FloatingSidebarPopup == null) return;
+        if (_isSidebarFloating && FloatingSidebarPopup.IsOpen) return;
+
         _isSidebarFloating = true;
+        FloatingSidebarContent.DataContext = DataContext;
         FloatingSidebarPopup.IsOpen = true;
         var slideIn = new System.Windows.Media.Animation.DoubleAnimation { From = -250, To = 0, Duration = TimeSpan.FromMilliseconds(250), EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut } };
         FloatingSidebarContent.RenderTransform = new System.Windows.Media.TranslateTransform(-250, 0);
@@ -124,27 +92,6 @@ public partial class MainWindow
     }
 
     private void FloatingSidebarContent_MouseLeave(object sender, MouseEventArgs e) => HideFloatingSidebar();
-
-    private void OnWindowStateChanged()
-    {
-        bool isMax = WindowState == WindowState.Maximized;
-        MainGrid.Margin = isMax ? new Thickness(0) : new Thickness(0);
-        if (TopBarControl != null) { TopBarControl.Height = 40; }
-        var chrome = WindowChrome.GetWindowChrome(this);
-        if (chrome != null) chrome.ResizeBorderThickness = isMax ? new Thickness(0) : new Thickness(6);
-        if (RightResizeBorder != null) RightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
-        if (BottomResizeBorder != null) BottomResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
-        if (BottomRightResizeBorder != null) BottomRightResizeBorder.Visibility = isMax ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_isFullscreen) return;
-        if (e.ChangedButton == MouseButton.Left) { if (e.OriginalSource != sender) return; if (e.ClickCount == 2) { 
-            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-            _dragStartPos = null; 
-        } else { if (WindowState == WindowState.Maximized) _dragStartPos = e.GetPosition(this); else try { DragMove(); } catch { } } }
-    }
 
     private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
@@ -232,26 +179,6 @@ public partial class MainWindow
             current = System.Windows.Media.VisualTreeHelper.GetParent(current);
         }
         return null;
-    }
-
-    private void Window_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (_isFullscreen) return;
-        if (e.LeftButton == MouseButtonState.Pressed && WindowState == WindowState.Maximized && _dragStartPos.HasValue)
-        {
-            System.Windows.Point currentPos = e.GetPosition(this);
-            if (Math.Abs(currentPos.X - _dragStartPos.Value.X) > SystemParameters.MinimumHorizontalDragDistance || Math.Abs(currentPos.Y - _dragStartPos.Value.Y) > SystemParameters.MinimumVerticalDragDistance)
-            {
-                var mousePosOnScreen = PointToScreen(currentPos);
-                double xRatio = currentPos.X / ActualWidth;
-                _dragStartPos = null;
-                WindowState = WindowState.Normal;
-                Left = mousePosOnScreen.X - (ActualWidth * xRatio);
-                Top = mousePosOnScreen.Y - 15;
-                try { DragMove(); } catch { }
-            }
-        }
-        else if (e.LeftButton != MouseButtonState.Pressed) _dragStartPos = null;
     }
 
     private void MainGrid_MouseDown(object sender, MouseButtonEventArgs e)

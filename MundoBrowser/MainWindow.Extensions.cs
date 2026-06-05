@@ -41,14 +41,12 @@ public partial class MainWindow
             InstallStatusText.Visibility = Visibility.Visible;
             InstallStatusText.Text = "Téléchargement...";
             try {
-                var downloader = new ExtensionDownloader();
-                var extPath = await downloader.DownloadAndExtractExtension(vm.SelectedTab.InstallableExtensionId);
-                InstallStatusText.Text = "Installation...";
-                
                 // Get profile from active WebView to install extension
                 if (_webViewService.ActiveWebView?.CoreWebView2?.Profile != null)
                 {
-                    await _webViewService.ActiveWebView.CoreWebView2.Profile.AddBrowserExtensionAsync(extPath);
+                    InstallStatusText.Text = "Installation...";
+                    var extensionService = new ExtensionService();
+                    await extensionService.InstallExtensionAsync(vm.SelectedTab.InstallableExtensionId, _webViewService.ActiveWebView.CoreWebView2.Profile);
                     await LoadExtensionsAsync();
                     vm.SelectedTab.IsExtensionStorePage = false;
                 }

@@ -32,6 +32,10 @@ namespace MundoBrowser.Services
         {
             try
             {
+                extensionId = extensionId.Trim().ToLowerInvariant();
+                if (!IsValidExtensionId(extensionId))
+                    throw new ArgumentException("Invalid Chrome Web Store extension ID.", nameof(extensionId));
+
                 // We try multiple URL variants
                 // AdBlock and other modern extensions often require the more modern googleapis endpoint or precise prodversion
                 var urlVariants = new[]
@@ -55,7 +59,7 @@ namespace MundoBrowser.Services
                     {
                         try
                         {
-                            var response = await _httpClient.GetAsync(crxUrl);
+                            using var response = await _httpClient.GetAsync(crxUrl);
                             
                             // If we get 204 (NoContent) or 404, this URL variant doesn't work for this extension, try next variant
                             if (response.StatusCode == System.Net.HttpStatusCode.NoContent || response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -85,11 +89,6 @@ namespace MundoBrowser.Services
 
                 // Extract the CRX file
                 var extractPath = Path.Combine(_extensionsPath, extensionId);
-                if (Directory.Exists(extractPath))
-                {
-                    Directory.Delete(extractPath, true);
-                }
-                Directory.CreateDirectory(extractPath);
 
                 // CRX files are essentially ZIP files with a header
                 // We need to skip the CRX header and extract the ZIP content
@@ -149,6 +148,9 @@ namespace MundoBrowser.Services
                     throw new Exception($"Invalid file format (Not CRX or ZIP). Header: {startSnippet}");
                 }
 
+                if (crxBytes.Length < 12)
+                    throw new InvalidDataException("Invalid CRX header.");
+
                 int zipStartOffset = 0;
 
                 // Read version
@@ -157,20 +159,32 @@ namespace MundoBrowser.Services
                 if (version == 2)
                 {
                     // CRX2 format: 4 + 4 + 4 + publicKeyLength + 4 + signatureLength
+                    if (crxBytes.Length < 16)
+                        throw new InvalidDataException("Invalid CRX2 header.");
+
                     var publicKeyLength = BitConverter.ToInt32(crxBytes, 8);
                     var signatureLength = BitConverter.ToInt32(crxBytes, 12);
-                    zipStartOffset = 16 + publicKeyLength + signatureLength;
+                    if (publicKeyLength < 0 || signatureLength < 0)
+                        throw new InvalidDataException("Invalid CRX2 header lengths.");
+
+                    zipStartOffset = checked(16 + publicKeyLength + signatureLength);
                 }
                 else if (version == 3)
                 {
                     // CRX3 format: read header size and skip it
                     var headerSize = BitConverter.ToInt32(crxBytes, 8);
-                    zipStartOffset = 12 + headerSize;
+                    if (headerSize < 0)
+                        throw new InvalidDataException("Invalid CRX3 header length.");
+
+                    zipStartOffset = checked(12 + headerSize);
                 }
                 else
                 {
                     throw new Exception($"Unsupported CRX version: {version}");
                 }
+
+                if (zipStartOffset <= 0 || zipStartOffset >= crxBytes.Length)
+                    throw new InvalidDataException("Invalid CRX header: ZIP payload is missing.");
 
                 // Extract the ZIP portion
                 var zipBytes = new byte[crxBytes.Length - zipStartOffset];
@@ -184,28 +198,59 @@ namespace MundoBrowser.Services
             }
         }
 
-        private async Task ExtractZipBytes(byte[] zipBytes, string extractPath)
+        private static Task ExtractZipBytes(byte[] zipBytes, string extractPath)
         {
-            // Write to a temporary ZIP file and extract
-            var tempZipPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.zip");
-            await File.WriteAllBytesAsync(tempZipPath, zipBytes);
+            // Ensure the directory is clean
+            if (Directory.Exists(extractPath))
+            {
+                Directory.Delete(extractPath, true);
+            }
 
-            try
+            Directory.CreateDirectory(extractPath);
+
+            using var zipStream = new MemoryStream(zipBytes, writable: false);
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+            ExtractZipArchiveSafely(archive, extractPath);
+
+            return Task.CompletedTask;
+        }
+
+        private static void ExtractZipArchiveSafely(ZipArchive archive, string extractPath)
+        {
+            string destinationRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractPath));
+
+            foreach (var entry in archive.Entries)
             {
-                // Ensure the directory is clean
-                if (Directory.Exists(extractPath))
+                if (string.IsNullOrWhiteSpace(entry.FullName))
+                    continue;
+
+                var entryPath = entry.FullName
+                    .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                    .Replace('/', Path.DirectorySeparatorChar);
+
+                var destinationPath = Path.GetFullPath(Path.Combine(destinationRoot, entryPath));
+                if (!destinationPath.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"Archive entry escapes the extraction directory: {entry.FullName}");
+
+                if (string.IsNullOrEmpty(entry.Name))
                 {
-                    try { Directory.Delete(extractPath, true); } catch { }
+                    Directory.CreateDirectory(destinationPath);
+                    continue;
                 }
-                Directory.CreateDirectory(extractPath);
-                
-                ZipFile.ExtractToDirectory(tempZipPath, extractPath);
+
+                var destinationDirectory = Path.GetDirectoryName(destinationPath);
+                if (!string.IsNullOrEmpty(destinationDirectory))
+                    Directory.CreateDirectory(destinationDirectory);
+
+                entry.ExtractToFile(destinationPath, overwrite: true);
             }
-            finally
-            {
-                if (File.Exists(tempZipPath))
-                    File.Delete(tempZipPath);
-            }
+        }
+
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
+                ? path
+                : path + Path.DirectorySeparatorChar;
         }
 
         /// <summary>
@@ -246,6 +291,11 @@ namespace MundoBrowser.Services
             {
                 return null;
             }
+        }
+
+        private static bool IsValidExtensionId(string extensionId)
+        {
+            return extensionId.Length == 32 && extensionId.All(c => c >= 'a' && c <= 'p');
         }
     }
 }

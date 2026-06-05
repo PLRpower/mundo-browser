@@ -1,4 +1,4 @@
-<Window x:Class="MundoBrowser.MainWindow"
+<ui:FluentWindow x:Class="MundoBrowser.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,47 +6,59 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:vm="clr-namespace:MundoBrowser.ViewModels"
         xmlns:local="clr-namespace:MundoBrowser"
+        xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
         mc:Ignorable="d"
         Title="Mundo Browser"
         Width="{Binding WindowWidth, Mode=TwoWay}"        Height="{Binding WindowHeight, Mode=TwoWay}"
         Left="{Binding WindowLeft, Mode=TwoWay}"
         Top="{Binding WindowTop, Mode=TwoWay}"
         WindowState="{Binding WindowState, Mode=TwoWay}"
-        WindowStyle="None"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Acrylic"
+        WindowCornerPreference="Round"
         AllowsTransparency="False"
         PreviewKeyDown="Window_PreviewKeyDown"
         KeyboardNavigation.TabNavigation="None"
         Background="Transparent"
         Foreground="White">
-    
-    <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="-1" CornerRadius="0"/>
-    </WindowChrome.WindowChrome>
 
-    <Window.DataContext>
+    <ui:FluentWindow.DataContext>
         <vm:MainViewModel />
-    </Window.DataContext>
+    </ui:FluentWindow.DataContext>
 
-    <Window.Resources>
-        <!-- Style for manual resize edges - Hidden when maximized -->
-        <Style x:Key="ResizeEdgeStyle" TargetType="Border">
-            <Setter Property="Background" Value="Transparent"/>
-        </Style>
+    <ui:FluentWindow.Resources>
+        <SolidColorBrush x:Key="ChromeSurfaceBrush" Color="#99000000"/>
 
-        <!-- Scrollbar Style - Minimalist -->
+        <!-- Scrollbar Style - Ultra Minimalist & Rounded -->
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Width" Value="8"/>
+            <Setter Property="Width" Value="4"/>
+            <Setter Property="MinWidth" Value="4"/>
+            <Setter Property="MaxWidth" Value="4"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
-                        <Grid>
+                        <Grid Background="Transparent" Width="4">
                             <Track Name="PART_Track" IsDirectionReversed="true">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
+                                </Track.IncreaseRepeatButton>
                                 <Track.Thumb>
                                     <Thumb>
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
-                                                <Border Background="#444"/>
+                                                <Border x:Name="ThumbBorder" Background="#555" CornerRadius="2" Margin="0"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBorder" Property="Background" Value="#777"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="ThumbBorder" Property="Background" Value="#999"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -56,10 +68,51 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="4"/>
+                    <Setter Property="MinHeight" Value="4"/>
+                    <Setter Property="MaxHeight" Value="4"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollBar">
+                                <Grid Background="Transparent" Height="4">
+                                    <Track Name="PART_Track">
+                                        <Track.DecreaseRepeatButton>
+                                            <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0" Focusable="False"/>
+                                        </Track.DecreaseRepeatButton>
+                                        <Track.IncreaseRepeatButton>
+                                            <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" Focusable="False"/>
+                                        </Track.IncreaseRepeatButton>
+                                        <Track.Thumb>
+                                            <Thumb>
+                                                <Thumb.Template>
+                                                    <ControlTemplate TargetType="Thumb">
+                                                        <Border x:Name="ThumbBorder" Background="#555" CornerRadius="2" Margin="0"/>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ThumbBorder" Property="Background" Value="#777"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsDragging" Value="True">
+                                                                <Setter TargetName="ThumbBorder" Property="Background" Value="#999"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Thumb.Template>
+                                            </Thumb>
+                                        </Track.Thumb>
+                                    </Track>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
         </Style>
-    </Window.Resources>
+    </ui:FluentWindow.Resources>
 
-    <Grid x:Name="MainGrid" MouseMove="Window_MouseMove" MouseDown="MainGrid_MouseDown" Focusable="True">
+    <Grid x:Name="MainGrid" MouseDown="MainGrid_MouseDown" Focusable="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- TopBar : pleine largeur -->
             <RowDefinition Height="*"/>    <!-- Sidebar + WebView -->
@@ -73,11 +126,23 @@
         <!-- ═══════════════════════════════════════════════════════ -->
         <!-- TOP BAR — pleine largeur sur toute la fenêtre (Row 0) -->
         <!-- ═══════════════════════════════════════════════════════ -->
-        <local:TopBarView Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" x:Name="TopBarControl"/>
+        <ui:TitleBar Grid.Row="0"
+                     Grid.Column="0"
+                     Grid.ColumnSpan="3"
+                     x:Name="WindowTitleBar"
+                     Title=""
+                     Height="40"
+                     Background="{DynamicResource ChromeSurfaceBrush}"
+                     ButtonsForeground="White"
+                     ShowHelp="False">
+            <ui:TitleBar.CenterContent>
+                <local:TopBarView x:Name="TopBarControl"/>
+            </ui:TitleBar.CenterContent>
+        </ui:TitleBar>
         <!-- Fin TopBar -->
 
         <!-- Normal Sidebar Area (Row 1) -->
-        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="#B31E1E1E">
+        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="{DynamicResource ChromeSurfaceBrush}">
             <local:SidebarView.Style>
                 <Style TargetType="local:SidebarView">
                     <Style.Triggers>
@@ -116,7 +181,7 @@
                       Cursor="SizeWE"
                       Visibility="{Binding IsSidebarVisible, Converter={StaticResource BoolToVis}}"
                       DragDelta="GridSplitter_DragDelta"
-                      Background="#B31E1E1E"
+                      Background="{DynamicResource ChromeSurfaceBrush}"
                       BorderThickness="0"
                       ResizeBehavior="PreviousAndNext"
                       ResizeDirection="Columns"/>
@@ -179,21 +244,40 @@
             <!-- #01000000 is almost completely transparent but still hit-testable -->
             <Border Background="#01000000" MouseEnter="Edge_MouseEnter" />
         </Popup>
-             
-        <!-- Right edge for window resizing -->
-        <Border x:Name="RightResizeBorder" HorizontalAlignment="Right" Width="5" Style="{StaticResource ResizeEdgeStyle}" 
-                VerticalAlignment="Stretch" Grid.ColumnSpan="3" 
-                Panel.ZIndex="1000" Cursor="SizeWE"/>
-             
-        <!-- Bottom edge for window resizing -->
-        <Border x:Name="BottomResizeBorder" VerticalAlignment="Bottom" Height="5" Style="{StaticResource ResizeEdgeStyle}" 
-                HorizontalAlignment="Stretch" Grid.ColumnSpan="3" 
-                Panel.ZIndex="1000" Cursor="SizeNS"/>
-             
-        <!-- Bottom-right corner for diagonal resizing -->
-        <Border x:Name="BottomRightResizeBorder" HorizontalAlignment="Right" VerticalAlignment="Bottom" 
-                Width="10" Height="10" Style="{StaticResource ResizeEdgeStyle}" 
-                Grid.ColumnSpan="3" Panel.ZIndex="1001" Cursor="SizeNWSE"/>
+
+        <!-- Native resize overlays. Popups stay above WebView2 child HWNDs, unlike WPF borders. -->
+        <Popup x:Name="ResizeLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="6" Height="{Binding ActualHeight, ElementName=MainGrid}" Background="#01000000"
+                    Cursor="SizeWE" Tag="10" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="6" Height="{Binding ActualHeight, ElementName=MainGrid}" Background="#01000000"
+                    Cursor="SizeWE" Tag="11" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeTopPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="{Binding ActualWidth, ElementName=MainGrid}" Height="6" Background="#01000000"
+                    Cursor="SizeNS" Tag="12" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeBottomPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="{Binding ActualWidth, ElementName=MainGrid}" Height="6" Background="#01000000"
+                    Cursor="SizeNS" Tag="15" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeTopLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="12" Height="12" Background="#01000000"
+                    Cursor="SizeNWSE" Tag="13" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeTopRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="12" Height="12" Background="#01000000"
+                    Cursor="SizeNESW" Tag="14" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeBottomLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="12" Height="12" Background="#01000000"
+                    Cursor="SizeNESW" Tag="16" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
+        <Popup x:Name="ResizeBottomRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
+            <Border Width="12" Height="12" Background="#01000000"
+                    Cursor="SizeNWSE" Tag="17" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
+        </Popup>
 
         <!-- Popup for extensions - Moved to root for better event handling -->
         <Popup x:Name="ExtensionPopup"
@@ -220,4 +304,4 @@
         </Popup>
 
     </Grid>
-</Window>
+</ui:FluentWindow>
