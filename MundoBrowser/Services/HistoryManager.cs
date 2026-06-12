@@ -13,7 +13,7 @@ namespace MundoBrowser.Services
         private readonly SemaphoreSlim _saveLock = new SemaphoreSlim(1, 1);
         private readonly object _historyLock = new();
         private CancellationTokenSource? _saveDebounceCts;
-        private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+        private static readonly JsonSerializerOptions JsonOptions = new();
 
         public HistoryManager()
         {
@@ -60,8 +60,8 @@ namespace MundoBrowser.Services
 
             try
             {
-                await Task.Delay(300, cancellationToken);
-                await _saveLock.WaitAsync(cancellationToken);
+                await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+                await _saveLock.WaitAsync(cancellationToken).ConfigureAwait(false);
                 lockTaken = true;
 
                 List<HistoryEntry> snapshot;

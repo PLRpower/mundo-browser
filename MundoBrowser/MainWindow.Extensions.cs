@@ -1,7 +1,6 @@
 using System.Windows;
 using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
-using MenuItem = System.Windows.Controls.MenuItem;
 using MundoBrowser.Services;
 using MundoBrowser.ViewModels;
 
@@ -110,14 +109,6 @@ public partial class MainWindow
         }
     }
 
-    private void ExtensionIcon_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.Tag is string extId)
-        {
-            ShowExtensionPopup(extId, btn);
-        }
-    }
-
     private void ExtensionPopup_Opened(object sender, EventArgs e)
     {
         if (ExtensionPopup.Child is FrameworkElement child)
@@ -148,25 +139,5 @@ public partial class MainWindow
     {
         ExtensionPopup.IsOpen = false;
         _currentExtensionId = null;
-    }
-
-    private void CloseExtensionPopup_Click(object sender, RoutedEventArgs e)
-    {
-        ExtensionPopup.IsOpen = false;
-        _currentExtensionId = null;
-    }
-
-    private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem mi && mi.Tag is string extId)
-        {
-            if (_webViewService.ActiveWebView?.CoreWebView2?.Profile != null)
-            {
-                var profile = _webViewService.ActiveWebView.CoreWebView2.Profile;
-                var exts = await profile.GetBrowserExtensionsAsync();
-                var ext = exts.FirstOrDefault(x => x.Id == extId);
-                if (ext != null) { await ext.RemoveAsync(); await LoadExtensionsAsync(); }
-            }
-        }
     }
 }

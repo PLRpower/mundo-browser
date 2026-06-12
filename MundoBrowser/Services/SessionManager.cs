@@ -12,6 +12,7 @@ namespace MundoBrowser.Services
     public class SessionManager : ISessionManager
     {
         private readonly string _sessionFilePath;
+        private readonly string _sessionBackupPath;
         private readonly string _faviconsPath;
         private readonly SemaphoreSlim _saveLock = new SemaphoreSlim(1, 1);
 
@@ -21,6 +22,7 @@ namespace MundoBrowser.Services
             var appFolder = Path.Combine(appData, "MundoBrowser");
             Directory.CreateDirectory(appFolder);
             _sessionFilePath = Path.Combine(appFolder, "last_session.json");
+            _sessionBackupPath = Path.Combine(appFolder, "last_session.json.bak");
             
             _faviconsPath = Path.Combine(appFolder, "Favicons");
             Directory.CreateDirectory(_faviconsPath);
@@ -29,7 +31,7 @@ namespace MundoBrowser.Services
         /// <inheritdoc/>
         public async Task SaveSessionAsync(MainViewModel vm)
         {
-            await _saveLock.WaitAsync();
+            await _saveLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 var sessionData = new SessionData();
@@ -49,7 +51,8 @@ namespace MundoBrowser.Services
                         Title = tab.Title,
                         Url = tab.Url,
                         FaviconRelativePath = tab.FaviconRelativePath,
-                        FaviconUrl = tab.FaviconUrl
+                        FaviconUrl = tab.FaviconUrl,
+                        ZoomFactor = tab.ZoomFactor
                     });
                 }
 
@@ -64,6 +67,7 @@ namespace MundoBrowser.Services
                             Url = pinned.Tab.Url,
                             FaviconRelativePath = pinned.Tab.FaviconRelativePath,
                             FaviconUrl = pinned.Tab.FaviconUrl,
+                            ZoomFactor = pinned.Tab.ZoomFactor,
                             SlotIndex = pinned.SlotIndex
                         });
                     }
@@ -91,7 +95,13 @@ namespace MundoBrowser.Services
                 }
 
                 var json = JsonSerializer.Serialize(sessionData, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync(_sessionFilePath, json);
+                var temporaryPath = _sessionFilePath + ".tmp";
+                await File.WriteAllTextAsync(temporaryPath, json).ConfigureAwait(false);
+
+                if (File.Exists(_sessionFilePath))
+                    File.Replace(temporaryPath, _sessionFilePath, _sessionBackupPath, ignoreMetadataErrors: true);
+                else
+                    File.Move(temporaryPath, _sessionFilePath);
             }
             catch (Exception ex)
             {
@@ -106,18 +116,21 @@ namespace MundoBrowser.Services
         /// <inheritdoc/>
         public SessionData? LoadSession()
         {
+            return TryLoadSession(_sessionFilePath) ?? TryLoadSession(_sessionBackupPath);
+        }
+
+        private static SessionData? TryLoadSession(string path)
+        {
             try
             {
-                if (File.Exists(_sessionFilePath))
-                {
-                    var json = File.ReadAllText(_sessionFilePath);
-                    return JsonSerializer.Deserialize<SessionData>(json);
-                }
+                if (File.Exists(path))
+                    return JsonSerializer.Deserialize<SessionData>(File.ReadAllText(path));
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to load session: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Failed to load session from {path}: {ex.Message}");
             }
+
             return null;
         }
     }

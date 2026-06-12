@@ -17,12 +17,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _fullscreenHidesUi;
     private bool _resizeOverlaysOpen;
     private bool _isSidebarFloating;
+    private bool _isClosingSafe;
+    private bool _isSavingSession;
     private string? _currentExtensionId;
     private string? _lastClosedExtensionId;
     private DateTime _lastExtensionPopupClosed = DateTime.MinValue;
     private (WindowState State, WindowStyle Style, ResizeMode Resize, Wpf.Ui.Controls.WindowBackdropType Backdrop, Wpf.Ui.Controls.WindowCornerPreference Corners, bool Topmost, double Left, double Top, double Width, double Height) _prevWindowState;
 
     private readonly System.Windows.Threading.DispatcherTimer _globalMediaTimer;
+    private int _mediaUpdateRunning;
+    private DateTime _lastBackgroundMediaUpdate = DateTime.MinValue;
     private readonly string[]? _startArgs;
 
     public MainWindow(string[]? args = null)
@@ -37,7 +41,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         InitializeEvents(vm);
 
         // Single global timer for media updates to save resources
-        _globalMediaTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _globalMediaTimer = new System.Windows.Threading.DispatcherTimer(
+            System.Windows.Threading.DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
         _globalMediaTimer.Tick += UpdateActiveMediaInfo;
         _globalMediaTimer.Start();
 
@@ -45,7 +53,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SourceInitialized += (s, e) =>
         {
             var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            NativeMethods.SetWindowAppId(handle, "MundoBrowser.App");
+            NativeMethods.SetWindowAppId(handle, NativeMethods.AppUserModelId);
             UpdateWindowFrameVisuals();
             
             System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
@@ -54,16 +62,43 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void InitializeWindow()
     {
-        StateChanged += (_, _) => OnWindowStateChanged(forceResizeOverlayReopen: true);
-        LocationChanged += (_, _) => KeepFullscreenBounds();
+        StateChanged += (_, _) => {
+            OnWindowStateChanged(forceResizeOverlayReopen: true);
+            UpdateEdgeTriggerState(forceReopen: true);
+        };
+        LocationChanged += (_, _) => {
+            KeepFullscreenBounds();
+            RepositionEdgeTriggerPopup();
+        };
         SizeChanged += (_, _) => {
             KeepFullscreenBounds();
             UpdateResizeOverlayState();
+            UpdateEdgeTriggerState(forceReopen: true);
         };
-        Closing += async (_, _) => {
-            if (DataContext is MainViewModel vm)
+        Activated += (_, _) => UpdateEdgeTriggerState(forceReopen: true);
+        Deactivated += (_, _) => HideFloatingSidebar(animate: false);
+        Closing += async (_, e) => {
+            if (!_isClosingSafe)
             {
-                await vm.SaveCurrentSessionAsync();
+                e.Cancel = true;
+                if (_isSavingSession)
+                    return;
+
+                _isSavingSession = true;
+                try
+                {
+                    SyncWindowPlacementToViewModel();
+                    if (DataContext is MainViewModel vm)
+                    {
+                        await vm.SaveCurrentSessionAsync();
+                    }
+                }
+                finally
+                {
+                    _isSavingSession = false;
+                }
+                _isClosingSafe = true;
+                Close();
             }
         };
         
@@ -77,9 +112,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             quickPopup.PlacementTarget = MainGrid;
 
         ContentRendered += async (_, _) => {
-            WindowTitleBar.PreviewMouseLeftButtonDown += BlockFullscreenTitleBarDrag;
+            WindowTitleBar.PreviewMouseLeftButtonDown += TitleBar_PreviewMouseLeftButtonDown;
             WindowTitleBar.PreviewMouseMove += BlockFullscreenTitleBarDrag;
             UpdateResizeOverlayState(forceReopen: true);
+            UpdateEdgeTriggerState(forceReopen: true);
 
             await _webViewService.InitializeAsync(WebViewsContainer);
             
@@ -108,6 +144,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
     }
 
+    private void RepositionEdgeTriggerPopup()
+    {
+        if (EdgeTriggerPopup != null && EdgeTriggerPopup.IsOpen)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (EdgeTriggerPopup != null && EdgeTriggerPopup.IsOpen)
+                {
+                    var offset = EdgeTriggerPopup.HorizontalOffset;
+                    EdgeTriggerPopup.HorizontalOffset = offset + 0.1;
+                    EdgeTriggerPopup.HorizontalOffset = offset;
+                }
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+    }
+
     private void InitializeEvents(MainViewModel vm)
     {
         vm.PropertyChanged += async (s, e) => {
@@ -116,6 +168,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             else if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
             {
                 UpdateSidebarWidth(vm.IsSidebarVisible);
+            }
+            else if (e.PropertyName == nameof(MainViewModel.SidebarWidth) && vm.IsSidebarVisible)
+            {
+                UpdateSidebarWidth(visible: true);
             }
         };
 
@@ -260,7 +316,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         wv.CoreWebView2.FaviconChanged += async (s, args) => {
             if (DataContext is MainViewModel vm)
             {
-                await vm.FaviconService.ResolveFaviconAsync(wv, tab, forceReload: true);
+                bool shouldRefreshImmediately = vm.SelectedTab == tab || string.IsNullOrEmpty(tab.FaviconUrl);
+                if (shouldRefreshImmediately)
+                    await vm.FaviconService.ResolveFaviconAsync(wv, tab, forceReload: true);
             }
         };
 

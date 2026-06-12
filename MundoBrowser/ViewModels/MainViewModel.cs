@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.DependencyInjection;
 using CommunityToolkit.Mvvm.Input;
+using MundoBrowser.Interfaces;
 using MundoBrowser.Services;
 using MundoBrowser.Models;
 
@@ -9,6 +11,8 @@ namespace MundoBrowser.ViewModels
 {
     public partial class MainViewModel : ObservableObject
     {
+        private readonly IAppSettingsService _appSettingsService;
+
         [ObservableProperty]
         private ObservableCollection<TabViewModel> _tabs = new();
 
@@ -26,6 +30,11 @@ namespace MundoBrowser.ViewModels
 
         [ObservableProperty]
         private double _sidebarWidth = 250;
+
+        partial void OnIsSidebarVisibleChanged(bool value)
+        {
+            _appSettingsService.Update(settings => settings.IsSidebarVisible = value);
+        }
 
         [ObservableProperty]
         private ObservableCollection<HistoryEntry> _suggestions = new();
@@ -159,9 +168,15 @@ namespace MundoBrowser.ViewModels
 
         public MainViewModel()
         {
+            _appSettingsService = Ioc.Default.GetService<IAppSettingsService>()
+                ?? throw new InvalidOperationException("App settings service is not configured.");
+
             HistoryManager = new HistoryManager();
             SessionManager = new SessionManager();
             FaviconService = new FaviconService();
+
+            IsSidebarVisible = _appSettingsService.Current.IsSidebarVisible;
+            SidebarWidth = _appSettingsService.Current.SidebarWidth;
             
             for (int i = 0; i < 6; i++) PinnedTabs.Add(new PinnedTab(i));
 
@@ -181,9 +196,10 @@ namespace MundoBrowser.ViewModels
                     {
                         Tabs.Add(new TabViewModel { 
                             Title = tabData.Title ?? "New Tab", 
-                            Url = tabData.Url ?? "https://www.google.com", 
-                            AddressUrl = tabData.Url ?? "https://www.google.com", 
-                            FaviconUrl = tabData.FaviconUrl 
+                            Url = tabData.Url ?? _appSettingsService.Current.StartPage,
+                            AddressUrl = tabData.Url ?? _appSettingsService.Current.StartPage,
+                            FaviconUrl = tabData.FaviconUrl,
+                            ZoomFactor = tabData.ZoomFactor > 0 ? tabData.ZoomFactor : 1.0
                         });
                     }
 
@@ -193,9 +209,10 @@ namespace MundoBrowser.ViewModels
                         {
                             PinnedTabs[pinnedData.SlotIndex].Tab = new TabViewModel { 
                                 Title = pinnedData.Title ?? "New Tab", 
-                                Url = pinnedData.Url ?? "https://www.google.com", 
-                                AddressUrl = pinnedData.Url ?? "https://www.google.com", 
-                                FaviconUrl = pinnedData.FaviconUrl 
+                                Url = pinnedData.Url ?? _appSettingsService.Current.StartPage,
+                                AddressUrl = pinnedData.Url ?? _appSettingsService.Current.StartPage,
+                                FaviconUrl = pinnedData.FaviconUrl,
+                                ZoomFactor = pinnedData.ZoomFactor > 0 ? pinnedData.ZoomFactor : 1.0
                             };
                         }
                     }
@@ -221,7 +238,8 @@ namespace MundoBrowser.ViewModels
 
         private void CreateDefaultTab()
         {
-            var newTab = new TabViewModel { Title = "New Tab", Url = "https://www.google.com", IsDiscarded = false };
+            var startPage = _appSettingsService.Current.StartPage;
+            var newTab = new TabViewModel { Title = "New Tab", Url = startPage, AddressUrl = startPage, IsDiscarded = false };
             Tabs.Add(newTab);
             SelectedTab = newTab;
         }
@@ -236,9 +254,14 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void AddNewTab()
         {
-            IsPendingNewTab = true;
-            AddressBarText = "";
+            AddTabWithUrl(_appSettingsService.Current.StartPage);
             NewTabRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void SetSidebarWidth(double width)
+        {
+            SidebarWidth = Math.Clamp(width, 200, 400);
+            _appSettingsService.Update(settings => settings.SidebarWidth = SidebarWidth);
         }
 
         public void AddTabWithUrl(string url)

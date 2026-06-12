@@ -17,7 +17,7 @@ public partial class App : System.Windows.Application
 
     public App()
     {
-        Helpers.NativeMethods.SetCurrentProcessExplicitAppUserModelID("MundoBrowser.App");
+        Helpers.NativeMethods.SetCurrentProcessExplicitAppUserModelID(Helpers.NativeMethods.AppUserModelId);
         Ioc.Default.ConfigureServices(ConfigureServices());
     }
 
@@ -104,6 +104,7 @@ public partial class App : System.Windows.Application
     private static IServiceProvider ConfigureServices()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IAppSettingsService, AppSettingsService>();
         services.AddSingleton<IHistoryManager, HistoryManager>();
         services.AddSingleton<ISessionManager, SessionManager>();
         services.AddSingleton<IFaviconService, FaviconService>();

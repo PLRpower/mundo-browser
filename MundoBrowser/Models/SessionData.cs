@@ -6,6 +6,7 @@ namespace MundoBrowser.Models
         public string? Url { get; set; }
         public string? FaviconRelativePath { get; set; }
         public string? FaviconUrl { get; set; }
+        public double ZoomFactor { get; set; } = 1.0;
         public int SlotIndex { get; set; }
     }
 

@@ -2,69 +2,49 @@ namespace MundoBrowser.Services;
 
 public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
 {
-    public bool IsAdBlockerEnabled { get; set; } = true;
-    public bool IsCookieBlockerEnabled { get; set; } = true;
+    private readonly MundoBrowser.Interfaces.IAppSettingsService _settingsService;
+    private bool _isAdBlockerEnabled;
+    private bool _isCookieBlockerEnabled;
 
-    // A lightweight HashSet for quick domain lookups (O(1) complexity)
-    private HashSet<string> _blockedDomains = new(StringComparer.OrdinalIgnoreCase);
-
-    public AdBlockerService()
+    public bool IsAdBlockerEnabled
     {
-        _ = LoadBlockListsAsync();
-    }
-
-    private async Task LoadBlockListsAsync()
-    {
-        try
+        get => _isAdBlockerEnabled;
+        set
         {
-            // We use a small, hardcoded list of common ad/tracking domains for the MVP
-            // In a production app, this would be downloaded from an EasyList format file.
-            var commonAdDomains = new[]
-            {
-                "doubleclick.net", "googleadservices.com", "googlesyndication.com",
-                "adsystem.com", "adservice.google.com", "criteo.com", "taboola.com",
-                "outbrain.com", "ads.yahoo.com", "adnxs.com", "amazon-adsystem.com",
-                "analytics.twitter.com", "pixel.facebook.com", "connect.facebook.net",
-                "google-analytics.com", "googletagmanager.com", "mc.yandex.ru"
-            };
-
-            foreach (var domain in commonAdDomains)
-            {
-                _blockedDomains.Add(domain);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error loading ad blocker lists: {ex.Message}");
+            if (_isAdBlockerEnabled == value) return;
+            _isAdBlockerEnabled = value;
+            _settingsService.Update(settings => settings.IsAdBlockerEnabled = value);
         }
     }
 
-    public bool ShouldBlockRequest(string url)
+    public bool IsCookieBlockerEnabled
     {
-        if (!IsAdBlockerEnabled) return false;
-
-        try
+        get => _isCookieBlockerEnabled;
+        set
         {
-            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            {
-                string host = uri.Host;
-                
-                // Exact match
-                if (_blockedDomains.Contains(host)) return true;
-
-                // Subdomain match (e.g., ads.example.com matches example.com if in list)
-                var parts = host.Split('.');
-                for (int i = 0; i < parts.Length - 1; i++)
-                {
-                    string subHost = string.Join('.', parts.Skip(i));
-                    if (_blockedDomains.Contains(subHost)) return true;
-                }
-            }
+            if (_isCookieBlockerEnabled == value) return;
+            _isCookieBlockerEnabled = value;
+            _settingsService.Update(settings => settings.IsCookieBlockerEnabled = value);
         }
-        catch { }
-
-        return false;
     }
+
+    public AdBlockerService(MundoBrowser.Interfaces.IAppSettingsService settingsService)
+    {
+        _settingsService = settingsService;
+        _isAdBlockerEnabled = settingsService.Current.IsAdBlockerEnabled;
+        _isCookieBlockerEnabled = settingsService.Current.IsCookieBlockerEnabled;
+    }
+
+    private static readonly string[] BlockedDomainList =
+    [
+        "doubleclick.net", "googleadservices.com", "googlesyndication.com",
+        "adsystem.com", "adservice.google.com", "criteo.com", "taboola.com",
+        "outbrain.com", "ads.yahoo.com", "adnxs.com", "amazon-adsystem.com",
+        "analytics.twitter.com", "pixel.facebook.com", "connect.facebook.net",
+        "google-analytics.com", "googletagmanager.com", "mc.yandex.ru"
+    ];
+
+    public IReadOnlyCollection<string> BlockedDomains => BlockedDomainList;
 
     public string GetCosmeticCss()
     {
@@ -73,11 +53,11 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
         // Universal cosmetic hiding selectors for common ad containers
         return @"
             .ad-container, .ad-banner, .advertisement, 
-            [id^='div-gpt-ad'], [class*='adsbygoogle'], 
+            [id^='div-gpt-ad'], .adsbygoogle,
             .sponsor-post, .sponsored-content, 
-            [data-ad-slot], [id*='google_ads_iframe'],
+            [data-ad-slot], [id^='google_ads_iframe'],
             .outbrain-tm, .taboola-tm
-            { display: none !important; width: 0 !important; height: 0 !important; }
+            { display: none !important; }
         ";
     }
 
@@ -90,12 +70,9 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
             #cookie-notice, #cookie-banner, .cookie-banner, .cookie-consent,
             #qc-cmp2-container, #onetrust-consent-sdk, .cc-window,
             #didomi-host, #sp_message_container, .fc-consent-root,
-            [id^='cookie-law'], [class*='cookie-law'],
-            [id*='tarteaucitron'], #usercentrics-root
-            { display: none !important; z-index: -1 !important; visibility: hidden !important; }
-            
-            /* Unblock scrolling if the site locked it behind a modal */
-            body { overflow: auto !important; }
+            [id^='cookie-law'], .cookie-law,
+            [id^='tarteaucitron'], #usercentrics-root
+            { display: none !important; }
         ";
     }
 
@@ -108,15 +85,9 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
         return @"
             (function() {
                 const removeCookieModals = () => {
-                    const selectors = [
-                        '#qc-cmp2-container', '#onetrust-consent-sdk', 
-                        '#didomi-host', '.fc-consent-root', '#usercentrics-root',
-                        '[id*=""tarteaucitron""]'
-                    ];
-                    selectors.forEach(sel => {
-                        const els = document.querySelectorAll(sel);
-                        els.forEach(el => el.remove());
-                    });
+                    const selector = '#qc-cmp2-container, #onetrust-consent-sdk, #didomi-host, ' +
+                                     '.fc-consent-root, #usercentrics-root, [id^=""tarteaucitron""]';
+                    document.querySelectorAll(selector).forEach(el => el.remove());
                     
                     // Force body scroll unlock
                     if (document.body && document.body.style.overflow === 'hidden') {
@@ -125,10 +96,14 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
                     }
                 };
                 
-                // Run on load and periodically in case of lazy-loaded banners
+                // Run once now and retry during an idle period for lazy-loaded banners.
                 removeCookieModals();
-                setTimeout(removeCookieModals, 1000);
-                setTimeout(removeCookieModals, 3000);
+                const retry = () => removeCookieModals();
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(retry, { timeout: 2000 });
+                } else {
+                    setTimeout(retry, 1000);
+                }
             })();
         ";
     }

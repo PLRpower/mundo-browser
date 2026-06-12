@@ -77,6 +77,7 @@ public class FaviconService : IFaviconService
 
     private readonly Dictionary<string, Task<string?>> _activeResolutions = [];
     private readonly HashSet<string> _failedDomains = [];
+    private readonly Dictionary<string, DateTime> _lastForcedResolutions = [];
 
     public async Task ResolveFaviconAsync(WebView2 wv, TabViewModel tab, bool forceReload = false)
     {
@@ -87,6 +88,23 @@ public class FaviconService : IFaviconService
         string domain;
         try { domain = new Uri(source).Host; }
         catch { return; }
+
+        if (forceReload)
+        {
+            lock (_activeResolutions)
+            {
+                var now = DateTime.UtcNow;
+                if (_lastForcedResolutions.TryGetValue(domain, out var lastResolution)
+                    && now - lastResolution < TimeSpan.FromSeconds(15))
+                {
+                    forceReload = false;
+                }
+                else
+                {
+                    _lastForcedResolutions[domain] = now;
+                }
+            }
+        }
 
         if (!forceReload)
         {
@@ -108,7 +126,7 @@ public class FaviconService : IFaviconService
             if (_activeResolutions.TryGetValue(domain, out resolutionTask)) { }
             else
             {
-                resolutionTask = PerformResolveFaviconAsync(wv, domain, forceReload);
+                resolutionTask = PerformResolveFaviconAsync(wv, domain);
                 _activeResolutions[domain] = resolutionTask;
             }
         }
@@ -119,7 +137,7 @@ public class FaviconService : IFaviconService
         lock (_activeResolutions) { _activeResolutions.Remove(domain); }
     }
 
-    private async Task<string?> PerformResolveFaviconAsync(WebView2 wv, string domain, bool forceReload)
+    private async Task<string?> PerformResolveFaviconAsync(WebView2 wv, string domain)
     {
         string? bestLocalPath = null;
         
@@ -135,8 +153,8 @@ public class FaviconService : IFaviconService
         }
         catch { }
 
-        // 2. Try to find a high-res one via script if we didn't get one or if we want to improve it
-        if (bestLocalPath == null || forceReload || (_domainQuality.TryGetValue(domain, out var q) && q < QualityHighRes))
+        // Only inspect the page DOM when WebView2 did not provide a native favicon.
+        if (bestLocalPath == null)
         {
             try
             {
@@ -273,53 +291,61 @@ public class FaviconService : IFaviconService
     {
         try
         {
-            // Convert SVG to high-quality PNG on the fly
-            if (extension == "svg")
-            {
-                try
-                {
-                    stream.Position = 0;
-                    var svgDoc = Svg.SvgDocument.Open<Svg.SvgDocument>(stream);
-                    if (svgDoc != null)
-                    {
-                        var bitmap = svgDoc.Draw(128, 128); // Force high res 128x128
-                        var pngStream = new MemoryStream();
-                        bitmap.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
-                        pngStream.Position = 0;
-                        
-                        stream.Dispose(); // We don't need the SVG stream anymore
-                        stream = pngStream;
-                        extension = "png";
-                        quality = QualityHighRes; // Boost quality
-                    }
-                    else
-                    {
-                        return null; // Failed to parse SVG
-                    }
-                }
-                catch
-                {
-                    return null; // Ignore invalid SVGs
-                }
-            }
-
             // Don't overwrite with lower quality
             if (_domainQuality.TryGetValue(domain, out var currentQuality) && quality < currentQuality)
             {
                 return null;
             }
 
+            if (stream.CanSeek)
+                stream.Position = 0;
+
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var saved = await Task.Run(() => SaveFaviconToDisk(memoryStream.ToArray(), domain, extension, quality));
+            if (saved == null)
+                return null;
+
+            _domainToRelativePath[domain] = saved.Value.RelativePath;
+            _domainQuality[domain] = saved.Value.Quality;
+
+            return new Uri(saved.Value.FullPath).AbsoluteUri;
+        }
+        catch { return null; }
+    }
+
+    private (string FullPath, string RelativePath, int Quality)? SaveFaviconToDisk(
+        byte[] bytes,
+        string domain,
+        string extension,
+        int quality)
+    {
+        try
+        {
+            if (extension == "svg")
+            {
+                using var svgStream = new MemoryStream(bytes);
+                var svgDoc = Svg.SvgDocument.Open<Svg.SvgDocument>(svgStream);
+                if (svgDoc == null)
+                    return null;
+
+                using var bitmap = svgDoc.Draw(128, 128);
+                using var pngStream = new MemoryStream();
+                bitmap.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
+                bytes = pngStream.ToArray();
+                extension = "png";
+                quality = QualityHighRes;
+            }
+
             var safeDomain = domain.Replace('.', '_');
             var fileName = $"{safeDomain}.q{quality}.{extension}";
             var fullPath = Path.Combine(_faviconsPath, fileName);
 
-            // Clean up old files for this domain
             if (Directory.Exists(_faviconsPath))
             {
                 foreach (var oldFile in Directory.GetFiles(_faviconsPath, $"{safeDomain}*"))
                 {
                     var oldFileName = Path.GetFileName(oldFile);
-                    // Match exactly safeDomain.something or safeDomain.qN.something
                     if (oldFileName.StartsWith(safeDomain + ".q") || oldFileName.StartsWith(safeDomain + "."))
                     {
                         try { File.Delete(oldFile); } catch { }
@@ -327,18 +353,13 @@ public class FaviconService : IFaviconService
                 }
             }
 
-            using (var fileStream = File.Create(fullPath))
-            {
-                await stream.CopyToAsync(fileStream);
-            }
-
-            var relativePath = $"Favicons/{fileName}";
-            _domainToRelativePath[domain] = relativePath;
-            _domainQuality[domain] = quality;
-
-            return new Uri(fullPath).AbsoluteUri;
+            File.WriteAllBytes(fullPath, bytes);
+            return (fullPath, $"Favicons/{fileName}", quality);
         }
-        catch { return null; }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string GetExtensionFromContentType(string contentType) => contentType switch

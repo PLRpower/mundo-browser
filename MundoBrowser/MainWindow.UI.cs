@@ -13,7 +13,7 @@ public partial class MainWindow
     {
         if (SidebarColumn == null || SplitterColumn == null || DataContext is not MainViewModel vm) return;
         
-        // In fullscreen, the sidebar MUST be floating (overlay) and not take space in the Grid
+        // Fullscreen never reserves layout space for the sidebar. It is shown temporarily as an overlay.
         if (_isFullscreen)
         {
             SidebarColumn.Width = new GridLength(0);
@@ -22,55 +22,40 @@ public partial class MainWindow
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Collapsed;
 
             if (_fullscreenHidesUi)
-            {
-                if (_isSidebarFloating)
-                    HideFloatingSidebar();
-                else if (FloatingSidebarPopup != null)
-                    FloatingSidebarPopup.IsOpen = false;
-
-                return;
-            }
+                HideFloatingSidebar(animate: false);
 
             if (FloatingSidebarPopup != null)
                 FloatingSidebarPopup.VerticalOffset = WindowTitleBar?.Visibility == Visibility.Visible ? 40 : 0;
 
-            // If the user toggles it visible in F11, we show the floating one
-            if (visible)
-            {
-                if (!_isSidebarFloating) ShowFloatingSidebar();
-            }
-            else if (_isSidebarFloating)
-            {
-                HideFloatingSidebar();
-            }
-            else if (FloatingSidebarPopup != null)
-            {
-                FloatingSidebarPopup.IsOpen = false;
-            }
-            
+            UpdateEdgeTriggerState();
             return;
         }
 
         if (FloatingSidebarPopup != null)
             FloatingSidebarPopup.VerticalOffset = 40;
 
-        if (visible) {
-            if (_isSidebarFloating) HideFloatingSidebar();
+        if (visible)
+        {
+            HideFloatingSidebar(animate: false);
             SidebarColumn.Width = new GridLength(vm.SidebarWidth);
             SidebarColumn.MinWidth = 200;
             SplitterColumn.Width = GridLength.Auto;
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Visible;
-        } else {
+        }
+        else
+        {
             SidebarColumn.Width = new GridLength(0);
             SidebarColumn.MinWidth = 0;
             SplitterColumn.Width = new GridLength(0);
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Collapsed;
         }
+
+        UpdateEdgeTriggerState();
     }
 
     private void ShowFloatingSidebar()
     {
-        if (FloatingSidebarPopup == null) return;
+        if (FloatingSidebarPopup == null || _fullscreenHidesUi) return;
         if (_isSidebarFloating && FloatingSidebarPopup.IsOpen) return;
 
         _isSidebarFloating = true;
@@ -79,30 +64,105 @@ public partial class MainWindow
         var slideIn = new System.Windows.Media.Animation.DoubleAnimation { From = -250, To = 0, Duration = TimeSpan.FromMilliseconds(250), EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut } };
         FloatingSidebarContent.RenderTransform = new System.Windows.Media.TranslateTransform(-250, 0);
         FloatingSidebarContent.RenderTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slideIn);
+
+        // Let the current edge mouse event complete before closing its source popup.
+        Dispatcher.BeginInvoke(
+            new Action(() => UpdateEdgeTriggerState()),
+            System.Windows.Threading.DispatcherPriority.Input);
     }
 
-    private void HideFloatingSidebar()
+    private void HideFloatingSidebar(bool animate = true)
     {
-        if (FloatingSidebarPopup == null || !_isSidebarFloating) return;
+        if (FloatingSidebarPopup == null) return;
+
+        if (!_isSidebarFloating)
+        {
+            if (FloatingSidebarPopup.IsOpen)
+                FloatingSidebarPopup.IsOpen = false;
+            UpdateEdgeTriggerState();
+            return;
+        }
+
         _isSidebarFloating = false;
+
+        if (!animate)
+        {
+            FloatingSidebarContent.RenderTransform.BeginAnimation(
+                System.Windows.Media.TranslateTransform.XProperty,
+                null);
+            FloatingSidebarPopup.IsOpen = false;
+            UpdateEdgeTriggerState();
+            return;
+        }
+
         var slideOut = new System.Windows.Media.Animation.DoubleAnimation { From = 0, To = -250, Duration = TimeSpan.FromMilliseconds(200), EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn } };
-        slideOut.Completed += (s, e) => { if (!_isSidebarFloating) FloatingSidebarPopup.IsOpen = false; };
+        slideOut.Completed += (_, _) =>
+        {
+            if (!_isSidebarFloating)
+                FloatingSidebarPopup.IsOpen = false;
+            UpdateEdgeTriggerState();
+        };
         if (FloatingSidebarContent.RenderTransform is not System.Windows.Media.TranslateTransform) FloatingSidebarContent.RenderTransform = new System.Windows.Media.TranslateTransform(0, 0);
         FloatingSidebarContent.RenderTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slideOut);
     }
 
     private void FloatingSidebarContent_MouseLeave(object sender, MouseEventArgs e) => HideFloatingSidebar();
 
+    private void UpdateEdgeTriggerState(bool forceReopen = false)
+    {
+        if (EdgeTriggerPopup == null) return;
+
+        bool sidebarPinned = DataContext is MainViewModel vm && vm.IsSidebarVisible;
+        bool shouldOpen = !_isInSizeMove
+                          && !_fullscreenHidesUi
+                          && !_isSidebarFloating
+                          && (_isFullscreen || !sidebarPinned);
+
+        EdgeTriggerPopup.Visibility = _fullscreenHidesUi ? Visibility.Collapsed : Visibility.Visible;
+        EdgeTriggerPopup.HorizontalOffset = 0;
+
+        if (shouldOpen && forceReopen && EdgeTriggerPopup.IsOpen)
+            EdgeTriggerPopup.IsOpen = false;
+
+        EdgeTriggerPopup.IsOpen = shouldOpen;
+
+        if (shouldOpen)
+            RepositionEdgeTriggerPopup();
+    }
+
+    private void ToggleSidebar()
+    {
+        if (_fullscreenHidesUi || DataContext is not MainViewModel vm)
+            return;
+
+        if (_isFullscreen)
+        {
+            if (_isSidebarFloating)
+                HideFloatingSidebar();
+            else
+                ShowFloatingSidebar();
+            return;
+        }
+
+        vm.ToggleSidebarCommand.Execute(null);
+    }
+
     private void GridSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
         if (DataContext is MainViewModel vm && SidebarColumn != null && SidebarColumn.Width.IsAbsolute) vm.SidebarWidth = SidebarColumn.Width.Value;
+    }
+
+    private void GridSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && SidebarColumn != null && SidebarColumn.Width.IsAbsolute)
+            vm.SetSidebarWidth(SidebarColumn.Width.Value);
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
         var key = e.Key;
-        if (key == Key.D && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).ToggleSidebarCommand.Execute(null); e.Handled = true; }
+        if (key == Key.D && modifiers == ModifierKeys.Control) { ToggleSidebar(); e.Handled = true; }
         else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control)) { _webViewService.ActiveWebView?.Reload(); e.Handled = true; }
         else if (key == Key.F11) { SetFullscreen(!_isFullscreen); e.Handled = true; }
         else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
@@ -140,34 +200,64 @@ public partial class MainWindow
 
     private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (!ExtensionPopup.IsOpen) return;
-
-        if (e.OriginalSource is DependencyObject d && FindAncestor<System.Windows.Controls.Button>(d) is System.Windows.Controls.Button btn && btn.Tag is string)
-            return;
-
-        var popupChild = ExtensionPopup.Child as FrameworkElement;
-        if (popupChild == null) { CloseExtensionPopup(); return; }
-
-        var popupSource = PresentationSource.FromVisual(popupChild) as System.Windows.Interop.HwndSource;
-        if (popupSource == null) { CloseExtensionPopup(); return; }
-
-        var screenPos = PointToScreen(e.GetPosition(this));
-
-        System.Windows.Rect popupRect;
-        NativeMethods.RECT rect;
-        if (NativeMethods.GetWindowRect(popupSource.Handle, out rect))
+        // 1. Close extension popup if click is outside
+        if (ExtensionPopup.IsOpen)
         {
-            popupRect = new System.Windows.Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+            if (!(e.OriginalSource is DependencyObject d && FindAncestor<System.Windows.Controls.Button>(d) is System.Windows.Controls.Button btn && btn.Tag is string))
+            {
+                var popupChild = ExtensionPopup.Child as FrameworkElement;
+                if (popupChild == null) { CloseExtensionPopup(); }
+                else
+                {
+                    var popupSource = PresentationSource.FromVisual(popupChild) as System.Windows.Interop.HwndSource;
+                    if (popupSource == null) { CloseExtensionPopup(); }
+                    else
+                    {
+                        var screenPos = PointToScreen(e.GetPosition(this));
+                        System.Windows.Rect popupRect;
+                        NativeMethods.RECT rect;
+                        if (NativeMethods.GetWindowRect(popupSource.Handle, out rect))
+                        {
+                            popupRect = new System.Windows.Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+                            if (!popupRect.Contains(screenPos))
+                            {
+                                CloseExtensionPopup();
+                            }
+                        }
+                        else
+                        {
+                            CloseExtensionPopup();
+                        }
+                    }
+                }
+            }
         }
-        else
-        {
-            CloseExtensionPopup();
-            return;
-        }
 
-        if (!popupRect.Contains(screenPos))
+        // 2. Clear address bar focus if click is outside in WPF
+        if (TopBarControl != null && (TopBarControl.AddressBar.IsFocused || (DataContext is MainViewModel vm && vm.IsPendingNewTab)))
         {
-            CloseExtensionPopup();
+            var clickedElement = e.OriginalSource as DependencyObject;
+            bool clickedInsideAddressBar = clickedElement != null &&
+                (FindAncestor<System.Windows.Controls.TextBox>(clickedElement) == TopBarControl.AddressBar ||
+                 FindAncestor<System.Windows.Controls.Primitives.Popup>(clickedElement) == TopBarControl.SuggestionsPopupControl);
+
+            if (!clickedInsideAddressBar)
+            {
+                if (DataContext is MainViewModel vmEsc)
+                {
+                    if (vmEsc.IsPendingNewTab)
+                    {
+                        vmEsc.IsPendingNewTab = false;
+                        if (vmEsc.SelectedTab != null)
+                            vmEsc.AddressBarText = vmEsc.SelectedTab.AddressUrl;
+                    }
+                }
+
+                // Focus WebView if available, otherwise clear focus
+                var wv = GetActiveWebView();
+                if (wv != null) wv.Focus();
+                else Keyboard.ClearFocus();
+            }
         }
     }
 
@@ -191,7 +281,8 @@ public partial class MainWindow
 
     private void Edge_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (!this.IsActive) return;
-        if (DataContext is MainViewModel vm && !vm.IsSidebarVisible && !_isSidebarFloating) ShowFloatingSidebar();
+        if (!IsActive || _fullscreenHidesUi || _isSidebarFloating) return;
+        if (_isFullscreen || DataContext is MainViewModel { IsSidebarVisible: false })
+            ShowFloatingSidebar();
     }
 }

@@ -7,13 +7,22 @@ public partial class MainWindow
 {
     private async void UpdateActiveMediaInfo(object? sender, EventArgs e)
     {
-        if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null) return;
+        if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null || !vm.IsMediaBarVisible) return;
 
-        var webView = _webViewService.GetWebViewForTab(vm.ActiveMediaTab);
-        if (webView?.CoreWebView2 == null) return;
+        if (vm.SelectedTab != vm.ActiveMediaTab)
+        {
+            var now = DateTime.UtcNow;
+            if (now - _lastBackgroundMediaUpdate < TimeSpan.FromSeconds(6)) return;
+            _lastBackgroundMediaUpdate = now;
+        }
+
+        if (Interlocked.Exchange(ref _mediaUpdateRunning, 1) == 1) return;
 
         try
         {
+            var webView = _webViewService.GetWebViewForTab(vm.ActiveMediaTab);
+            if (webView?.CoreWebView2 == null) return;
+
             const string script = @"
                 (function() {
                     const media = document.querySelector('video, audio');
@@ -54,6 +63,10 @@ public partial class MainWindow
             }
         }
         catch { }
+        finally
+        {
+            Volatile.Write(ref _mediaUpdateRunning, 0);
+        }
     }
 
     private async void OnMediaActionRequested(object? sender, string action)

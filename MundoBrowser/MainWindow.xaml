@@ -9,9 +9,9 @@
         xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
         mc:Ignorable="d"
         Title="Mundo Browser"
-        Width="{Binding WindowWidth, Mode=TwoWay}"        Height="{Binding WindowHeight, Mode=TwoWay}"
-        Left="{Binding WindowLeft, Mode=TwoWay}"
-        Top="{Binding WindowTop, Mode=TwoWay}"
+        Width="{Binding WindowWidth, Mode=OneTime}"        Height="{Binding WindowHeight, Mode=OneTime}"
+        Left="{Binding WindowLeft, Mode=OneTime}"
+        Top="{Binding WindowTop, Mode=OneTime}"
         WindowState="{Binding WindowState, Mode=TwoWay}"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Acrylic"
@@ -130,11 +130,17 @@
                      Grid.Column="0"
                      Grid.ColumnSpan="3"
                      x:Name="WindowTitleBar"
-                     Title=""
                      Height="40"
+                     HorizontalContentAlignment="Stretch"
                      Background="{DynamicResource ChromeSurfaceBrush}"
                      ButtonsForeground="White"
                      ShowHelp="False">
+            <ui:TitleBar.Resources>
+                <Style TargetType="{x:Type ui:TitleBarButton}"
+                       BasedOn="{StaticResource {x:Type ui:TitleBarButton}}">
+                    <Setter Property="Height" Value="40"/>
+                </Style>
+            </ui:TitleBar.Resources>
             <ui:TitleBar.CenterContent>
                 <local:TopBarView x:Name="TopBarControl"/>
             </ui:TitleBar.CenterContent>
@@ -181,6 +187,7 @@
                       Cursor="SizeWE"
                       Visibility="{Binding IsSidebarVisible, Converter={StaticResource BoolToVis}}"
                       DragDelta="GridSplitter_DragDelta"
+                      DragCompleted="GridSplitter_DragCompleted"
                       Background="{DynamicResource ChromeSurfaceBrush}"
                       BorderThickness="0"
                       ResizeBehavior="PreviousAndNext"
@@ -226,23 +233,11 @@
                Placement="Relative"
                HorizontalOffset="0"
                VerticalOffset="0"
-               Width="5"
+               Width="1"
+               IsOpen="False"
                Height="{Binding ActualHeight, ElementName=MainGrid}">
-            <Popup.Style>
-                <Style TargetType="Popup">
-                    <Setter Property="IsOpen" Value="False"/>
-                    <Style.Triggers>
-                        <MultiDataTrigger>
-                            <MultiDataTrigger.Conditions>
-                                <Condition Binding="{Binding IsSidebarVisible}" Value="False"/>
-                            </MultiDataTrigger.Conditions>
-                            <Setter Property="IsOpen" Value="True"/>
-                        </MultiDataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Popup.Style>
             <!-- #01000000 is almost completely transparent but still hit-testable -->
-            <Border Background="#01000000" MouseEnter="Edge_MouseEnter" />
+            <Border Background="#01000000" MouseEnter="Edge_MouseEnter" MouseMove="Edge_MouseEnter" />
         </Popup>
 
         <!-- Native resize overlays. Popups stay above WebView2 child HWNDs, unlike WPF borders. -->

@@ -15,6 +15,8 @@ public class WebViewService : IWebViewService
     private WebView2? _activeWebView;
     private readonly System.Timers.Timer _memoryTimer;
     private int _memoryOptimizationRunning;
+    private readonly IAppSettingsService _settingsService;
+    private readonly IAdBlockerService _adBlockerService;
 
     public bool EcoModeEnabled { get; set; } = true;
     public int EcoModeMinutes { get; set; } = 10;
@@ -29,6 +31,14 @@ public class WebViewService : IWebViewService
 
     public WebViewService()
     {
+        _settingsService = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IAppSettingsService>()
+            ?? throw new InvalidOperationException("App settings service is not configured.");
+        _adBlockerService = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IAdBlockerService>()
+            ?? throw new InvalidOperationException("Ad blocker service is not configured.");
+
+        EcoModeEnabled = _settingsService.Current.EcoModeEnabled;
+        EcoModeMinutes = _settingsService.Current.EcoModeMinutes;
+
         // EcoMode: Retire de la mémoire RAM les onglets inactifs > 10 min
         _memoryTimer = new System.Timers.Timer(60000); 
         _memoryTimer.Elapsed += CheckMemoryOptimization;
@@ -41,12 +51,8 @@ public class WebViewService : IWebViewService
         var options = new CoreWebView2EnvironmentOptions
         {
             AreBrowserExtensionsEnabled = true,
-            AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2 " +
-                                         "--enable-gpu-rasterization --ignore-gpu-blocklist " +
-                                         "--enable-zero-copy --enable-gpu-compositing " +
-                                         "--enable-native-gpu-memory-buffers --gpu-rasterization-msaa-sample-count=4 " +
-                                         "--disable-background-timer-throttling --disable-renderer-backgrounding " +
-                                         "--app-id=MundoBrowser.App --app-name=\"Mundo Browser\""
+            EnableTrackingPrevention = true,
+            AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2"
         };
 
         var userDataFolder = Path.Combine(
@@ -112,7 +118,10 @@ public class WebViewService : IWebViewService
                 await webView.EnsureCoreWebView2Async(_environment);
             }
 
-            // Modernize Scrollbars via Persistent CSS Injection
+            ApplyTrackingPrevention(webView);
+            ApplyAutofillSettings(webView);
+
+            // Install the scrollbar style once per document without observing every DOM mutation.
             await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
                 (function() {
                     const css = `
@@ -141,75 +150,55 @@ public class WebViewService : IWebViewService
                         }
                     `;
 
-                    function inject() {
-                        if (document.head || document.documentElement) {
-                            const style = document.createElement('style');
-                            style.id = 'mundo-custom-scrollbar';
-                            style.textContent = css;
-                            (document.head || document.documentElement).appendChild(style);
-                            return true;
-                        }
-                        return false;
-                    }
+                    const inject = () => {
+                        if (document.getElementById('mundo-custom-scrollbar')) return;
+                        const style = document.createElement('style');
+                        style.id = 'mundo-custom-scrollbar';
+                        style.textContent = css;
+                        (document.head || document.documentElement).appendChild(style);
+                    };
 
-                    if (!inject()) {
-                        const observer = new MutationObserver(() => {
-                            if (inject()) observer.disconnect();
-                        });
-                        observer.observe(document, { childList: true, subtree: true });
-                    }
+                    if (document.documentElement) inject();
+                    else document.addEventListener('DOMContentLoaded', inject, { once: true });
                 })();
             ");
 
             // AdBlocker Integration (Network and Cosmetic)
-            var adBlocker = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IAdBlockerService>();
+            var adBlocker = _adBlockerService;
             if (adBlocker != null)
             {
-                // Network Filtering
-                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+                // Only cross into managed code for known blocked domains.
+                foreach (var domain in adBlocker.BlockedDomains)
+                {
+                    webView.CoreWebView2.AddWebResourceRequestedFilter(
+                        $"*://{domain}/*",
+                        CoreWebView2WebResourceContext.All,
+                        CoreWebView2WebResourceRequestSourceKinds.Document);
+                    webView.CoreWebView2.AddWebResourceRequestedFilter(
+                        $"*://*.{domain}/*",
+                        CoreWebView2WebResourceContext.All,
+                        CoreWebView2WebResourceRequestSourceKinds.Document);
+                }
+
                 webView.CoreWebView2.WebResourceRequested += (s, e) =>
                 {
-                    if (adBlocker.ShouldBlockRequest(e.Request.Uri))
+                    if (adBlocker.IsAdBlockerEnabled)
                     {
                         var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
-                            null, 403, "Blocked by MundoBrowser", "Content-Type: text/plain"
+                            null, 204, "No Content", ""
                         );
                         e.Response = response;
                     }
                 };
 
-                // Cosmetic Filtering (CSS + JS)
-                webView.CoreWebView2.NavigationStarting += async (s, e) =>
+                // Apply cosmetic filtering once after the DOM is ready, without a permanent observer.
+                webView.CoreWebView2.DOMContentLoaded += async (_, _) =>
                 {
                     try
                     {
-                        string combinedCss = adBlocker.GetCosmeticCss() + adBlocker.GetCookieCosmeticCss();
-                        if (!string.IsNullOrWhiteSpace(combinedCss))
-                        {
-                            string jsInject = $@"
-                                (function() {{
-                                    const css = `{combinedCss.Replace("`", "\\`")}`;
-                                    const injectAdBlock = () => {{
-                                        if (!document.getElementById('mundo-adblock-css')) {{
-                                            const style = document.createElement('style');
-                                            style.id = 'mundo-adblock-css';
-                                            style.textContent = css;
-                                            (document.head || document.documentElement).appendChild(style);
-                                        }}
-                                    }};
-                                    injectAdBlock();
-                                    const obs = new MutationObserver(injectAdBlock);
-                                    obs.observe(document, {{ childList: true, subtree: true }});
-                                }})();
-                            ";
-                            await webView.CoreWebView2.ExecuteScriptAsync(jsInject);
-                        }
-
-                        string cookieJs = adBlocker.GetCookieRemovalScript();
-                        if (!string.IsNullOrWhiteSpace(cookieJs))
-                        {
-                            await webView.CoreWebView2.ExecuteScriptAsync(cookieJs);
-                        }
+                        string script = BuildCosmeticFilteringScript(adBlocker);
+                        if (!string.IsNullOrEmpty(script))
+                            await webView.CoreWebView2.ExecuteScriptAsync(script);
                     }
                     catch (ObjectDisposedException)
                     {
@@ -221,6 +210,8 @@ public class WebViewService : IWebViewService
                     }
                 };
             }
+
+            webView.CoreWebView2.DOMContentLoaded += (_, _) => PostSettingsToPage(webView);
 
             // Mapping virtuel pour les pages internes
             string assetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Pages");
@@ -264,16 +255,7 @@ public class WebViewService : IWebViewService
                         var key = root.GetProperty("key").GetString();
                         var value = root.GetProperty("value");
 
-                        if (key == "ecoModeEnabled")
-                            EcoModeEnabled = value.GetBoolean();
-                        else if (key == "ecoModeDuration")
-                        {
-                            if (value.ValueKind == System.Text.Json.JsonValueKind.String)
-                                EcoModeMinutes = int.Parse(value.GetString() ?? "10");
-                            else
-                                EcoModeMinutes = value.GetInt32();
-                        }
-                        else if (key == "makeDefault")
+                        if (key == "makeDefault")
                         {
                             try
                             {
@@ -294,6 +276,11 @@ public class WebViewService : IWebViewService
                                 // but we need to ensure the UI follows
                                 vm.AddressBarText = tab.AddressUrl;
                             }
+                        }
+                        else
+                        {
+                            ApplySettingChange(key, value);
+                            BroadcastSettingsToPages();
                         }
                     }
                 }
@@ -322,6 +309,196 @@ public class WebViewService : IWebViewService
         finally { _initSemaphore.Release(); }
     }
 
+    private static string BuildCosmeticFilteringScript(IAdBlockerService adBlocker)
+    {
+        string css = adBlocker.GetCosmeticCss() + adBlocker.GetCookieCosmeticCss();
+        string cookieScript = adBlocker.GetCookieRemovalScript();
+
+        if (string.IsNullOrWhiteSpace(css) && string.IsNullOrWhiteSpace(cookieScript))
+            return "";
+
+        string serializedCss = System.Text.Json.JsonSerializer.Serialize(css);
+        return $@"
+            (() => {{
+                const css = {serializedCss};
+                if (css && !document.getElementById('mundo-adblock-css')) {{
+                    const style = document.createElement('style');
+                    style.id = 'mundo-adblock-css';
+                    style.textContent = css;
+                    (document.head || document.documentElement).appendChild(style);
+                }}
+
+                {cookieScript}
+            }})();
+        ";
+    }
+
+    private void ApplySettingChange(string? key, System.Text.Json.JsonElement value)
+    {
+        var vm = System.Windows.Application.Current.MainWindow?.DataContext as MainViewModel;
+
+        switch (key)
+        {
+            case "startPage":
+                _settingsService.Update(settings => settings.StartPage = value.GetString() ?? "");
+                break;
+
+            case "ecoModeEnabled":
+                EcoModeEnabled = value.GetBoolean();
+                _settingsService.Update(settings => settings.EcoModeEnabled = EcoModeEnabled);
+                break;
+
+            case "ecoModeDuration":
+                EcoModeMinutes = ReadInt(value, 10);
+                _settingsService.Update(settings => settings.EcoModeMinutes = EcoModeMinutes);
+                EcoModeMinutes = _settingsService.Current.EcoModeMinutes;
+                break;
+
+            case "sidebarVisible":
+                if (vm != null)
+                    vm.IsSidebarVisible = value.GetBoolean();
+                else
+                    _settingsService.Update(settings => settings.IsSidebarVisible = value.GetBoolean());
+                break;
+
+            case "sidebarWidth":
+                var width = ReadDouble(value, 250);
+                if (vm != null)
+                    vm.SetSidebarWidth(width);
+                else
+                    _settingsService.Update(settings => settings.SidebarWidth = width);
+                break;
+
+            case "adBlockerEnabled":
+                if (vm != null)
+                    vm.IsAdBlockerEnabled = value.GetBoolean();
+                else
+                    _adBlockerService.IsAdBlockerEnabled = value.GetBoolean();
+                break;
+
+            case "cookieBlockerEnabled":
+                if (vm != null)
+                    vm.IsCookieBlockerEnabled = value.GetBoolean();
+                else
+                    _adBlockerService.IsCookieBlockerEnabled = value.GetBoolean();
+                break;
+
+            case "trackingPreventionEnabled":
+                var enabled = value.GetBoolean();
+                _settingsService.Update(settings => settings.IsTrackingPreventionEnabled = enabled);
+                foreach (var webView in _webViews.Values)
+                    ApplyTrackingPrevention(webView);
+                break;
+
+            case "passwordAutosaveEnabled":
+                var passwordEnabled = value.GetBoolean();
+                _settingsService.Update(settings => settings.IsPasswordAutosaveEnabled = passwordEnabled);
+                foreach (var webView in _webViews.Values)
+                    ApplyAutofillSettings(webView);
+                break;
+
+            case "generalAutofillEnabled":
+                var generalEnabled = value.GetBoolean();
+                _settingsService.Update(settings => settings.IsGeneralAutofillEnabled = generalEnabled);
+                foreach (var webView in _webViews.Values)
+                    ApplyAutofillSettings(webView);
+                break;
+        }
+    }
+
+    private void ApplyAutofillSettings(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 != null && webView.CoreWebView2.Settings != null)
+            {
+                webView.CoreWebView2.Settings.IsPasswordAutosaveEnabled = _settingsService.Current.IsPasswordAutosaveEnabled;
+                webView.CoreWebView2.Settings.IsGeneralAutofillEnabled = _settingsService.Current.IsGeneralAutofillEnabled;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to apply autofill settings: {ex.Message}");
+        }
+    }
+
+    private void ApplyTrackingPrevention(WebView2 webView)
+    {
+        try
+        {
+            webView.CoreWebView2.Profile.PreferredTrackingPreventionLevel =
+                _settingsService.Current.IsTrackingPreventionEnabled
+                    ? CoreWebView2TrackingPreventionLevel.Balanced
+                    : CoreWebView2TrackingPreventionLevel.None;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to apply tracking prevention setting: {ex.Message}");
+        }
+    }
+
+    private void BroadcastSettingsToPages()
+    {
+        foreach (var webView in _webViews.Values)
+            PostSettingsToPage(webView);
+    }
+
+    private void PostSettingsToPage(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 == null
+                || !webView.CoreWebView2.Source.StartsWith(
+                    "https://internals.mundobrowser/settings.html",
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var settings = _settingsService.Current;
+            var message = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                type = "initSettings",
+                startPage = settings.StartPage,
+                ecoModeEnabled = settings.EcoModeEnabled,
+                ecoModeDuration = settings.EcoModeMinutes,
+                sidebarVisible = settings.IsSidebarVisible,
+                sidebarWidth = settings.SidebarWidth,
+                adBlockerEnabled = settings.IsAdBlockerEnabled,
+                cookieBlockerEnabled = settings.IsCookieBlockerEnabled,
+                trackingPreventionEnabled = settings.IsTrackingPreventionEnabled,
+                passwordAutosaveEnabled = settings.IsPasswordAutosaveEnabled,
+                generalAutofillEnabled = settings.IsGeneralAutofillEnabled
+            });
+
+            webView.CoreWebView2.PostWebMessageAsJson(message);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to synchronize settings page: {ex.Message}");
+        }
+    }
+
+    private static int ReadInt(System.Text.Json.JsonElement value, int fallback)
+    {
+        if (value.ValueKind == System.Text.Json.JsonValueKind.Number && value.TryGetInt32(out var number))
+            return number;
+
+        return int.TryParse(value.GetString(), out number) ? number : fallback;
+    }
+
+    private static double ReadDouble(System.Text.Json.JsonElement value, double fallback)
+    {
+        if (value.ValueKind == System.Text.Json.JsonValueKind.Number && value.TryGetDouble(out var number))
+            return number;
+
+        return double.TryParse(
+            value.GetString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out number)
+            ? number
+            : fallback;
+    }
+
     private void CheckMemoryOptimization(object? sender, System.Timers.ElapsedEventArgs e)
     {
         if (!EcoModeEnabled) return;
@@ -332,20 +509,43 @@ public class WebViewService : IWebViewService
             try
             {
                 var now = DateTime.Now;
-                var tabsToDiscard = new List<TabViewModel>();
-                foreach(var kvp in _webViews)
-                {
-                    var tab = kvp.Key;
-                    var wv = kvp.Value;
-                    if (wv != _activeWebView && (now - tab.LastAccessed).TotalMinutes > EcoModeMinutes) tabsToDiscard.Add(tab);
-                }
-                foreach(var tab in tabsToDiscard) DiscardTab(tab);
+                var tabsToDiscard = new Queue<TabViewModel>(
+                    _webViews
+                        .Where(entry =>
+                            entry.Value != _activeWebView
+                            && (now - entry.Key.LastAccessed).TotalMinutes > EcoModeMinutes)
+                        .Select(entry => entry.Key));
+
+                DiscardTabsAtIdle(tabsToDiscard);
             }
-            finally
+            catch
             {
                 Volatile.Write(ref _memoryOptimizationRunning, 0);
             }
-        }));
+        }), System.Windows.Threading.DispatcherPriority.SystemIdle);
+    }
+
+    private void DiscardTabsAtIdle(Queue<TabViewModel> tabs)
+    {
+        if (tabs.Count == 0)
+        {
+            Volatile.Write(ref _memoryOptimizationRunning, 0);
+            return;
+        }
+
+        try
+        {
+            DiscardTab(tabs.Dequeue());
+        }
+        catch
+        {
+            Volatile.Write(ref _memoryOptimizationRunning, 0);
+            return;
+        }
+
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(
+            new Action(() => DiscardTabsAtIdle(tabs)),
+            System.Windows.Threading.DispatcherPriority.SystemIdle);
     }
 
     private void DiscardTab(TabViewModel tab)
@@ -386,6 +586,7 @@ public class WebViewService : IWebViewService
 
         _activeWebView = webView;
         _activeWebView.Visibility = Visibility.Visible;
+        _activeWebView.ZoomFactor = tab.ZoomFactor;
         tab.LastAccessed = DateTime.Now;
         tab.IsDiscarded = false;
         

@@ -6,6 +6,8 @@ namespace MundoBrowser.Helpers;
 
 public static class NativeMethods
 {
+    public const string AppUserModelId = "MundoBrowser.App";
+
     public enum DWMWINDOWATTRIBUTE
     {
         DWMWA_WINDOW_CORNER_PREFERENCE = 33,

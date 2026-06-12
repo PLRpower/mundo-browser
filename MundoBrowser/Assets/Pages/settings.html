@@ -294,11 +294,60 @@
                 </div>
                 <div class="setting-item">
                     <div class="setting-info">
-                        <div class="setting-title">Envoyer "Do Not Track"</div>
-                        <div class="setting-description">Demander aux sites de ne pas vous suivre.</div>
+                        <div class="setting-title">Bloquer les publicités</div>
+                        <div class="setting-description">Bloquer les domaines et éléments publicitaires connus.</div>
                     </div>
                     <label class="toggle-switch">
-                        <input type="checkbox" checked>
+                        <input type="checkbox" id="adblock-enabled"
+                               onchange="updateSetting('adBlockerEnabled', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Masquer les demandes de cookies</div>
+                        <div class="setting-description">Masquer les bannières de consentement connues.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="cookieblock-enabled"
+                               onchange="updateSetting('cookieBlockerEnabled', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Prévention du suivi</div>
+                        <div class="setting-description">Utiliser la protection native WebView2 contre les traqueurs.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="tracking-prevention-enabled"
+                               onchange="updateSetting('trackingPreventionEnabled', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </section>
+
+            <section>
+                <h2>Saisie automatique</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Proposer d'enregistrer les mots de passe</div>
+                        <div class="setting-description">Enregistrer automatiquement les identifiants et mots de passe de connexion dans le navigateur.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="password-autosave-enabled"
+                               onchange="updateSetting('passwordAutosaveEnabled', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Saisie automatique des formulaires</div>
+                        <div class="setting-description">Remplir automatiquement les e-mails, adresses, numéros de téléphone et d'autres informations générales.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="general-autofill-enabled"
+                               onchange="updateSetting('generalAutofillEnabled', this.checked)">
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -332,6 +381,8 @@
                     <p style="color: var(--secondary-text)">Version 1.0.0 (Build stable)</p>
                     <p style="margin-top: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
                         Un navigateur moderne, rapide et élégant basé sur WebView2 et .NET.
+                        <br>
+                        Créé par Paul Thomas
                     </p>
                     <div style="margin-top: 40px;">
                         <button class="btn-primary" onclick="alert('Vous êtes à jour !')">Rechercher des mises à jour</button>
@@ -392,8 +443,35 @@
                 const data = event.data;
                 if (data.type === 'initSettings') {
                     // Initialiser les valeurs du formulaire avec les données du navigateur
-                    if (data.ecoModeDuration) {
-                        document.getElementById('ecomode-duration').value = data.ecoModeDuration;
+                    if (document.getElementById('start-page')) {
+                        document.getElementById('start-page').value = data.startPage || '';
+                    }
+                    if (document.getElementById('ecomode-enabled')) {
+                        document.getElementById('ecomode-enabled').checked = data.ecoModeEnabled;
+                    }
+                    if (document.getElementById('ecomode-duration')) {
+                        document.getElementById('ecomode-duration').value = String(data.ecoModeDuration);
+                    }
+                    if (document.getElementById('sidebar-visible')) {
+                        document.getElementById('sidebar-visible').checked = data.sidebarVisible;
+                    }
+                    if (document.getElementById('sidebar-width')) {
+                        document.getElementById('sidebar-width').value = String(data.sidebarWidth);
+                    }
+                    if (document.getElementById('adblock-enabled')) {
+                        document.getElementById('adblock-enabled').checked = data.adBlockerEnabled;
+                    }
+                    if (document.getElementById('cookieblock-enabled')) {
+                        document.getElementById('cookieblock-enabled').checked = data.cookieBlockerEnabled;
+                    }
+                    if (document.getElementById('tracking-prevention-enabled')) {
+                        document.getElementById('tracking-prevention-enabled').checked = data.trackingPreventionEnabled;
+                    }
+                    if (document.getElementById('password-autosave-enabled')) {
+                        document.getElementById('password-autosave-enabled').checked = data.passwordAutosaveEnabled;
+                    }
+                    if (document.getElementById('general-autofill-enabled')) {
+                        document.getElementById('general-autofill-enabled').checked = data.generalAutofillEnabled;
                     }
                 }
             });

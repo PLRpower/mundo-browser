@@ -35,8 +35,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "MundoBrowser\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\MundoBrowser"; Filename: "{app}\MundoBrowser.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\MundoBrowser"; Filename: "{app}\MundoBrowser.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\MundoBrowser"; Filename: "{app}\MundoBrowser.exe"; WorkingDir: "{app}"; AppUserModelID: "MundoBrowser.App"
+Name: "{autodesktop}\MundoBrowser"; Filename: "{app}\MundoBrowser.exe"; WorkingDir: "{app}"; AppUserModelID: "MundoBrowser.App"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\MundoBrowser.exe"; Description: "{cm:LaunchProgram,MundoBrowser}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
@@ -62,6 +62,7 @@ Root: HKLM; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueN
 
 ; Définition du type de fichier MundoBrowserHTML
 Root: HKCR; Subkey: "MundoBrowserHTML"; ValueType: string; ValueName: ""; ValueData: "Mundo Browser HTML Document"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "MundoBrowserHTML"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "MundoBrowser.App"
 Root: HKCR; Subkey: "MundoBrowserHTML\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\MundoBrowser.exe,0"
 Root: HKCR; Subkey: "MundoBrowserHTML\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MundoBrowser.exe"" ""%1"""
 

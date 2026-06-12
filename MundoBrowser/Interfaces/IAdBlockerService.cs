@@ -4,8 +4,8 @@ public interface IAdBlockerService
 {
     bool IsAdBlockerEnabled { get; set; }
     bool IsCookieBlockerEnabled { get; set; }
+    IReadOnlyCollection<string> BlockedDomains { get; }
 
-    bool ShouldBlockRequest(string url);
     string GetCosmeticCss();
     string GetCookieCosmeticCss();
     string GetCookieRemovalScript();

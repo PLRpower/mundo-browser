@@ -12,11 +12,17 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
+    private bool _isInSizeMove;
+    private bool _mediaTimerWasEnabledBeforeSizeMove;
+
     private const int WmNcHitTest = 0x0084;
     private const int WmGetMinMaxInfo = 0x0024;
     private const int WmWindowPosChanging = 0x0046;
     private const int WmMoving = 0x0216;
+    private const int WmEnterSizeMove = 0x0231;
+    private const int WmExitSizeMove = 0x0232;
     private const int HtClient = 1;
+    private const int HtCaption = 2;
     private const int HtLeft = 10;
     private const int HtRight = 11;
     private const int HtTop = 12;
@@ -55,6 +61,16 @@ public partial class MainWindow
             ConstrainFullscreenMovingRect(hwnd, lParam);
             handled = true;
             return new IntPtr(1);
+        }
+
+        if (msg == WmEnterSizeMove)
+        {
+            EnterNativeSizeMove();
+        }
+
+        if (msg == WmExitSizeMove)
+        {
+            ExitNativeSizeMove();
         }
 
         if (msg == WmGetMinMaxInfo)
@@ -103,11 +119,7 @@ public partial class MainWindow
         if (WindowTitleBar != null)
             WindowTitleBar.Visibility = Visibility.Collapsed;
 
-        if (hideUI)
-        {
-            if (EdgeTriggerPopup != null)
-                EdgeTriggerPopup.Visibility = Visibility.Collapsed;
-        }
+        HideFloatingSidebar(animate: false);
 
         if (DataContext is MainViewModel vm)
             UpdateSidebarWidth(hideUI ? false : vm.IsSidebarVisible);
@@ -117,6 +129,9 @@ public partial class MainWindow
 
         NativeMethods.SuppressAccentBorder(this);
         UpdateResizeOverlayState();
+        Dispatcher.BeginInvoke(
+            new Action(() => UpdateEdgeTriggerState(forceReopen: true)),
+            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     private void ExitFullscreen()
@@ -155,8 +170,7 @@ public partial class MainWindow
             if (WindowTitleBar != null)
                 WindowTitleBar.Visibility = Visibility.Visible;
 
-            if (EdgeTriggerPopup != null)
-                EdgeTriggerPopup.Visibility = Visibility.Visible;
+            HideFloatingSidebar(animate: false);
 
             if (DataContext is MainViewModel vm)
                 UpdateSidebarWidth(vm.IsSidebarVisible);
@@ -170,11 +184,61 @@ public partial class MainWindow
 
         UpdateResizeOverlayState(forceReopen: true);
         Dispatcher.BeginInvoke(new Action(UpdateWindowFrameVisuals), System.Windows.Threading.DispatcherPriority.ContextIdle);
+        UpdateEdgeTriggerState(forceReopen: true);
     }
 
     private void UpdateWindowFrameVisuals()
     {
         NativeMethods.SetWindowFrameColors(this, showSubtleBorder: !_isFullscreen && WindowState == WindowState.Normal);
+    }
+
+    private void EnterNativeSizeMove()
+    {
+        if (_isInSizeMove)
+            return;
+
+        _isInSizeMove = true;
+        SetResizeOverlayOpen(false);
+        HideFloatingSidebar(animate: false);
+        UpdateEdgeTriggerState();
+
+        _mediaTimerWasEnabledBeforeSizeMove = _globalMediaTimer.IsEnabled;
+        _globalMediaTimer.Stop();
+    }
+
+    private void ExitNativeSizeMove()
+    {
+        if (!_isInSizeMove)
+            return;
+
+        _isInSizeMove = false;
+
+        if (_mediaTimerWasEnabledBeforeSizeMove)
+            _globalMediaTimer.Start();
+
+        SyncWindowPlacementToViewModel();
+        UpdateResizeOverlayState(forceReopen: true);
+        UpdateEdgeTriggerState(forceReopen: true);
+    }
+
+    private void SyncWindowPlacementToViewModel()
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        Rect bounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, ActualWidth, ActualHeight)
+            : RestoreBounds;
+
+        if (!bounds.IsEmpty && bounds.Width > 0 && bounds.Height > 0)
+        {
+            vm.WindowLeft = bounds.Left;
+            vm.WindowTop = bounds.Top;
+            vm.WindowWidth = bounds.Width;
+            vm.WindowHeight = bounds.Height;
+        }
+
+        vm.WindowState = WindowState;
     }
 
     private void ApplyFullscreenBounds()
@@ -313,7 +377,7 @@ public partial class MainWindow
 
     private void UpdateResizeOverlayState(bool forceReopen = false)
     {
-        if (_isRestoringFromFullscreen)
+        if (_isRestoringFromFullscreen || _isInSizeMove)
             return;
 
         bool isOpen = !_isFullscreen && WindowState == WindowState.Normal && ResizeMode != ResizeMode.NoResize;
@@ -411,6 +475,33 @@ public partial class MainWindow
 
     private void BlockFullscreenTitleBarDrag(object sender, InputMouseEventArgs e) => BlockFullscreenTitleBarDragCore(e);
 
+    private void TitleBar_PreviewMouseLeftButtonDown(object sender, InputMouseButtonEventArgs e)
+    {
+        if (IsInteractiveTitleBarSource(e.OriginalSource as DependencyObject))
+            return;
+
+        if (_isFullscreen)
+        {
+            e.Handled = true;
+            KeepFullscreenBounds();
+            return;
+        }
+
+        if (e.ClickCount == 2 && ResizeMode != ResizeMode.NoResize)
+        {
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+            e.Handled = true;
+            return;
+        }
+
+        var handle = new WindowInteropHelper(this).Handle;
+        NativeMethods.ReleaseCapture();
+        NativeMethods.SendMessage(handle, NativeMethods.WM_NCLBUTTONDOWN, new IntPtr(HtCaption), IntPtr.Zero);
+        e.Handled = true;
+    }
+
     private void BlockFullscreenTitleBarDragCore(InputMouseEventArgs e)
     {
         if (!_isFullscreen || IsInteractiveTitleBarSource(e.OriginalSource as DependencyObject))
@@ -427,7 +518,7 @@ public partial class MainWindow
     {
         while (source != null)
         {
-            if (source is System.Windows.Controls.Button
+            if (source is System.Windows.Controls.Primitives.ButtonBase
                 or System.Windows.Controls.TextBox
                 or Popup
                 or System.Windows.Controls.ListBox
