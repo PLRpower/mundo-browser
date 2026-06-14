@@ -8,6 +8,7 @@ namespace MundoBrowser.Services;
 
 public sealed class AppSettingsService : IAppSettingsService
 {
+    private const long MaxSettingsFileBytes = 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly object _sync = new();
@@ -48,7 +49,7 @@ public sealed class AppSettingsService : IAppSettingsService
     {
         try
         {
-            return File.Exists(path)
+            return File.Exists(path) && new FileInfo(path).Length <= MaxSettingsFileBytes
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path))
                 : null;
         }

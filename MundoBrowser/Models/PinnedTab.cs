@@ -25,10 +25,5 @@ namespace MundoBrowser.Models
             SlotIndex = slotIndex;
         }
 
-        public PinnedTab(int slotIndex, TabViewModel tab)
-        {
-            SlotIndex = slotIndex;
-            Tab = tab;
-        }
     }
 }

@@ -22,8 +22,7 @@ public partial class MainWindow
         if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm) return;
         var profile = _webViewService.ActiveWebView.CoreWebView2.Profile;
         
-        var extensionService = new ExtensionService();
-        var extensions = await extensionService.LoadExtensionsAsync(profile);
+        var extensions = await _extensionService.LoadExtensionsAsync(profile);
         
         vm.InstalledExtensions.Clear();
         foreach (var ext in extensions)
@@ -44,8 +43,7 @@ public partial class MainWindow
                 if (_webViewService.ActiveWebView?.CoreWebView2?.Profile != null)
                 {
                     InstallStatusText.Text = "Installation...";
-                    var extensionService = new ExtensionService();
-                    await extensionService.InstallExtensionAsync(vm.SelectedTab.InstallableExtensionId, _webViewService.ActiveWebView.CoreWebView2.Profile);
+                    await _extensionService.InstallExtensionAsync(vm.SelectedTab.InstallableExtensionId, _webViewService.ActiveWebView.CoreWebView2.Profile);
                     await LoadExtensionsAsync();
                     vm.SelectedTab.IsExtensionStorePage = false;
                 }

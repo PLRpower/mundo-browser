@@ -17,15 +17,7 @@ namespace MundoBrowser.Interfaces
         /// </summary>
         List<HistoryEntry> SearchHistory(string query, int maxResults = 10);
 
-        /// <summary>
-        /// Gets the most recent history entries.
-        /// </summary>
-        List<HistoryEntry> GetRecentHistory(int count = 20);
-
-        /// <summary>
-        /// Gets the most visited history entries.
-        /// </summary>
-        List<HistoryEntry> GetMostVisited(int count = 10);
+        Task FlushAsync();
 
         /// <summary>
         /// Clears all history entries.

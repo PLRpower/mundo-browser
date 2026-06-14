@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:vm="clr-namespace:MundoBrowser.ViewModels"
         xmlns:local="clr-namespace:MundoBrowser"
         xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
         mc:Ignorable="d"
@@ -20,10 +19,6 @@
         KeyboardNavigation.TabNavigation="None"
         Background="Transparent"
         Foreground="White">
-
-    <ui:FluentWindow.DataContext>
-        <vm:MainViewModel />
-    </ui:FluentWindow.DataContext>
 
     <ui:FluentWindow.Resources>
         <SolidColorBrush x:Key="ChromeSurfaceBrush" Color="#99000000"/>

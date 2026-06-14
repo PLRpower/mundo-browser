@@ -34,7 +34,7 @@ public partial class UpdateWindow : Window
 
                 await manager.DownloadUpdatesAsync(updateInfo, progress =>
                 {
-                    Dispatcher.Invoke(() => UpdateProgress.Value = progress);
+                    Dispatcher.BeginInvoke(() => UpdateProgress.Value = progress);
                 });
 
                 StatusText.Text = "Installation en cours...";

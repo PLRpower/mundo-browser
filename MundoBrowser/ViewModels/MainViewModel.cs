@@ -1,10 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.DependencyInjection;
 using CommunityToolkit.Mvvm.Input;
 using MundoBrowser.Interfaces;
-using MundoBrowser.Services;
 using MundoBrowser.Models;
 
 namespace MundoBrowser.ViewModels
@@ -12,6 +10,8 @@ namespace MundoBrowser.ViewModels
     public partial class MainViewModel : ObservableObject
     {
         private readonly IAppSettingsService _appSettingsService;
+        private readonly IAdBlockerService _adBlockerService;
+        internal IAdBlockerService AdBlockerService => _adBlockerService;
 
         [ObservableProperty]
         private ObservableCollection<TabViewModel> _tabs = new();
@@ -61,29 +61,21 @@ namespace MundoBrowser.ViewModels
 
         public bool IsAdBlockerEnabled
         {
-            get => CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>()?.IsAdBlockerEnabled ?? true;
+            get => _adBlockerService.IsAdBlockerEnabled;
             set
             {
-                var service = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>();
-                if (service != null)
-                {
-                    service.IsAdBlockerEnabled = value;
-                    OnPropertyChanged(nameof(IsAdBlockerEnabled));
-                }
+                _adBlockerService.IsAdBlockerEnabled = value;
+                OnPropertyChanged(nameof(IsAdBlockerEnabled));
             }
         }
 
         public bool IsCookieBlockerEnabled
         {
-            get => CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>()?.IsCookieBlockerEnabled ?? true;
+            get => _adBlockerService.IsCookieBlockerEnabled;
             set
             {
-                var service = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Interfaces.IAdBlockerService>();
-                if (service != null)
-                {
-                    service.IsCookieBlockerEnabled = value;
-                    OnPropertyChanged(nameof(IsCookieBlockerEnabled));
-                }
+                _adBlockerService.IsCookieBlockerEnabled = value;
+                OnPropertyChanged(nameof(IsCookieBlockerEnabled));
             }
         }
 
@@ -132,9 +124,9 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private WindowState _windowState = WindowState.Normal;
 
-        public HistoryManager HistoryManager { get; }
-        public SessionManager SessionManager { get; }
-        public FaviconService FaviconService { get; }
+        public IHistoryManager HistoryManager { get; }
+        public ISessionManager SessionManager { get; }
+        public IFaviconService FaviconService { get; }
 
         partial void OnSelectedTabChanged(TabViewModel? value)
         {
@@ -187,14 +179,18 @@ namespace MundoBrowser.ViewModels
                        StringComparison.OrdinalIgnoreCase);
         }
 
-        public MainViewModel()
+        public MainViewModel(
+            IAppSettingsService appSettingsService,
+            IHistoryManager historyManager,
+            ISessionManager sessionManager,
+            IFaviconService faviconService,
+            IAdBlockerService adBlockerService)
         {
-            _appSettingsService = Ioc.Default.GetService<IAppSettingsService>()
-                ?? throw new InvalidOperationException("App settings service is not configured.");
-
-            HistoryManager = new HistoryManager();
-            SessionManager = new SessionManager();
-            FaviconService = new FaviconService();
+            _appSettingsService = appSettingsService;
+            _adBlockerService = adBlockerService;
+            HistoryManager = historyManager;
+            SessionManager = sessionManager;
+            FaviconService = faviconService;
 
             IsSidebarVisible = _appSettingsService.Current.IsSidebarVisible;
             SidebarWidth = _appSettingsService.Current.SidebarWidth;
@@ -219,7 +215,8 @@ namespace MundoBrowser.ViewModels
                             Title = tabData.Title ?? "New Tab", 
                             Url = tabData.Url ?? _appSettingsService.Current.StartPage,
                             AddressUrl = tabData.Url ?? _appSettingsService.Current.StartPage,
-                            FaviconUrl = tabData.FaviconUrl,
+                            FaviconUrl = ResolveStoredFavicon(tabData),
+                            FaviconRelativePath = tabData.FaviconRelativePath,
                             ZoomFactor = tabData.ZoomFactor > 0 ? tabData.ZoomFactor : 1.0
                         });
                     }
@@ -232,7 +229,8 @@ namespace MundoBrowser.ViewModels
                                 Title = pinnedData.Title ?? "New Tab", 
                                 Url = pinnedData.Url ?? _appSettingsService.Current.StartPage,
                                 AddressUrl = pinnedData.Url ?? _appSettingsService.Current.StartPage,
-                                FaviconUrl = pinnedData.FaviconUrl,
+                                FaviconUrl = ResolveStoredFavicon(pinnedData),
+                                FaviconRelativePath = pinnedData.FaviconRelativePath,
                                 ZoomFactor = pinnedData.ZoomFactor > 0 ? pinnedData.ZoomFactor : 1.0
                             };
                         }
@@ -265,8 +263,16 @@ namespace MundoBrowser.ViewModels
             SelectedTab = newTab;
         }
 
+        private string? ResolveStoredFavicon(TabSessionData tabData)
+        {
+            return !string.IsNullOrWhiteSpace(tabData.FaviconRelativePath)
+                ? FaviconService.GetAbsoluteFaviconPath(tabData.FaviconRelativePath) ?? tabData.FaviconUrl
+                : tabData.FaviconUrl;
+        }
+
         public async Task SaveCurrentSessionAsync()
         {
+            await HistoryManager.FlushAsync();
             await SessionManager.SaveSessionAsync(this);
         }
 
@@ -304,10 +310,19 @@ namespace MundoBrowser.ViewModels
         {
             if (slotIndex >= 0 && slotIndex < PinnedTabs.Count && tab != null)
             {
-                if (Tabs.Contains(tab)) Tabs.Remove(tab);
-                var oldTab = PinnedTabs[slotIndex].Tab;
-                if (oldTab != null && !Tabs.Contains(oldTab)) Tabs.Add(oldTab);
-                PinnedTabs[slotIndex].Tab = tab;
+                var targetSlot = PinnedTabs[slotIndex];
+                var previousSlot = PinnedTabs.FirstOrDefault(pinned => pinned != targetSlot && pinned.Tab == tab);
+                var oldTab = targetSlot.Tab;
+                if (oldTab != null && oldTab != tab && !Tabs.Contains(oldTab))
+                    Tabs.Add(oldTab);
+
+                targetSlot.Tab = tab;
+                if (previousSlot != null)
+                    previousSlot.Tab = null;
+
+                if (Tabs.Contains(tab))
+                    Tabs.Remove(tab);
+
                 if (SelectedTab == tab) foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == tab);
             }
         }

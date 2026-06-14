@@ -1,8 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
-using CommunityToolkit.Mvvm.DependencyInjection;
 using MundoBrowser.Helpers;
-using MundoBrowser.Interfaces;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -41,7 +39,7 @@ public partial class MainWindow
                 ContextMenuStrip = menu,
                 Visible = false
             };
-            _trayIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(RestoreFromTray);
+            _trayIcon.MouseClick += TrayIcon_MouseClick;
         }
         catch (Exception ex)
         {
@@ -69,15 +67,18 @@ public partial class MainWindow
             if (DataContext is MainViewModel vm)
                 await vm.SaveCurrentSessionAsync();
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save state before closing: {ex}");
+        }
         finally
         {
             _isSavingSession = false;
         }
 
-        var settings = Ioc.Default.GetService<IAppSettingsService>();
         if (!_isExitRequested
             && _trayIcon != null
-            && settings?.Current.MinimizeToTrayOnClose != false)
+            && _settingsService.Current.MinimizeToTrayOnClose)
         {
             HideToTray();
             return;
@@ -89,6 +90,10 @@ public partial class MainWindow
 
     private void HideToTray()
     {
+        _windowStateBeforeTray = WindowState == WindowState.Minimized
+            ? WindowState.Normal
+            : WindowState;
+
         HideFloatingSidebar(animate: false);
         CloseExtensionPopup();
         ShowInTaskbar = false;
@@ -103,15 +108,25 @@ public partial class MainWindow
 
         _hasShownTrayNotification = true;
         _trayIcon.BalloonTipTitle = "MundoBrowser fonctionne en arrière-plan";
-        _trayIcon.BalloonTipText = "Double-cliquez sur l'icône pour rouvrir le navigateur.";
+        _trayIcon.BalloonTipText = "Cliquez sur l'icône pour rouvrir le navigateur.";
         _trayIcon.ShowBalloonTip(3000);
+    }
+
+    private void TrayIcon_MouseClick(object? sender, System.Windows.Forms.MouseEventArgs e)
+    {
+        if (e.Button == System.Windows.Forms.MouseButtons.Left)
+            _ = Dispatcher.BeginInvoke(RestoreFromTray);
     }
 
     internal void RestoreFromTray()
     {
+        bool wasHidden = !IsVisible;
         ShowInTaskbar = true;
-        if (!IsVisible)
+        if (wasHidden)
             Show();
+
+        if (wasHidden && !_isFullscreen)
+            WindowState = _windowStateBeforeTray;
 
         if (_trayIcon != null)
             _trayIcon.Visible = false;
@@ -137,6 +152,7 @@ public partial class MainWindow
     {
         if (_trayIcon != null)
         {
+            _trayIcon.MouseClick -= TrayIcon_MouseClick;
             _trayIcon.Visible = false;
             _trayIcon.ContextMenuStrip?.Dispose();
             _trayIcon.Dispose();

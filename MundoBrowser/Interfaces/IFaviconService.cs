@@ -13,14 +13,14 @@ namespace MundoBrowser.Interfaces
         /// </summary>
         string? GetAbsoluteFaviconPath(string relativePath);
 
+        string? GetFaviconUrlForPage(string pageUrl);
+
+        string? GetCachedFaviconUrlForPage(string pageUrl);
+
         /// <summary>
         /// Resolves the favicon for a given tab and WebView2 instance.
         /// </summary>
         Task ResolveFaviconAsync(WebView2 wv, TabViewModel tab, bool forceReload = false);
 
-        /// <summary>
-        /// Cleans up favicons that are no longer in use.
-        /// </summary>
-        void CleanupStaleFavicons(HashSet<string> activeDomains);
     }
 }

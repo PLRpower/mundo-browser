@@ -8,7 +8,7 @@ using MundoBrowser.Interfaces;
 
 namespace MundoBrowser.Services;
 
-public class WebViewService : IWebViewService
+public partial class WebViewService : IWebViewService, IDisposable
 {
     private readonly Dictionary<TabViewModel, WebView2> _webViews = new();
     private System.Windows.Controls.Panel? _container;
@@ -18,11 +18,13 @@ public class WebViewService : IWebViewService
     private int _memoryOptimizationRunning;
     private readonly IAppSettingsService _settingsService;
     private readonly IAdBlockerService _adBlockerService;
+    private bool _disposed;
 
     public bool EcoModeEnabled { get; set; } = true;
     public int EcoModeMinutes { get; set; } = 10;
 
     private readonly Dictionary<TabViewModel, Task<WebView2>> _initializationTasks = new();
+    private readonly HashSet<TabViewModel> _removedTabs = [];
     private readonly SemaphoreSlim _initSemaphore = new SemaphoreSlim(1, 1);
 
     public WebView2? ActiveWebView => _activeWebView;
@@ -30,12 +32,10 @@ public class WebViewService : IWebViewService
 
     public WebView2? GetWebViewForTab(TabViewModel tab) => _webViews.TryGetValue(tab, out var wv) ? wv : null;
 
-    public WebViewService()
+    public WebViewService(IAppSettingsService settingsService, IAdBlockerService adBlockerService)
     {
-        _settingsService = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IAppSettingsService>()
-            ?? throw new InvalidOperationException("App settings service is not configured.");
-        _adBlockerService = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IAdBlockerService>()
-            ?? throw new InvalidOperationException("Ad blocker service is not configured.");
+        _settingsService = settingsService;
+        _adBlockerService = adBlockerService;
 
         EcoModeEnabled = _settingsService.Current.EcoModeEnabled;
         EcoModeMinutes = _settingsService.Current.EcoModeMinutes;
@@ -48,6 +48,7 @@ public class WebViewService : IWebViewService
 
     public async Task InitializeAsync(System.Windows.Controls.Panel container)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         _container = container;
         var options = new CoreWebView2EnvironmentOptions
         {
@@ -64,24 +65,28 @@ public class WebViewService : IWebViewService
 
     public async Task<WebView2> GetOrCreateWebViewAsync(TabViewModel tab, Action<WebView2> setupEvents)
     {
-        if (_webViews.TryGetValue(tab, out var existing))
-            return existing;
-
-        Task<WebView2>? existingTask = null;
+        Task<WebView2> initTask;
         lock (_initializationTasks)
         {
-            if (_initializationTasks.TryGetValue(tab, out existingTask)) { }
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _removedTabs.Remove(tab);
+
+            if (_webViews.TryGetValue(tab, out var existing))
+                return existing;
+
+            if (_initializationTasks.TryGetValue(tab, out var existingTask))
+            {
+                initTask = existingTask;
+            }
+            else
+            {
+                initTask = InitializeWebViewInternal(tab, setupEvents);
+                _initializationTasks[tab] = initTask;
+            }
         }
 
-        if (existingTask != null) return await existingTask;
-
-        var initTask = InitializeWebViewInternal(tab, setupEvents);
-        lock (_initializationTasks)
+        try
         {
-            _initializationTasks[tab] = initTask;
-        }
-
-        try { 
             var wv = await initTask;
             try
             {
@@ -95,7 +100,12 @@ public class WebViewService : IWebViewService
         }
         finally
         {
-            lock (_initializationTasks) { _initializationTasks.Remove(tab); }
+            lock (_initializationTasks)
+            {
+                if (_initializationTasks.TryGetValue(tab, out var activeTask)
+                    && ReferenceEquals(activeTask, initTask))
+                    _initializationTasks.Remove(tab);
+            }
         }
     }
 
@@ -104,9 +114,11 @@ public class WebViewService : IWebViewService
         if (_container == null) throw new InvalidOperationException("WebViewService must be initialized with a container before use.");
 
         await _initSemaphore.WaitAsync();
+        WebView2? webView = null;
         try
         {
-            var webView = new WebView2();
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            webView = new WebView2();
             webView.DefaultBackgroundColor = System.Drawing.Color.White;
             _container.Children.Add(webView);
 
@@ -302,11 +314,23 @@ public class WebViewService : IWebViewService
 
             if (!string.IsNullOrEmpty(initialUrl)) webView.CoreWebView2.Navigate(initialUrl);
 
+            lock (_initializationTasks)
+            {
+                if (_disposed || _removedTabs.Contains(tab))
+                    throw new ObjectDisposedException(nameof(WebViewService));
+            }
+
             _webViews[tab] = webView;
             return webView;
         }
         catch (Exception ex)
         {
+            if (webView != null)
+            {
+                _container?.Children.Remove(webView);
+                webView.Dispose();
+            }
+
             System.Diagnostics.Debug.WriteLine($"WebView initialization failed: {ex.Message}");
             throw;
         }
@@ -338,237 +362,6 @@ public class WebViewService : IWebViewService
                 {cookieScript}
             }})();
         ";
-    }
-
-    private void ApplySettingChange(string? key, System.Text.Json.JsonElement value)
-    {
-        var vm = System.Windows.Application.Current.MainWindow?.DataContext as MainViewModel;
-
-        switch (key)
-        {
-            case "startPage":
-                _settingsService.Update(settings => settings.StartPage = value.GetString() ?? "");
-                break;
-
-            case "ecoModeEnabled":
-                EcoModeEnabled = value.GetBoolean();
-                _settingsService.Update(settings => settings.EcoModeEnabled = EcoModeEnabled);
-                break;
-
-            case "ecoModeDuration":
-                EcoModeMinutes = ReadInt(value, 10);
-                _settingsService.Update(settings => settings.EcoModeMinutes = EcoModeMinutes);
-                EcoModeMinutes = _settingsService.Current.EcoModeMinutes;
-                break;
-
-            case "minimizeToTrayOnClose":
-                _settingsService.Update(settings => settings.MinimizeToTrayOnClose = value.GetBoolean());
-                break;
-
-            case "sidebarVisible":
-                if (vm != null)
-                    vm.IsSidebarVisible = value.GetBoolean();
-                else
-                    _settingsService.Update(settings => settings.IsSidebarVisible = value.GetBoolean());
-                break;
-
-            case "sidebarWidth":
-                var width = ReadDouble(value, 250);
-                if (vm != null)
-                    vm.SetSidebarWidth(width);
-                else
-                    _settingsService.Update(settings => settings.SidebarWidth = width);
-                break;
-
-            case "adBlockerEnabled":
-                if (vm != null)
-                    vm.IsAdBlockerEnabled = value.GetBoolean();
-                else
-                    _adBlockerService.IsAdBlockerEnabled = value.GetBoolean();
-                break;
-
-            case "cookieBlockerEnabled":
-                if (vm != null)
-                    vm.IsCookieBlockerEnabled = value.GetBoolean();
-                else
-                    _adBlockerService.IsCookieBlockerEnabled = value.GetBoolean();
-                break;
-
-            case "trackingPreventionEnabled":
-                var enabled = value.GetBoolean();
-                _settingsService.Update(settings => settings.IsTrackingPreventionEnabled = enabled);
-                foreach (var webView in _webViews.Values)
-                    ApplyTrackingPrevention(webView);
-                break;
-
-            case "passwordAutosaveEnabled":
-                var passwordEnabled = value.GetBoolean();
-                _settingsService.Update(settings => settings.IsPasswordAutosaveEnabled = passwordEnabled);
-                foreach (var webView in _webViews.Values)
-                    ApplyAutofillSettings(webView);
-                break;
-
-            case "generalAutofillEnabled":
-                var generalEnabled = value.GetBoolean();
-                _settingsService.Update(settings => settings.IsGeneralAutofillEnabled = generalEnabled);
-                foreach (var webView in _webViews.Values)
-                    ApplyAutofillSettings(webView);
-                break;
-        }
-    }
-
-    private void ApplyAutofillSettings(WebView2 webView)
-    {
-        try
-        {
-            if (webView.CoreWebView2 != null && webView.CoreWebView2.Settings != null)
-            {
-                webView.CoreWebView2.Settings.IsPasswordAutosaveEnabled = _settingsService.Current.IsPasswordAutosaveEnabled;
-                webView.CoreWebView2.Settings.IsGeneralAutofillEnabled = _settingsService.Current.IsGeneralAutofillEnabled;
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to apply autofill settings: {ex.Message}");
-        }
-    }
-
-    private void ApplyTrackingPrevention(WebView2 webView)
-    {
-        try
-        {
-            webView.CoreWebView2.Profile.PreferredTrackingPreventionLevel =
-                _settingsService.Current.IsTrackingPreventionEnabled
-                    ? CoreWebView2TrackingPreventionLevel.Balanced
-                    : CoreWebView2TrackingPreventionLevel.None;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to apply tracking prevention setting: {ex.Message}");
-        }
-    }
-
-    private void BroadcastSettingsToPages()
-    {
-        foreach (var webView in _webViews.Values)
-            PostSettingsToPage(webView);
-    }
-
-    private void PostSettingsToPage(WebView2 webView)
-    {
-        try
-        {
-            if (webView.CoreWebView2 == null
-                || !webView.CoreWebView2.Source.StartsWith(
-                    "https://internals.mundobrowser/settings.html",
-                    StringComparison.OrdinalIgnoreCase))
-                return;
-
-            var settings = _settingsService.Current;
-            var message = System.Text.Json.JsonSerializer.Serialize(new
-            {
-                type = "initSettings",
-                startPage = settings.StartPage,
-                ecoModeEnabled = settings.EcoModeEnabled,
-                ecoModeDuration = settings.EcoModeMinutes,
-                minimizeToTrayOnClose = settings.MinimizeToTrayOnClose,
-                sidebarVisible = settings.IsSidebarVisible,
-                sidebarWidth = settings.SidebarWidth,
-                adBlockerEnabled = settings.IsAdBlockerEnabled,
-                cookieBlockerEnabled = settings.IsCookieBlockerEnabled,
-                trackingPreventionEnabled = settings.IsTrackingPreventionEnabled,
-                passwordAutosaveEnabled = settings.IsPasswordAutosaveEnabled,
-                generalAutofillEnabled = settings.IsGeneralAutofillEnabled
-            });
-
-            webView.CoreWebView2.PostWebMessageAsJson(message);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to synchronize settings page: {ex.Message}");
-        }
-    }
-
-    private static int ReadInt(System.Text.Json.JsonElement value, int fallback)
-    {
-        if (value.ValueKind == System.Text.Json.JsonValueKind.Number && value.TryGetInt32(out var number))
-            return number;
-
-        return int.TryParse(value.GetString(), out number) ? number : fallback;
-    }
-
-    private static double ReadDouble(System.Text.Json.JsonElement value, double fallback)
-    {
-        if (value.ValueKind == System.Text.Json.JsonValueKind.Number && value.TryGetDouble(out var number))
-            return number;
-
-        return double.TryParse(
-            value.GetString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out number)
-            ? number
-            : fallback;
-    }
-
-    private void CheckMemoryOptimization(object? sender, System.Timers.ElapsedEventArgs e)
-    {
-        if (!EcoModeEnabled) return;
-        if (Interlocked.Exchange(ref _memoryOptimizationRunning, 1) == 1) return;
-
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
-        {
-            try
-            {
-                var now = DateTime.Now;
-                var tabsToDiscard = new Queue<TabViewModel>(
-                    _webViews
-                        .Where(entry =>
-                            entry.Value != _activeWebView
-                            && (now - entry.Key.LastAccessed).TotalMinutes > EcoModeMinutes)
-                        .Select(entry => entry.Key));
-
-                DiscardTabsAtIdle(tabsToDiscard);
-            }
-            catch
-            {
-                Volatile.Write(ref _memoryOptimizationRunning, 0);
-            }
-        }), System.Windows.Threading.DispatcherPriority.SystemIdle);
-    }
-
-    private void DiscardTabsAtIdle(Queue<TabViewModel> tabs)
-    {
-        if (tabs.Count == 0)
-        {
-            Volatile.Write(ref _memoryOptimizationRunning, 0);
-            return;
-        }
-
-        try
-        {
-            DiscardTab(tabs.Dequeue());
-        }
-        catch
-        {
-            Volatile.Write(ref _memoryOptimizationRunning, 0);
-            return;
-        }
-
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(
-            new Action(() => DiscardTabsAtIdle(tabs)),
-            System.Windows.Threading.DispatcherPriority.SystemIdle);
-    }
-
-    private void DiscardTab(TabViewModel tab)
-    {
-        if (_webViews.TryGetValue(tab, out var webView))
-        {
-            _container?.Children.Remove(webView);
-            webView.Dispose();
-            _webViews.Remove(tab);
-            tab.IsDiscarded = true;
-        }
     }
 
     public async Task SwitchToTabAsync(TabViewModel tab, WebView2 webView)
@@ -616,6 +409,9 @@ public class WebViewService : IWebViewService
 
     public void RemoveTab(TabViewModel tab)
     {
+        lock (_initializationTasks)
+            _removedTabs.Add(tab);
+
         if (_webViews.TryGetValue(tab, out var webView))
         {
             _webViews.Remove(tab);
@@ -623,5 +419,34 @@ public class WebViewService : IWebViewService
             _container?.Children.Remove(webView);
             webView.Dispose();
         }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _memoryTimer.Stop();
+        _memoryTimer.Elapsed -= CheckMemoryOptimization;
+        _memoryTimer.Dispose();
+
+        var webViewsToDispose = _webViews.Values
+            .Concat(_container?.Children.OfType<WebView2>() ?? Enumerable.Empty<WebView2>())
+            .Distinct()
+            .ToList();
+
+        foreach (var webView in webViewsToDispose)
+        {
+            _container?.Children.Remove(webView);
+            webView.Dispose();
+        }
+
+        _webViews.Clear();
+        _initializationTasks.Clear();
+        _removedTabs.Clear();
+        _activeWebView = null;
+        _container = null;
+        GC.SuppressFinalize(this);
     }
 }

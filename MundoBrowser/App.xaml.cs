@@ -1,8 +1,8 @@
 using System.IO;
 using System.IO.Pipes;
+using System.Text.Json;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
-using CommunityToolkit.Mvvm.DependencyInjection;
 using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Services;
@@ -15,19 +15,17 @@ public partial class App : System.Windows.Application
 {
     private const string UniqueEventName = AppRuntime.UniqueInstanceName;
     private static Mutex? _mutex;
-    private string[]? _args;
+    private readonly ServiceProvider _serviceProvider;
 
     public App()
     {
         NativeMethods.SetCurrentProcessExplicitAppUserModelID(NativeMethods.AppUserModelId);
-        Ioc.Default.ConfigureServices(ConfigureServices());
+        _serviceProvider = ConfigureServices();
     }
 
     protected override void OnStartup(StartupEventArgs e)
     {
         VelopackApp.Build().Run();
-
-        _args = e.Args;
 
         // Check for single instance
         _mutex = new Mutex(true, UniqueEventName, out bool isNewInstance);
@@ -38,7 +36,7 @@ public partial class App : System.Windows.Application
             NativeMethods.AllowSetForegroundWindow(NativeMethods.ASW_ANY);
 
             // Another instance is running, send arguments to it
-            SendArgsToRunningInstance(_args);
+            SendArgsToRunningInstance(e.Args);
 
             App.Current.Shutdown();
             return;
@@ -47,9 +45,9 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
 
 #if DEBUG
-        LaunchMainWindow(_args);
+        LaunchMainWindow(e.Args);
 #else
-        var updateWindow = new UpdateWindow(_args);
+        var updateWindow = new UpdateWindow(e.Args);
         updateWindow.Show();
 #endif
     }
@@ -62,6 +60,13 @@ public partial class App : System.Windows.Application
         base.OnSessionEnding(e);
     }
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _serviceProvider.Dispose();
+        _mutex?.Dispose();
+        base.OnExit(e);
+    }
+
     private static void SendArgsToRunningInstance(string[]? args)
     {
         try
@@ -69,7 +74,7 @@ public partial class App : System.Windows.Application
             using var client = new NamedPipeClientStream(".", UniqueEventName, PipeDirection.Out);
             client.Connect(500); // Wait 500ms max
             using var writer = new StreamWriter(client);
-            writer.WriteLine(string.Join(" ", args ?? []));
+            writer.WriteLine(JsonSerializer.Serialize(args ?? []));
             writer.Flush();
         }
         catch
@@ -90,21 +95,25 @@ public partial class App : System.Windows.Application
                     server.WaitForConnection();
                     using var reader = new StreamReader(server);
                     string? argsLine = reader.ReadLine();
+                    string[] args = string.IsNullOrWhiteSpace(argsLine)
+                        ? []
+                        : JsonSerializer.Deserialize<string[]>(argsLine) ?? [];
 
                     mainWindow.Dispatcher.Invoke(() =>
                     {
                         mainWindow.RestoreFromTray();
 
-                        if (!string.IsNullOrWhiteSpace(argsLine))
-                        {
-                            string[] args = argsLine.Split(' ');
+                        if (args.Length > 0)
                             mainWindow.HandleExternalArguments(args);
-                        }
                     });
                 }
                 catch
                 {
-                    // Ignore pipe errors
+                    if (mainWindow.Dispatcher.HasShutdownStarted)
+                        return;
+
+                    // Avoid a tight retry loop if the pipe temporarily becomes unavailable.
+                    Thread.Sleep(100);
                 }
             }
         })
@@ -116,14 +125,22 @@ public partial class App : System.Windows.Application
 
     internal static void LaunchMainWindow(string[]? args, Window? startupWindow = null)
     {
-        var mainWindow = new MainWindow(args);
+        if (Current is not App app)
+            throw new InvalidOperationException("The application service provider is unavailable.");
+
+        var mainWindow = new MainWindow(
+            app._serviceProvider.GetRequiredService<MainViewModel>(),
+            app._serviceProvider.GetRequiredService<IWebViewService>(),
+            app._serviceProvider.GetRequiredService<IExtensionService>(),
+            app._serviceProvider.GetRequiredService<IAppSettingsService>(),
+            args);
         Current.MainWindow = mainWindow;
         mainWindow.Show();
         StartArgsListener(mainWindow);
         startupWindow?.Close();
     }
 
-    private static IServiceProvider ConfigureServices()
+    private static ServiceProvider ConfigureServices()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAppSettingsService, AppSettingsService>();
@@ -131,6 +148,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ISessionManager, SessionManager>();
         services.AddSingleton<IFaviconService, FaviconService>();
         services.AddSingleton<IWebViewService, WebViewService>();
+        services.AddSingleton<ExtensionDownloader>();
         services.AddSingleton<IExtensionService, ExtensionService>();
         services.AddSingleton<IAdBlockerService, AdBlockerService>();
         services.AddTransient<MainViewModel>();

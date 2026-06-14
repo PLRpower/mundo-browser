@@ -9,12 +9,13 @@ namespace MundoBrowser.Services
 {
     public class ExtensionService : IExtensionService
     {
+        private const long MaxJsonFileBytes = 4 * 1024 * 1024;
         private readonly ExtensionDownloader _downloader;
         private readonly string _extensionsPath;
 
-        public ExtensionService()
+        public ExtensionService(ExtensionDownloader downloader)
         {
-            _downloader = new ExtensionDownloader();
+            _downloader = downloader;
             _extensionsPath = Path.Combine(AppRuntime.LocalDataDirectory, "Extensions");
             Directory.CreateDirectory(_extensionsPath);
         }
@@ -35,10 +36,15 @@ namespace MundoBrowser.Services
 
                 if (Directory.Exists(_extensionsPath))
                 {
-                    foreach (var dir in Directory.GetDirectories(_extensionsPath))
+                    var directExtensionDirectory = Path.Combine(_extensionsPath, ext.Id);
+                    IEnumerable<string> candidateDirectories = Directory.Exists(directExtensionDirectory)
+                        ? [directExtensionDirectory]
+                        : Directory.EnumerateDirectories(_extensionsPath);
+
+                    foreach (var dir in candidateDirectories)
                     {
                         var manifestPath = Path.Combine(dir, "manifest.json");
-                        if (!File.Exists(manifestPath)) continue;
+                        if (!IsReadableJsonFile(manifestPath)) continue;
 
                         try
                         {
@@ -83,7 +89,7 @@ namespace MundoBrowser.Services
             var info = new ExtensionInfo(extension.Id, extension.Name, true);
             var manifestPath = Path.Combine(path, "manifest.json");
             
-            if (File.Exists(manifestPath))
+            if (IsReadableJsonFile(manifestPath))
             {
                 try
                 {
@@ -125,6 +131,9 @@ namespace MundoBrowser.Services
         {
             try
             {
+                if (!IsReadableJsonFile(messagesPath))
+                    return null;
+
                 var json = File.ReadAllText(messagesPath);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty(key, out var msgObj) && msgObj.TryGetProperty("message", out var msg))
@@ -134,6 +143,18 @@ namespace MundoBrowser.Services
             }
             catch { }
             return null;
+        }
+
+        private static bool IsReadableJsonFile(string path)
+        {
+            try
+            {
+                return File.Exists(path) && new FileInfo(path).Length <= MaxJsonFileBytes;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void ProcessManifest(JsonElement root, string extensionDir, string extensionId, ExtensionInfo info)

@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 
 namespace MundoBrowser.ViewModels
 {
@@ -98,22 +97,5 @@ namespace MundoBrowser.ViewModels
 
         public string ZoomPercentage => $"{(int)(Math.Round(ZoomFactor * 100))}%";
 
-        [RelayCommand]
-        public void Navigate()
-        {
-            // Trigger navigation by updating the active Url
-            if (!string.IsNullOrWhiteSpace(AddressUrl))
-            {
-                // Simple check to add https if missing
-                if (!AddressUrl.StartsWith("http") && !AddressUrl.Contains("://"))
-                {
-                    Url = "https://" + AddressUrl;
-                }
-                else
-                {
-                    Url = AddressUrl;
-                }
-            }
-        }
     }
 }

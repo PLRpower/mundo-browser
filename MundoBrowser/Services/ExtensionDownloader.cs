@@ -7,6 +7,9 @@ namespace MundoBrowser.Services
 {
     public class ExtensionDownloader
     {
+        private const int MaxExtensionDownloadBytes = 256 * 1024 * 1024;
+        private const long MaxExtractedBytes = 1024L * 1024 * 1024;
+        private const int MaxArchiveEntries = 100_000;
         private static readonly HttpClient _httpClient = new HttpClient();
         private readonly string _extensionsPath;
 
@@ -49,7 +52,6 @@ namespace MundoBrowser.Services
                 };
 
                 // Download the CRX file with retry and fallback logic
-                var crxFilePath = Path.Combine(_extensionsPath, $"{extensionId}.crx");
                 byte[]? crxBytes = null;
                 
                 foreach (var crxUrl in urlVariants)
@@ -59,7 +61,9 @@ namespace MundoBrowser.Services
                     {
                         try
                         {
-                            using var response = await _httpClient.GetAsync(crxUrl);
+                            using var response = await _httpClient.GetAsync(
+                                crxUrl,
+                                HttpCompletionOption.ResponseHeadersRead);
                             
                             // If we get 204 (NoContent) or 404, this URL variant doesn't work for this extension, try next variant
                             if (response.StatusCode == System.Net.HttpStatusCode.NoContent || response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -67,14 +71,21 @@ namespace MundoBrowser.Services
                                 
                             if (response.IsSuccessStatusCode)
                             {
-                                crxBytes = await response.Content.ReadAsByteArrayAsync();
-                                if (crxBytes != null && crxBytes.Length > 0)
+                                if (response.Content.Headers.ContentLength is > MaxExtensionDownloadBytes)
+                                    break;
+
+                                crxBytes = await ReadLimitedBytesAsync(response.Content);
+
+                                if (crxBytes is { Length: > 0 })
                                     goto DownloadFinished;
                             }
                         }
-                        catch (Exception) when (i < maxRetries)
+                        catch (Exception)
                         {
-                            await Task.Delay(300);
+                            if (i < maxRetries)
+                                await Task.Delay(300);
+                            else
+                                break;
                         }
                     }
                 }
@@ -85,17 +96,12 @@ namespace MundoBrowser.Services
                     throw new Exception($"Could not download extension {extensionId}. All server attempts returned 'No Content' (204). This usually means the extension is restricted, requires a specific region, or the ID is invalid for direct download.");
                 }
 
-                await File.WriteAllBytesAsync(crxFilePath, crxBytes);
-
                 // Extract the CRX file
                 var extractPath = Path.Combine(_extensionsPath, extensionId);
 
                 // CRX files are essentially ZIP files with a header
                 // We need to skip the CRX header and extract the ZIP content
-                await ExtractCrxFile(crxFilePath, extractPath);
-
-                // Clean up the CRX file
-                File.Delete(crxFilePath);
+                await ExtractCrxBytes(crxBytes, extractPath);
 
                 return extractPath;
             }
@@ -108,12 +114,10 @@ namespace MundoBrowser.Services
         /// <summary>
         /// Extracts a CRX file by skipping the CRX header and extracting the ZIP content
         /// </summary>
-        private async Task ExtractCrxFile(string crxPath, string extractPath)
+        private async Task ExtractCrxBytes(byte[] crxBytes, string extractPath)
         {
             try
             {
-                var crxBytes = await File.ReadAllBytesAsync(crxPath);
-                
                 // CRX3 format:
                 // - Magic number: "Cr24" (4 bytes)
                 // - Version: 3 (4 bytes)
@@ -127,7 +131,7 @@ namespace MundoBrowser.Services
                 // Check if it's already a ZIP file (starts with 'PK' magic number)
                 if (crxBytes.Length >= 4 && crxBytes[0] == 0x50 && crxBytes[1] == 0x4B)
                 {
-                    await ExtractZipBytes(crxBytes, extractPath);
+                    await Task.Run(() => ExtractZipBytes(crxBytes, extractPath, 0));
                     return;
                 }
 
@@ -186,11 +190,7 @@ namespace MundoBrowser.Services
                 if (zipStartOffset <= 0 || zipStartOffset >= crxBytes.Length)
                     throw new InvalidDataException("Invalid CRX header: ZIP payload is missing.");
 
-                // Extract the ZIP portion
-                var zipBytes = new byte[crxBytes.Length - zipStartOffset];
-                Array.Copy(crxBytes, zipStartOffset, zipBytes, 0, zipBytes.Length);
-
-                await ExtractZipBytes(zipBytes, extractPath);
+                await Task.Run(() => ExtractZipBytes(crxBytes, extractPath, zipStartOffset));
             }
             catch (Exception ex)
             {
@@ -198,29 +198,90 @@ namespace MundoBrowser.Services
             }
         }
 
-        private static Task ExtractZipBytes(byte[] zipBytes, string extractPath)
+        private static void ExtractZipBytes(byte[] zipBytes, string extractPath, int zipStartOffset)
         {
-            // Ensure the directory is clean
-            if (Directory.Exists(extractPath))
+            var temporaryExtractPath = extractPath + ".tmp";
+            var backupExtractPath = extractPath + ".bak";
+            if (Directory.Exists(temporaryExtractPath))
+                Directory.Delete(temporaryExtractPath, true);
+            if (Directory.Exists(backupExtractPath))
+                Directory.Delete(backupExtractPath, true);
+
+            Directory.CreateDirectory(temporaryExtractPath);
+            try
             {
-                Directory.Delete(extractPath, true);
+                using var zipStream = new MemoryStream(
+                    zipBytes,
+                    zipStartOffset,
+                    zipBytes.Length - zipStartOffset,
+                    writable: false);
+                using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+                ExtractZipArchiveSafely(archive, temporaryExtractPath);
+
+                if (Directory.Exists(extractPath))
+                    Directory.Move(extractPath, backupExtractPath);
+
+                Directory.Move(temporaryExtractPath, extractPath);
+
+                if (Directory.Exists(backupExtractPath))
+                {
+                    try { Directory.Delete(backupExtractPath, true); } catch { }
+                }
+            }
+            catch
+            {
+                if (Directory.Exists(temporaryExtractPath))
+                {
+                    try { Directory.Delete(temporaryExtractPath, true); } catch { }
+                }
+
+                if (!Directory.Exists(extractPath) && Directory.Exists(backupExtractPath))
+                    Directory.Move(backupExtractPath, extractPath);
+                throw;
+            }
+        }
+
+        private static async Task<byte[]?> ReadLimitedBytesAsync(HttpContent content)
+        {
+            await using var input = await content.ReadAsStreamAsync();
+            using var output = new MemoryStream(
+                content.Headers.ContentLength is > 0
+                    ? (int)Math.Min(content.Headers.ContentLength.Value, MaxExtensionDownloadBytes)
+                    : 0);
+            var buffer = new byte[81920];
+            int total = 0;
+
+            while (true)
+            {
+                int read = await input.ReadAsync(buffer);
+                if (read == 0)
+                    break;
+
+                total = checked(total + read);
+                if (total > MaxExtensionDownloadBytes)
+                    return null;
+
+                await output.WriteAsync(buffer.AsMemory(0, read));
             }
 
-            Directory.CreateDirectory(extractPath);
-
-            using var zipStream = new MemoryStream(zipBytes, writable: false);
-            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
-            ExtractZipArchiveSafely(archive, extractPath);
-
-            return Task.CompletedTask;
+            return total == 0 ? null : output.ToArray();
         }
 
         private static void ExtractZipArchiveSafely(ZipArchive archive, string extractPath)
         {
             string destinationRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractPath));
+            long extractedBytes = 0;
+            int processedEntries = 0;
 
             foreach (var entry in archive.Entries)
             {
+                if (++processedEntries > MaxArchiveEntries)
+                    throw new InvalidDataException("Archive contains too many entries.");
+
+                extractedBytes = checked(extractedBytes + entry.Length);
+                if (extractedBytes > MaxExtractedBytes)
+                    throw new InvalidDataException("Archive expands beyond the allowed size.");
+
                 if (string.IsNullOrWhiteSpace(entry.FullName))
                     continue;
 

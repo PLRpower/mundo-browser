@@ -1,7 +1,6 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
@@ -10,13 +9,18 @@ using MundoBrowser.Interfaces;
 
 namespace MundoBrowser.Services;
 
-public class FaviconService : IFaviconService
+public partial class FaviconService : IFaviconService, IDisposable
 {
+    private const int MaxFaviconDownloadBytes = 4 * 1024 * 1024;
+    private const int MaxCachedDomains = 4096;
+    private static readonly TimeSpan FailedDomainRetryDelay = TimeSpan.FromMinutes(10);
+
     private readonly string _faviconsPath;
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, string> _domainToRelativePath = [];
     private readonly Dictionary<string, string> _domainToAbsoluteUrl = [];
     private readonly Dictionary<string, int> _domainQuality = [];
+    private readonly object _cacheLock = new();
 
     private const int QualityFallback = 0;
     private const int QualityStandard = 1;
@@ -35,82 +39,8 @@ public class FaviconService : IFaviconService
         PreloadCache();
     }
 
-    private void PreloadCache()
-    {
-        if (!Directory.Exists(_faviconsPath)) return;
-        foreach (var file in Directory.GetFiles(_faviconsPath, "*.*"))
-        {
-            var ext = Path.GetExtension(file).ToLowerInvariant();
-            if (ext is not (".png" or ".ico" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".svg")) continue;
-            
-            var fileName = Path.GetFileNameWithoutExtension(file);
-            int quality = QualityStandard; // Default for old files
-
-            if (fileName.Contains(".q"))
-            {
-                var parts = fileName.Split(".q");
-                if (parts.Length > 1 && int.TryParse(parts[1], out var parsedQuality))
-                {
-                    quality = parsedQuality;
-                    fileName = parts[0];
-                }
-            }
-
-            var domain = Uri.UnescapeDataString(fileName).Replace('_', '.');
-            var relativePath = $"Favicons/{Path.GetFileName(file)}";
-            
-            if (!_domainQuality.TryGetValue(domain, out var existingQuality) || quality > existingQuality)
-            {
-                _domainToRelativePath[domain] = relativePath;
-                _domainToAbsoluteUrl[domain] = new Uri(file).AbsoluteUri;
-                _domainQuality[domain] = quality;
-            }
-        }
-    }
-
-    public string? GetAbsoluteFaviconPath(string relativePath)
-    {
-        if (string.IsNullOrEmpty(relativePath)) return relativePath;
-        var fullPath = Path.Combine(AppRuntime.LocalDataDirectory, relativePath);
-        return File.Exists(fullPath) ? new Uri(fullPath).AbsoluteUri : null;
-    }
-
-    public string? GetFaviconUrlForPage(string pageUrl)
-    {
-        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-            || string.IsNullOrWhiteSpace(uri.Host))
-            return null;
-
-        return GetCachedFaviconUrlForPage(pageUrl)
-               ?? $"https://www.google.com/s2/favicons?sz=64&domain_url={Uri.EscapeDataString(uri.GetLeftPart(UriPartial.Authority))}";
-    }
-
-    public string? GetCachedFaviconUrlForPage(string pageUrl)
-    {
-        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-            || string.IsNullOrWhiteSpace(uri.Host))
-            return null;
-
-        if (_domainToAbsoluteUrl.TryGetValue(uri.Host, out var cachedUrl))
-            return cachedUrl;
-
-        if (_domainToRelativePath.TryGetValue(uri.Host, out var cachedRelativePath))
-        {
-            cachedUrl = GetAbsoluteFaviconPath(cachedRelativePath);
-            if (cachedUrl != null)
-            {
-                _domainToAbsoluteUrl[uri.Host] = cachedUrl;
-                return cachedUrl;
-            }
-        }
-
-        return null;
-    }
-
     private readonly Dictionary<string, Task<string?>> _activeResolutions = [];
-    private readonly HashSet<string> _failedDomains = [];
+    private readonly Dictionary<string, DateTime> _failedDomains = [];
     private readonly Dictionary<string, DateTime> _lastForcedResolutions = [];
 
     public async Task ResolveFaviconAsync(WebView2 wv, TabViewModel tab, bool forceReload = false)
@@ -119,15 +49,19 @@ public class FaviconService : IFaviconService
         var source = wv.CoreWebView2.Source;
         if (string.IsNullOrEmpty(source)) return;
 
-        string domain;
-        try { domain = new Uri(source).Host; }
-        catch { return; }
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var sourceUri)
+            || (sourceUri.Scheme != Uri.UriSchemeHttp && sourceUri.Scheme != Uri.UriSchemeHttps)
+            || string.IsNullOrWhiteSpace(sourceUri.Host))
+            return;
+
+        string domain = sourceUri.Host;
 
         if (forceReload)
         {
-            lock (_activeResolutions)
+            lock (_cacheLock)
             {
                 var now = DateTime.UtcNow;
+                PruneResolutionState(now);
                 if (_lastForcedResolutions.TryGetValue(domain, out var lastResolution)
                     && now - lastResolution < TimeSpan.FromSeconds(15))
                 {
@@ -142,15 +76,50 @@ public class FaviconService : IFaviconService
 
         if (!forceReload)
         {
-            // Check cache
-            if (_domainToRelativePath.TryGetValue(domain, out var cachedRelative))
+            string? cachedRelativePath = null;
+            string? cachedAbsolutePath = null;
+            string? fallbackUrl = null;
+
+            lock (_cacheLock)
             {
-                var absolute = GetAbsoluteFaviconPath(cachedRelative);
-                if (absolute != null) { tab.FaviconUrl = absolute; return; }
+                PruneResolutionState(DateTime.UtcNow);
+
+                if (_domainToRelativePath.TryGetValue(domain, out var cachedRelative))
+                {
+                    var absolute = GetAbsoluteFaviconPath(cachedRelative);
+                    if (absolute != null)
+                    {
+                        cachedRelativePath = cachedRelative;
+                        cachedAbsolutePath = absolute;
+                    }
+                }
+
+                // Negative caching: don't retry failed domains too often
+                if (cachedAbsolutePath == null && _failedDomains.TryGetValue(domain, out var failedAt))
+                {
+                    if (DateTime.UtcNow - failedAt < FailedDomainRetryDelay)
+                    {
+                        fallbackUrl = $"https://www.google.com/s2/favicons?sz=128&domain_url={domain}";
+                    }
+                    else
+                    {
+                        _failedDomains.Remove(domain);
+                    }
+                }
             }
 
-            // Negative caching: don't retry failed domains too often
-            if (_failedDomains.Contains(domain)) return;
+            if (cachedAbsolutePath != null)
+            {
+                tab.FaviconRelativePath = cachedRelativePath;
+                tab.FaviconUrl = cachedAbsolutePath;
+                return;
+            }
+
+            if (fallbackUrl != null)
+            {
+                tab.FaviconUrl = fallbackUrl;
+                return;
+            }
         }
 
         // Avoid concurrent identical resolutions
@@ -165,10 +134,33 @@ public class FaviconService : IFaviconService
             }
         }
 
-        var result = await resolutionTask;
-        if (result != null) tab.FaviconUrl = result;
-        
-        lock (_activeResolutions) { _activeResolutions.Remove(domain); }
+        try
+        {
+            var result = await resolutionTask;
+            if (result != null)
+            {
+                string? relativePath = null;
+                lock (_cacheLock)
+                {
+                    if (Uri.TryCreate(result, UriKind.Absolute, out var resultUri) && resultUri.IsFile)
+                        _failedDomains.Remove(domain);
+                    _domainToRelativePath.TryGetValue(domain, out relativePath);
+                }
+
+                if (relativePath != null)
+                    tab.FaviconRelativePath = relativePath;
+                tab.FaviconUrl = result;
+            }
+        }
+        finally
+        {
+            lock (_activeResolutions)
+            {
+                if (_activeResolutions.TryGetValue(domain, out var activeTask)
+                    && ReferenceEquals(activeTask, resolutionTask))
+                    _activeResolutions.Remove(domain);
+            }
+        }
     }
 
     private async Task<string?> PerformResolveFaviconAsync(WebView2 wv, string domain)
@@ -201,24 +193,35 @@ public class FaviconService : IFaviconService
         if (bestLocalPath != null) return bestLocalPath;
 
         // If we have any cached version, prefer it over the fallback
-        if (_domainToRelativePath.TryGetValue(domain, out var cachedRelative))
+        lock (_cacheLock)
         {
-            var absolute = GetAbsoluteFaviconPath(cachedRelative);
-            if (absolute != null) return absolute;
+            if (_domainToRelativePath.TryGetValue(domain, out var cachedRelative))
+            {
+                var absolute = GetAbsoluteFaviconPath(cachedRelative);
+                if (absolute != null) return absolute;
+            }
         }
 
         // 3. Fallback to Google Favicon Service
         try
         {
             var fallbackUrl = $"https://www.google.com/s2/favicons?sz=128&domain_url={domain}";
-            var fallbackBytes = await _httpClient.GetByteArrayAsync(fallbackUrl);
+            using var response = await _httpClient.GetAsync(fallbackUrl, HttpCompletionOption.ResponseHeadersRead);
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException($"Favicon service returned {(int)response.StatusCode}.");
+
+            var fallbackBytes = await ReadImageBytesAsync(response.Content);
+            if (fallbackBytes == null)
+                throw new InvalidDataException("Favicon response was empty or too large.");
+
             using var ms = new MemoryStream(fallbackBytes);
             var saved = await SaveFaviconAsync(ms, domain, DetectExtension(fallbackBytes, "png"), QualityFallback);
             if (saved != null) return saved;
         }
         catch { }
 
-        _failedDomains.Add(domain);
+        lock (_cacheLock)
+            _failedDomains[domain] = DateTime.UtcNow;
         return $"https://www.google.com/s2/favicons?sz=128&domain_url={domain}";
     }
 
@@ -282,14 +285,21 @@ public class FaviconService : IFaviconService
                 var commaIdx = iconUrl.IndexOf(',');
                 if (commaIdx < 0) return null;
                 var mimePart = iconUrl.Substring(5, commaIdx - 5);
+                var base64 = iconUrl.Substring(commaIdx + 1);
+                int maxEncodedLength = ((MaxFaviconDownloadBytes + 2) / 3) * 4;
+                if (base64.Length > maxEncodedLength)
+                    return null;
+
                 var ext = mimePart.Contains("svg") ? "svg"
                         : mimePart.Contains("png") ? "png"
                         : mimePart.Contains("jpeg") || mimePart.Contains("jpg") ? "jpg"
                         : mimePart.Contains("webp") ? "webp"
                         : mimePart.Contains("x-icon") || mimePart.Contains("ico") ? "ico"
                         : "png";
-                var base64 = iconUrl.Substring(commaIdx + 1);
                 var bytes = Convert.FromBase64String(base64);
+                if (bytes.Length > MaxFaviconDownloadBytes)
+                    return null;
+
                 using var ms = new MemoryStream(bytes);
                 return await SaveFaviconAsync(ms, domain, ext, QualityHighRes);
             }
@@ -312,8 +322,8 @@ public class FaviconService : IFaviconService
             if (ext == "png" && contentType == "application/octet-stream" && iconUrl.Contains(".ico")) ext = "ico";
             if (ext == "png" && iconUrl.Contains(".svg")) ext = "svg";
             
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            if (bytes.Length == 0) return null;
+            var bytes = await ReadImageBytesAsync(response.Content);
+            if (bytes == null) return null;
             
             using var ms = new MemoryStream(bytes);
             return await SaveFaviconAsync(ms, domain, ext, QualityHighRes);
@@ -321,125 +331,47 @@ public class FaviconService : IFaviconService
         catch { return null; }
     }
 
-    private async Task<string?> SaveFaviconAsync(Stream stream, string domain, string extension, int quality)
+    private void PruneResolutionState(DateTime now)
     {
-        try
+        if (_lastForcedResolutions.Count > 512)
         {
-            // Don't overwrite with lower quality
-            if (_domainQuality.TryGetValue(domain, out var currentQuality) && quality < currentQuality)
-            {
-                return null;
-            }
+            foreach (var staleDomain in _lastForcedResolutions
+                         .Where(entry => now - entry.Value > TimeSpan.FromMinutes(15))
+                         .Select(entry => entry.Key)
+                         .ToList())
+                _lastForcedResolutions.Remove(staleDomain);
 
-            if (stream.CanSeek)
-                stream.Position = 0;
-
-            using var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream);
-            var saved = await Task.Run(() => SaveFaviconToDisk(memoryStream.ToArray(), domain, extension, quality));
-            if (saved == null)
-                return null;
-
-            _domainToRelativePath[domain] = saved.Value.RelativePath;
-            _domainToAbsoluteUrl[domain] = new Uri(saved.Value.FullPath).AbsoluteUri;
-            _domainQuality[domain] = saved.Value.Quality;
-
-            return new Uri(saved.Value.FullPath).AbsoluteUri;
+            TrimOldestEntries(_lastForcedResolutions, 512);
         }
-        catch { return null; }
-    }
 
-    private (string FullPath, string RelativePath, int Quality)? SaveFaviconToDisk(
-        byte[] bytes,
-        string domain,
-        string extension,
-        int quality)
-    {
-        try
+        if (_failedDomains.Count > 512)
         {
-            if (extension == "svg")
-            {
-                using var svgStream = new MemoryStream(bytes);
-                var svgDoc = Svg.SvgDocument.Open<Svg.SvgDocument>(svgStream);
-                if (svgDoc == null)
-                    return null;
+            foreach (var staleDomain in _failedDomains
+                         .Where(entry => now - entry.Value > FailedDomainRetryDelay)
+                         .Select(entry => entry.Key)
+                         .ToList())
+                _failedDomains.Remove(staleDomain);
 
-                using var bitmap = svgDoc.Draw(128, 128);
-                using var pngStream = new MemoryStream();
-                bitmap.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
-                bytes = pngStream.ToArray();
-                extension = "png";
-                quality = QualityHighRes;
-            }
-
-            var safeDomain = domain.Replace('.', '_');
-            var fileName = $"{safeDomain}.q{quality}.{extension}";
-            var fullPath = Path.Combine(_faviconsPath, fileName);
-
-            if (Directory.Exists(_faviconsPath))
-            {
-                foreach (var oldFile in Directory.GetFiles(_faviconsPath, $"{safeDomain}*"))
-                {
-                    var oldFileName = Path.GetFileName(oldFile);
-                    if (oldFileName.StartsWith(safeDomain + ".q") || oldFileName.StartsWith(safeDomain + "."))
-                    {
-                        try { File.Delete(oldFile); } catch { }
-                    }
-                }
-            }
-
-            File.WriteAllBytes(fullPath, bytes);
-            return (fullPath, $"Favicons/{fileName}", quality);
-        }
-        catch
-        {
-            return null;
+            TrimOldestEntries(_failedDomains, 512);
         }
     }
 
-    private static string GetExtensionFromContentType(string contentType) => contentType switch
+    private static void TrimOldestEntries(Dictionary<string, DateTime> entries, int maxCount)
     {
-        "image/svg+xml" => "svg",
-        "image/png" => "png",
-        "image/jpeg" => "jpg",
-        "image/webp" => "webp",
-        "image/x-icon" or "image/vnd.microsoft.icon" or "image/ico" => "ico",
-        "image/bmp" => "bmp",
-        "image/gif" => "gif",
-        _ => "png"
-    };
+        if (entries.Count <= maxCount)
+            return;
 
-    private static string DetectExtension(byte[] bytes, string fallback)
-    {
-        if (bytes.Length < 4) return fallback;
-        if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return "png";
-        if (bytes[0] == 0xFF && bytes[1] == 0xD8) return "jpg";
-        if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return "webp";
-        if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return "gif";
-        if (bytes[0] == 0x42 && bytes[1] == 0x4D) return "bmp";
-        if (bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0x01 && bytes[3] == 0x00) return "ico";
-        return fallback;
+        foreach (var key in entries
+                     .OrderBy(entry => entry.Value)
+                     .Take(entries.Count - maxCount)
+                     .Select(entry => entry.Key)
+                     .ToList())
+            entries.Remove(key);
     }
 
-    public void CleanupStaleFavicons(HashSet<string> activeDomains)
+    public void Dispose()
     {
-        try
-        {
-            foreach (var kvp in _domainToRelativePath.ToList())
-            {
-                if (!activeDomains.Contains(kvp.Key))
-                {
-                    var fullPath = Path.Combine(AppRuntime.LocalDataDirectory, kvp.Value);
-                    if (File.Exists(fullPath))
-                    {
-                        try { File.Delete(fullPath); } catch { }
-                    }
-                    _domainToRelativePath.Remove(kvp.Key);
-                    _domainToAbsoluteUrl.Remove(kvp.Key);
-                    _domainQuality.Remove(kvp.Key);
-                }
-            }
-        }
-        catch { }
+        _httpClient.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

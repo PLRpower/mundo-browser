@@ -12,6 +12,7 @@ namespace MundoBrowser.Services
     /// </summary>
     public class SessionManager : ISessionManager
     {
+        private const long MaxSessionFileBytes = 8 * 1024 * 1024;
         private readonly string _sessionFilePath;
         private readonly string _sessionBackupPath;
         private readonly string _faviconsPath;
@@ -31,7 +32,8 @@ namespace MundoBrowser.Services
         /// <inheritdoc/>
         public async Task SaveSessionAsync(MainViewModel vm)
         {
-            await _saveLock.WaitAsync().ConfigureAwait(false);
+            await _saveLock.WaitAsync();
+            var temporaryPath = _sessionFilePath + ".tmp";
             try
             {
                 var sessionData = new SessionData();
@@ -95,7 +97,6 @@ namespace MundoBrowser.Services
                 }
 
                 var json = JsonSerializer.Serialize(sessionData, new JsonSerializerOptions { WriteIndented = true });
-                var temporaryPath = _sessionFilePath + ".tmp";
                 await File.WriteAllTextAsync(temporaryPath, json).ConfigureAwait(false);
 
                 if (File.Exists(_sessionFilePath))
@@ -106,6 +107,15 @@ namespace MundoBrowser.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to save session: {ex.Message}");
+                try
+                {
+                    if (File.Exists(temporaryPath))
+                        File.Delete(temporaryPath);
+                }
+                catch
+                {
+                    // Best effort cleanup only.
+                }
             }
             finally
             {
@@ -123,7 +133,7 @@ namespace MundoBrowser.Services
         {
             try
             {
-                if (File.Exists(path))
+                if (File.Exists(path) && new FileInfo(path).Length <= MaxSessionFileBytes)
                     return JsonSerializer.Deserialize<SessionData>(File.ReadAllText(path));
             }
             catch (Exception ex)

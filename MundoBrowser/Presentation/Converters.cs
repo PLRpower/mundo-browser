@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Binding = System.Windows.Data.Binding;
 using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
 
@@ -23,13 +24,17 @@ public class NullToBoolConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        throw new NotImplementedException();
+        return Binding.DoNothing;
     }
 }
 
 public class PinnedTabBorderBrushConverter : IMultiValueConverter
 {
+    private const int MaxCacheEntries = 256;
+    private const int MaxAnalyzedImageDimension = 512;
     private static readonly Dictionary<string, Brush> Cache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> CacheOrder = new();
+    private static readonly object CacheLock = new();
 
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
     {
@@ -37,8 +42,11 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
         string pageUrl = values.ElementAtOrDefault(1)?.ToString() ?? "";
         string cacheKey = faviconUrl + "|" + pageUrl;
 
-        if (Cache.TryGetValue(cacheKey, out var cachedBrush))
-            return cachedBrush;
+        lock (CacheLock)
+        {
+            if (Cache.TryGetValue(cacheKey, out var cachedBrush))
+                return cachedBrush;
+        }
 
         var positionedColors = ExtractPositionedColors(faviconUrl);
         if (positionedColors.Count == 0)
@@ -46,13 +54,23 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
 
         Brush brush = CreateBrush(positionedColors);
         if (brush.CanFreeze) brush.Freeze();
-        Cache[cacheKey] = brush;
+        lock (CacheLock)
+        {
+            if (Cache.TryGetValue(cacheKey, out var existingBrush))
+                return existingBrush;
+
+            Cache[cacheKey] = brush;
+            CacheOrder.Enqueue(cacheKey);
+            while (CacheOrder.Count > MaxCacheEntries)
+                Cache.Remove(CacheOrder.Dequeue());
+        }
+
         return brush;
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
     {
-        throw new NotImplementedException();
+        return targetTypes.Select(_ => Binding.DoNothing).ToArray();
     }
 
     private static List<PositionedColor> ExtractPositionedColors(string faviconUrl)
@@ -72,8 +90,14 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
             var bitmap = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
             int width = bitmap.PixelWidth;
             int height = bitmap.PixelHeight;
-            int stride = width * 4;
-            var pixels = new byte[stride * height];
+            if (width <= 0
+                || height <= 0
+                || width > MaxAnalyzedImageDimension
+                || height > MaxAnalyzedImageDimension)
+                return [];
+
+            int stride = checked(width * 4);
+            var pixels = new byte[checked(stride * height)];
             bitmap.CopyPixels(pixels, stride, 0);
 
             int sampleStep = Math.Max(1, Math.Min(width, height) / 32);

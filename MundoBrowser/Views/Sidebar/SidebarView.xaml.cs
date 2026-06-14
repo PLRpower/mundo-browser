@@ -94,20 +94,4 @@ public partial class SidebarView : System.Windows.Controls.UserControl
         }
     }
 
-    private void OnMediaSliderDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e)
-    {
-        if (DataContext is MainViewModel vm && vm.ActiveMediaTab != null)
-        {
-            vm.ActiveMediaTab.IsSeeking = true;
-        }
-    }
-
-    private void OnMediaSliderDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.Slider slider && DataContext is MainViewModel vm && vm.ActiveMediaTab != null)
-        {
-            vm.MediaSeekCommand.Execute(slider.Value);
-            vm.ActiveMediaTab.IsSeeking = false;
-        }
-    }
 }
