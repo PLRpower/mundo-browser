@@ -14,6 +14,7 @@ public class FaviconService : IFaviconService
     private readonly string _faviconsPath;
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, string> _domainToRelativePath = [];
+    private readonly Dictionary<string, string> _domainToAbsoluteUrl = [];
     private readonly Dictionary<string, int> _domainQuality = [];
 
     private const int QualityFallback = 0;
@@ -62,6 +63,7 @@ public class FaviconService : IFaviconService
             if (!_domainQuality.TryGetValue(domain, out var existingQuality) || quality > existingQuality)
             {
                 _domainToRelativePath[domain] = relativePath;
+                _domainToAbsoluteUrl[domain] = new Uri(file).AbsoluteUri;
                 _domainQuality[domain] = quality;
             }
         }
@@ -73,6 +75,40 @@ public class FaviconService : IFaviconService
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var fullPath = Path.Combine(appData, "MundoBrowser", relativePath);
         return File.Exists(fullPath) ? new Uri(fullPath).AbsoluteUri : null;
+    }
+
+    public string? GetFaviconUrlForPage(string pageUrl)
+    {
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || string.IsNullOrWhiteSpace(uri.Host))
+            return null;
+
+        return GetCachedFaviconUrlForPage(pageUrl)
+               ?? $"https://www.google.com/s2/favicons?sz=64&domain_url={Uri.EscapeDataString(uri.GetLeftPart(UriPartial.Authority))}";
+    }
+
+    public string? GetCachedFaviconUrlForPage(string pageUrl)
+    {
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || string.IsNullOrWhiteSpace(uri.Host))
+            return null;
+
+        if (_domainToAbsoluteUrl.TryGetValue(uri.Host, out var cachedUrl))
+            return cachedUrl;
+
+        if (_domainToRelativePath.TryGetValue(uri.Host, out var cachedRelativePath))
+        {
+            cachedUrl = GetAbsoluteFaviconPath(cachedRelativePath);
+            if (cachedUrl != null)
+            {
+                _domainToAbsoluteUrl[uri.Host] = cachedUrl;
+                return cachedUrl;
+            }
+        }
+
+        return null;
     }
 
     private readonly Dictionary<string, Task<string?>> _activeResolutions = [];
@@ -307,6 +343,7 @@ public class FaviconService : IFaviconService
                 return null;
 
             _domainToRelativePath[domain] = saved.Value.RelativePath;
+            _domainToAbsoluteUrl[domain] = new Uri(saved.Value.FullPath).AbsoluteUri;
             _domainQuality[domain] = saved.Value.Quality;
 
             return new Uri(saved.Value.FullPath).AbsoluteUri;
@@ -402,6 +439,7 @@ public class FaviconService : IFaviconService
                         try { File.Delete(fullPath); } catch { }
                     }
                     _domainToRelativePath.Remove(kvp.Key);
+                    _domainToAbsoluteUrl.Remove(kvp.Key);
                     _domainQuality.Remove(kvp.Key);
                 }
             }

@@ -170,7 +170,7 @@ public partial class MainWindow
         else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { TopBarControl.AddressBar.Focus(); TopBarControl.AddressBar.SelectAll(); e.Handled = true; }
         else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
         else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward) { _webViewService.ActiveWebView.GoForward(); e.Handled = true; } }
-        else if (key == Key.Escape && ExtensionPopup.IsOpen) { CloseExtensionPopup(); e.Handled = true; }
+        else if (key == Key.Escape && _extensionPopupWindow?.IsVisible == true) { CloseExtensionPopup(); e.Handled = true; }
         else if (modifiers == ModifierKeys.Control)
         {
             if (key == Key.OemPlus || key == Key.Add) { AdjustZoom(0.1); e.Handled = true; }
@@ -201,36 +201,10 @@ public partial class MainWindow
     private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         // 1. Close extension popup if click is outside
-        if (ExtensionPopup.IsOpen)
+        if (_extensionPopupWindow?.IsVisible == true)
         {
             if (!(e.OriginalSource is DependencyObject d && FindAncestor<System.Windows.Controls.Button>(d) is System.Windows.Controls.Button btn && btn.Tag is string))
-            {
-                var popupChild = ExtensionPopup.Child as FrameworkElement;
-                if (popupChild == null) { CloseExtensionPopup(); }
-                else
-                {
-                    var popupSource = PresentationSource.FromVisual(popupChild) as System.Windows.Interop.HwndSource;
-                    if (popupSource == null) { CloseExtensionPopup(); }
-                    else
-                    {
-                        var screenPos = PointToScreen(e.GetPosition(this));
-                        System.Windows.Rect popupRect;
-                        NativeMethods.RECT rect;
-                        if (NativeMethods.GetWindowRect(popupSource.Handle, out rect))
-                        {
-                            popupRect = new System.Windows.Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
-                            if (!popupRect.Contains(screenPos))
-                            {
-                                CloseExtensionPopup();
-                            }
-                        }
-                        else
-                        {
-                            CloseExtensionPopup();
-                        }
-                    }
-                }
-            }
+                CloseExtensionPopup();
         }
 
         // 2. Clear address bar focus if click is outside in WPF

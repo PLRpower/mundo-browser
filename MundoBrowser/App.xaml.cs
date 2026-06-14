@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Services;
 using MundoBrowser.ViewModels;
+using Velopack;
 
 namespace MundoBrowser;
 
@@ -23,6 +24,8 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        VelopackApp.Build().Run();
+
         _args = e.Args;
 
         // Check for single instance
@@ -42,11 +45,8 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
 
-        var mainWindow = new MainWindow(_args);
-        mainWindow.Show();
-
-        // Start listening for arguments from other instances
-        StartArgsListener(mainWindow);
+        var updateWindow = new UpdateWindow(_args);
+        updateWindow.Show();
     }
 
     private static void SendArgsToRunningInstance(string[]? args)
@@ -67,7 +67,7 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private static void StartArgsListener(MainWindow mainWindow)
+    internal static void StartArgsListener(MainWindow mainWindow)
     {
         var thread = new Thread(() =>
         {

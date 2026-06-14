@@ -1,13 +1,18 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
+using CommunityToolkit.Mvvm.DependencyInjection;
+using MundoBrowser.Interfaces;
 using MundoBrowser.ViewModels;
+using Brushes = System.Windows.Media.Brushes;
 
 namespace MundoBrowser;
 
 public partial class TopBarView : System.Windows.Controls.UserControl
 {
     private CancellationTokenSource? _zoomIndicatorCts;
+    private CancellationTokenSource? _suggestionFaviconsCts;
     private bool _isUpdatingAddressBar;
     private bool _isApplyingInlineCompletion;
     private bool _suppressInlineCompletionUntilInsertion;
@@ -42,19 +47,60 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         _isUpdatingAddressBar = true;
         AddressTextBox.Text = text;
         _isUpdatingAddressBar = false;
+        UpdateAddressDisplay();
     }
 
     public TopBarView()
     {
         InitializeComponent();
         DataContextChanged += TopBarView_DataContextChanged;
-        Loaded += (_, _) => AttachZoomIndicatorObservers();
-        Unloaded += (_, _) => DetachZoomIndicatorObservers();
+        Loaded += (_, _) =>
+        {
+            AttachZoomIndicatorObservers();
+            UpdateAddressDisplay();
+        };
+        Unloaded += (_, _) =>
+        {
+            _suggestionFaviconsCts?.Cancel();
+            DetachZoomIndicatorObservers();
+        };
     }
 
     private void Back_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoBack();
     private void Forward_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoForward();
     private void Reload_Click(object sender, RoutedEventArgs e) => GetWebView()?.Reload();
+
+    private void AdBlockerButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdBlockerContextMenu.PlacementTarget = AdBlockerButton;
+        AdBlockerContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        AdBlockerContextMenu.IsOpen = true;
+    }
+
+    private void AdBlockerContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        var service = Ioc.Default.GetService<IAdBlockerService>();
+        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
+        string? host = service?.GetSiteHost(url);
+
+        CurrentSiteProtectionMenuItem.IsEnabled = host != null;
+        CurrentSiteProtectionMenuItem.Header = host == null
+            ? "Indisponible sur cette page"
+            : service!.IsProtectionDisabledForSite(url)
+                ? $"Réactiver sur {host}"
+                : $"Désactiver sur {host}";
+    }
+
+    private void ToggleCurrentSiteProtection_Click(object sender, RoutedEventArgs e)
+    {
+        var service = Ioc.Default.GetService<IAdBlockerService>();
+        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
+        if (service == null || service.GetSiteHost(url) == null) return;
+
+        bool disable = !service.IsProtectionDisabledForSite(url);
+        if (service.SetProtectionDisabledForSite(url, disable))
+            GetWebView()?.Reload();
+    }
 
     private Microsoft.Web.WebView2.Wpf.WebView2? GetWebView()
     {
@@ -249,6 +295,8 @@ public partial class TopBarView : System.Windows.Controls.UserControl
 
     private void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
+        UpdateAddressDisplay();
+        _suggestionFaviconsCts?.Cancel();
         if (_isUpdatingAddressBar || _isApplyingInlineCompletion || DataContext is not MainViewModel vm) return;
 
         if (e != null)
@@ -287,6 +335,7 @@ public partial class TopBarView : System.Windows.Controls.UserControl
 
     private void AddressTextBox_GotFocus(object sender, RoutedEventArgs e)
     {
+        UpdateAddressDisplay();
         AddressTextBox.SelectAll();
         if (!string.IsNullOrWhiteSpace(AddressTextBox.Text))
         {
@@ -311,7 +360,58 @@ public partial class TopBarView : System.Windows.Controls.UserControl
                         vm.AddressBarText = vm.SelectedTab.AddressUrl;
                 }
             }
+
+            UpdateAddressDisplay();
         }));
+    }
+
+    private void UpdateAddressDisplay()
+    {
+        if (!IsInitialized || AddressDisplayTextBlock == null || SuggestionsListBox == null) return;
+
+        string text = AddressTextBox.Text ?? "";
+        bool shouldShow = !AddressTextBox.IsKeyboardFocused
+                          && !IsSuggestionsOpen
+                          && !SuggestionsListBox.IsKeyboardFocusWithin
+                          && !string.IsNullOrWhiteSpace(text)
+                          && !(DataContext is MainViewModel vm && vm.IsPendingNewTab);
+
+        AddressDisplayTextBlock.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
+        AddressTextBox.Foreground = shouldShow ? Brushes.Transparent : Brushes.White;
+
+        if (!shouldShow) return;
+
+        SplitAddressForDisplay(text, out string prefix, out string domain, out string suffix);
+        AddressPrefixRun.Text = prefix;
+        AddressDomainRun.Text = domain;
+        AddressSuffixRun.Text = suffix;
+    }
+
+    private static void SplitAddressForDisplay(
+        string address,
+        out string prefix,
+        out string domain,
+        out string suffix)
+    {
+        prefix = address;
+        domain = "";
+        suffix = "";
+
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || string.IsNullOrWhiteSpace(uri.Host))
+            return;
+
+        int hostStart = address.IndexOf(uri.Host, StringComparison.OrdinalIgnoreCase);
+        if (hostStart < 0) return;
+
+        int grayHostPrefixLength = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? 4 : 0;
+        int domainStart = hostStart + grayHostPrefixLength;
+        int domainLength = uri.Host.Length - grayHostPrefixLength;
+
+        prefix = address[..domainStart];
+        domain = address.Substring(domainStart, domainLength);
+        suffix = address[(domainStart + domainLength)..];
     }
 
     private void AddressTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -484,6 +584,10 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         IReadOnlyList<Models.HistoryEntry> results,
         MainViewModel vm)
     {
+        _suggestionFaviconsCts?.Cancel();
+        _suggestionFaviconsCts = new CancellationTokenSource();
+        CancellationToken cancellationToken = _suggestionFaviconsCts.Token;
+
         string trimmedInput = input.Trim();
         vm.Suggestions.Clear();
 
@@ -506,6 +610,7 @@ public partial class TopBarView : System.Windows.Controls.UserControl
             {
                 Title = directDisplayText,
                 Url = directUrl,
+                FaviconUrl = vm.FaviconService.GetCachedFaviconUrlForPage(directUrl),
                 VisitCount = -2
             });
         }
@@ -522,9 +627,42 @@ public partial class TopBarView : System.Windows.Controls.UserControl
             if (directUrl != null && UrlsMatch(result.Url, directUrl))
                 continue;
 
-            vm.Suggestions.Add(result);
+            vm.Suggestions.Add(new Models.HistoryEntry
+            {
+                Title = result.Title,
+                Url = result.Url,
+                FaviconUrl = vm.FaviconService.GetCachedFaviconUrlForPage(result.Url),
+                VisitedAt = result.VisitedAt,
+                VisitCount = result.VisitCount
+            });
             if (vm.Suggestions.Count >= 8)
                 break;
+        }
+
+        _ = LoadMissingSuggestionFaviconsAsync(vm, vm.Suggestions.ToList(), cancellationToken);
+    }
+
+    private static async Task LoadMissingSuggestionFaviconsAsync(
+        MainViewModel vm,
+        IReadOnlyList<Models.HistoryEntry> suggestions,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(180, cancellationToken);
+
+            foreach (var suggestion in suggestions)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (suggestion.VisitCount == -1 || suggestion.FaviconUrl != null)
+                    continue;
+
+                suggestion.FaviconUrl = vm.FaviconService.GetFaviconUrlForPage(suggestion.Url);
+                await Task.Delay(25, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 

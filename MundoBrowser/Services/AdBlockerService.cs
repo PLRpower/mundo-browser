@@ -46,6 +46,43 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
 
     public IReadOnlyCollection<string> BlockedDomains => BlockedDomainList;
 
+    public string? GetSiteHost(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return null;
+
+        string host = uri.IdnHost.TrimEnd('.').ToLowerInvariant();
+        return host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? host[4..] : host;
+    }
+
+    public bool IsProtectionDisabledForSite(string? url)
+    {
+        string? host = GetSiteHost(url);
+        if (host == null) return false;
+
+        return _settingsService.Current.ProtectionDisabledSites.Contains(
+            host,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    public bool SetProtectionDisabledForSite(string? url, bool disabled)
+    {
+        string? host = GetSiteHost(url);
+        if (host == null) return false;
+
+        _settingsService.Update(settings =>
+        {
+            settings.ProtectionDisabledSites.RemoveAll(
+                site => site.Equals(host, StringComparison.OrdinalIgnoreCase));
+
+            if (disabled)
+                settings.ProtectionDisabledSites.Add(host);
+        });
+
+        return true;
+    }
+
     public string GetCosmeticCss()
     {
         if (!IsAdBlockerEnabled) return "";

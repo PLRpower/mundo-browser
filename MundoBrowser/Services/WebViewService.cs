@@ -167,6 +167,8 @@ public class WebViewService : IWebViewService
             var adBlocker = _adBlockerService;
             if (adBlocker != null)
             {
+                string currentPageUrl = tab.Url;
+
                 // Only cross into managed code for known blocked domains.
                 foreach (var domain in adBlocker.BlockedDomains)
                 {
@@ -182,7 +184,8 @@ public class WebViewService : IWebViewService
 
                 webView.CoreWebView2.WebResourceRequested += (s, e) =>
                 {
-                    if (adBlocker.IsAdBlockerEnabled)
+                    if (adBlocker.IsAdBlockerEnabled
+                        && !adBlocker.IsProtectionDisabledForSite(currentPageUrl))
                     {
                         var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
                             null, 204, "No Content", ""
@@ -196,7 +199,7 @@ public class WebViewService : IWebViewService
                 {
                     try
                     {
-                        string script = BuildCosmeticFilteringScript(adBlocker);
+                        string script = BuildCosmeticFilteringScript(adBlocker, currentPageUrl);
                         if (!string.IsNullOrEmpty(script))
                             await webView.CoreWebView2.ExecuteScriptAsync(script);
                     }
@@ -209,6 +212,8 @@ public class WebViewService : IWebViewService
                         // Ignore other errors during script injection
                     }
                 };
+
+                webView.CoreWebView2.NavigationStarting += (_, e) => currentPageUrl = e.Uri;
             }
 
             webView.CoreWebView2.DOMContentLoaded += (_, _) => PostSettingsToPage(webView);
@@ -309,8 +314,11 @@ public class WebViewService : IWebViewService
         finally { _initSemaphore.Release(); }
     }
 
-    private static string BuildCosmeticFilteringScript(IAdBlockerService adBlocker)
+    private static string BuildCosmeticFilteringScript(IAdBlockerService adBlocker, string? pageUrl)
     {
+        if (adBlocker.IsProtectionDisabledForSite(pageUrl))
+            return "";
+
         string css = adBlocker.GetCosmeticCss() + adBlocker.GetCookieCosmeticCss();
         string cookieScript = adBlocker.GetCookieRemovalScript();
 

@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Publish app
+      run: dotnet publish MundoBrowser/MundoBrowser.csproj -c Release -r win-x64 --self-contained -o publish
+
+    - name: Extract version
+      id: version
+      shell: pwsh
+      run: |
+        $version = "${{ github.ref_name }}" -replace '^v', ''
+        "version=$version" >> $env:GITHUB_OUTPUT
+      
+    - name: Install Velopack CLI
+      run: dotnet tool install -g vpk --version 1.2.0
+
+    - name: Pack with Velopack
+      run: vpk pack -u MundoBrowser -v ${{ steps.version.outputs.version }} -p publish -e MundoBrowser.exe
+      
+    - name: Upload to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      with:
+        files: Releases/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

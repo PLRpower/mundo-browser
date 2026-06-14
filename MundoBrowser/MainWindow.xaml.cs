@@ -20,6 +20,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _isClosingSafe;
     private bool _isSavingSession;
     private string? _currentExtensionId;
+    private ExtensionPopupWindow? _extensionPopupWindow;
     private string? _lastClosedExtensionId;
     private DateTime _lastExtensionPopupClosed = DateTime.MinValue;
     private (WindowState State, WindowStyle Style, ResizeMode Resize, Wpf.Ui.Controls.WindowBackdropType Backdrop, Wpf.Ui.Controls.WindowCornerPreference Corners, bool Topmost, double Left, double Top, double Width, double Height) _prevWindowState;
@@ -247,6 +248,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 var source = wv.CoreWebView2.Source;
                 if (source.Contains("internals.mundobrowser"))
                 {
+                    if (source.Contains("settings.html"))
+                    {
+                        string version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
+                        wv.CoreWebView2.ExecuteScriptAsync($"if(document.getElementById('app-version')) document.getElementById('app-version').innerText = 'Version {version} (Build stable)';");
+                    }
+
                     // For settings, we trust SourceChanged or initial mapping
                     if (string.IsNullOrEmpty(tab.AddressUrl) || !tab.AddressUrl.StartsWith("about:preferences"))
                     {

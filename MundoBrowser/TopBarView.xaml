@@ -22,6 +22,8 @@
                 <ColumnDefinition Width="Auto"/>
                 <!-- Col 6: Extensions -->
                 <ColumnDefinition Width="Auto"/>
+                <!-- Col 7: Separator before window controls -->
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <!-- Nav Buttons -->
@@ -51,14 +53,6 @@
                         <Setter Property="BorderBrush" Value="#333333"/>
                         <Setter Property="BorderThickness" Value="1"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsPendingNewTab}" Value="True">
-                                <Setter Property="BorderBrush" Value="#007ACC"/>
-                                <Setter Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#007ACC" BlurRadius="10" ShadowDepth="0" Opacity="0.5"/>
-                                    </Setter.Value>
-                                </Setter>
-                            </DataTrigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter Property="BorderBrush" Value="#007ACC"/>
                             </Trigger>
@@ -66,6 +60,14 @@
                             <DataTrigger Binding="{Binding IsSuggestionsOpen, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
                                 <Setter Property="CornerRadius" Value="17,17,0,0"/>
                                 <Setter Property="BorderBrush" Value="#007ACC"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsPendingNewTab}" Value="True">
+                                <Setter Property="BorderBrush" Value="#22C55E"/>
+                                <Setter Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#22C55E" BlurRadius="10" ShadowDepth="0" Opacity="0.5"/>
+                                    </Setter.Value>
+                                </Setter>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -104,6 +106,15 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
+                        <TextBlock x:Name="AddressDisplayTextBlock"
+                                   VerticalAlignment="Center"
+                                   Margin="34,0,15,0"
+                                   FontSize="15"
+                                   TextTrimming="CharacterEllipsis"
+                                   IsHitTestVisible="False"
+                                   Visibility="Collapsed">
+                            <Run x:Name="AddressPrefixRun" Foreground="#888888"/><Run x:Name="AddressDomainRun" Foreground="White"/><Run x:Name="AddressSuffixRun" Foreground="#888888"/>
+                        </TextBlock>
                         <TextBox x:Name="AddressTextBox"
                                  Text="{Binding AddressBarText, UpdateSourceTrigger=PropertyChanged}"
                                  Background="Transparent" BorderThickness="0" Foreground="White"
@@ -138,9 +149,19 @@
                            PlacementTarget="{Binding ElementName=UrlBarBorder}"
                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
                            VerticalOffset="-1">
-                        <Border Background="#1E1E1E" BorderBrush="#007ACC" BorderThickness="1,0,1,1"
+                        <Border Background="#1E1E1E" BorderThickness="1,0,1,1"
                                 CornerRadius="0,0,17,17" Padding="0,0,0,8"
                                 Width="{Binding ActualWidth, ElementName=UrlBarBorder}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="#007ACC"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPendingNewTab}" Value="True">
+                                            <Setter Property="BorderBrush" Value="#22C55E"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <Grid>
                                 <Border Height="1"
                                         Background="#33FFFFFF"
@@ -210,6 +231,13 @@
                                                               StrokeLineJoin="Round"
                                                               Data="M21,21 L15.803,15.803 M15.803,15.803 A7.5,7.5 0 1 0 5.196,5.196 A7.5,7.5 0 0 0 15.803,15.803 Z"/>
                                                     </Viewbox>
+                                                    <Image x:Name="SuggestionFavicon"
+                                                           Source="{Binding FaviconUrl}"
+                                                           Width="16"
+                                                           Height="16"
+                                                           Stretch="Uniform"
+                                                           Visibility="Collapsed"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 </Grid>
                                                 <TextBlock Text="{Binding Title}" FontSize="13" Foreground="White" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" VerticalAlignment="Center" Grid.Column="1" FontWeight="SemiBold"/>
                                                 <TextBlock x:Name="UrlBlock" Text="{Binding Url}" FontSize="12" Foreground="#007ACC" Opacity="0.8" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Grid.Column="2"/>
@@ -220,6 +248,10 @@
                                                     <Setter TargetName="SearchSuggestionIcon" Property="Visibility" Value="Visible"/>
                                                     <Setter TargetName="UrlBlock" Property="Text" Value="Recherche web"/>
                                                     <Setter TargetName="UrlBlock" Property="Foreground" Value="#888"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding FaviconUrl, Converter={StaticResource NullToBoolConverter}}" Value="True">
+                                                    <Setter TargetName="LinkIcon" Property="Visibility" Value="Collapsed"/>
+                                                    <Setter TargetName="SuggestionFavicon" Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -258,13 +290,19 @@
             </Button>
 
             <!-- AdBlocker -->
-            <Button Grid.Column="5" Width="28" Height="28" Margin="4,0,0,0"
+            <Button x:Name="AdBlockerButton" Grid.Column="5" Width="28" Height="28" Margin="4,0,0,0"
                     Style="{StaticResource IconHoverButtonStyle}" Padding="4" Cursor="Hand"
-                    ToolTip="Boucliers Mundo Browser">
+                    ToolTip="Boucliers Mundo Browser" Click="AdBlockerButton_Click">
                 <Button.ContextMenu>
-                    <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
+                    <ContextMenu x:Name="AdBlockerContextMenu"
+                                 Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42"
+                                 Opened="AdBlockerContextMenu_Opened">
                         <MenuItem Header="Bloqueur de publicités" IsCheckable="True" IsChecked="{Binding IsAdBlockerEnabled}"/>
                         <MenuItem Header="Bloqueur de cookies" IsCheckable="True" IsChecked="{Binding IsCookieBlockerEnabled}"/>
+                        <Separator/>
+                        <MenuItem x:Name="CurrentSiteProtectionMenuItem"
+                                  Header="Désactiver sur ce site"
+                                  Click="ToggleCurrentSiteProtection_Click"/>
                     </ContextMenu>
                 </Button.ContextMenu>
                 <Viewbox Width="17" Height="17" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -336,6 +374,14 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+
+            <Rectangle Grid.Column="7"
+                       Width="1"
+                       Height="20"
+                       Margin="5,0,28,0"
+                       VerticalAlignment="Center"
+                       Fill="#38FFFFFF"
+                       IsHitTestVisible="False"/>
 
         </Grid>
     </Border>

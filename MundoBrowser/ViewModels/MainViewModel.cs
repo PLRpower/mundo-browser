@@ -163,7 +163,28 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void OpenSettings()
         {
+            var existingSettingsTab = Tabs
+                .Concat(PinnedTabs.Where(pinned => pinned.Tab != null).Select(pinned => pinned.Tab!))
+                .FirstOrDefault(IsSettingsTab);
+
+            if (existingSettingsTab != null)
+            {
+                IsPendingNewTab = false;
+                SelectedTab = existingSettingsTab;
+                AddressBarText = existingSettingsTab.AddressUrl;
+                return;
+            }
+
             AddTabWithUrl("about:preferences");
+        }
+
+        private static bool IsSettingsTab(TabViewModel tab)
+        {
+            return tab.AddressUrl.StartsWith("about:preferences", StringComparison.OrdinalIgnoreCase)
+                   || tab.Url.StartsWith("about:preferences", StringComparison.OrdinalIgnoreCase)
+                   || tab.Url.StartsWith(
+                       "https://internals.mundobrowser/settings.html",
+                       StringComparison.OrdinalIgnoreCase);
         }
 
         public MainViewModel()
@@ -254,7 +275,9 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void AddNewTab()
         {
-            AddTabWithUrl(_appSettingsService.Current.StartPage);
+            IsPendingNewTab = true;
+            AddressBarText = string.Empty;
+            Suggestions.Clear();
             NewTabRequested?.Invoke(this, EventArgs.Empty);
         }
 

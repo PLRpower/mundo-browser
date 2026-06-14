@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:vm="clr-namespace:MundoBrowser.ViewModels"
         xmlns:local="clr-namespace:MundoBrowser"
         xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
@@ -272,30 +271,6 @@
         <Popup x:Name="ResizeBottomRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
             <Border Width="12" Height="12" Background="#01000000"
                     Cursor="SizeNWSE" Tag="17" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-
-        <!-- Popup for extensions - Moved to root for better event handling -->
-        <Popup x:Name="ExtensionPopup"
-               AllowsTransparency="False"
-               StaysOpen="True"
-               Placement="Bottom"
-               Focusable="True"
-               FocusManager.IsFocusScope="True"
-               Opened="ExtensionPopup_Opened"
-               Closed="ExtensionPopup_Closed"
-               HorizontalOffset="0"
-               VerticalOffset="5">
-            <Border Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1" 
-                    Width="400" Height="600" UseLayoutRounding="True" SnapsToDevicePixels="True">
-                <Grid Background="#1E1E1E">
-                    <wv2:WebView2 x:Name="ExtensionPopupWebView" 
-                                  DefaultBackgroundColor="White"
-                                  HorizontalAlignment="Stretch" 
-                                  VerticalAlignment="Stretch"
-                                  MinWidth="400" MinHeight="600"
-                                  Loaded="ExtensionPopupWebView_Loaded"/>
-                </Grid>
-            </Border>
         </Popup>
 
     </Grid>

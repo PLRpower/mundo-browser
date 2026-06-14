@@ -58,86 +58,61 @@ public partial class MainWindow
 
     public async void ShowExtensionPopup(string extId, Button btn)
     {
-        if (DataContext is MainViewModel vm)
-        {
-            // If the popup was closed very recently (by a MouseDown that triggered this click), 
-            // and it was the SAME extension, don't reopen it immediately.
-            if (DateTime.Now - _lastExtensionPopupClosed < TimeSpan.FromMilliseconds(200) && _lastClosedExtensionId == extId)
-            {
-                return;
-            }
+        if (DataContext is not MainViewModel vm)
+            return;
 
-            // Toggle logic fallback
-            if (ExtensionPopup.IsOpen && _currentExtensionId == extId)
+        if (_extensionPopupWindow?.IsVisible == true)
+        {
+            if (_currentExtensionId == extId)
             {
                 CloseExtensionPopup();
                 return;
             }
 
-            var ext = vm.InstalledExtensions.FirstOrDefault(x => x.Id == extId);
-            if (ext != null && !string.IsNullOrEmpty(ext.PopupUrl) && _webViewService.WebViewEnvironment != null)
-            {
-                _currentExtensionId = extId;
-                ExtensionPopup.PlacementTarget = btn;
-                ExtensionPopup.IsOpen = true;
-
-                try
-                {
-                    await ExtensionPopupWebView.EnsureCoreWebView2Async(_webViewService.WebViewEnvironment);
-                    
-                    // Force interaction settings
-                    ExtensionPopupWebView.CoreWebView2.Settings.IsScriptEnabled = true;
-                    ExtensionPopupWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
-
-                    ExtensionPopupWebView.CoreWebView2.Navigate(ext.PopupUrl);
-                    
-                    // Delay to allow loading/rendering then force focus
-                    await Task.Delay(200);
-                    if (ExtensionPopup.IsOpen)
-                    {
-                        ExtensionPopupWebView.Focus();
-                        System.Windows.Input.FocusManager.SetFocusedElement(ExtensionPopup, ExtensionPopupWebView);
-                        ExtensionPopupWebView.MoveFocus(new System.Windows.Input.TraversalRequest(System.Windows.Input.FocusNavigationDirection.First));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Extension popup error: {ex.Message}");
-                    CloseExtensionPopup();
-                }
-            }
+            CloseExtensionPopup();
         }
-    }
 
-    private void ExtensionPopup_Opened(object sender, EventArgs e)
-    {
-        if (ExtensionPopup.Child is FrameworkElement child)
+        var ext = vm.InstalledExtensions.FirstOrDefault(extension => extension.Id == extId);
+        if (ext == null
+            || string.IsNullOrEmpty(ext.PopupUrl)
+            || _webViewService.WebViewEnvironment == null)
+            return;
+
+        var popupWindow = new ExtensionPopupWindow(this, btn);
+        _extensionPopupWindow = popupWindow;
+        _currentExtensionId = extId;
+
+        popupWindow.Closed += (_, _) =>
         {
-            if (PresentationSource.FromVisual(child) is System.Windows.Interop.HwndSource source)
-            {
-                Helpers.NativeMethods.SetWindowCorners(source.Handle, Helpers.NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND);
-            }
-        }
-    }
+            if (!ReferenceEquals(_extensionPopupWindow, popupWindow)) return;
 
-    private void ExtensionPopupWebView_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (ExtensionPopupWebView.CoreWebView2 != null)
+            _extensionPopupWindow = null;
+            _currentExtensionId = null;
+        };
+
+        popupWindow.PositionNextToTarget();
+        popupWindow.Show();
+        popupWindow.PositionNextToTarget();
+
+        try
         {
-            ExtensionPopupWebView.Focus();
+            await popupWindow.InitializeAsync(_webViewService.WebViewEnvironment, ext.PopupUrl);
         }
-    }
-
-    private void ExtensionPopup_Closed(object sender, EventArgs e)
-    {
-        _lastExtensionPopupClosed = DateTime.Now;
-        _lastClosedExtensionId = _currentExtensionId;
-        _currentExtensionId = null;
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Extension popup error: {ex.Message}");
+            if (ReferenceEquals(_extensionPopupWindow, popupWindow))
+                CloseExtensionPopup();
+        }
     }
 
     private void CloseExtensionPopup()
     {
-        ExtensionPopup.IsOpen = false;
+        var popupWindow = _extensionPopupWindow;
+        _extensionPopupWindow = null;
         _currentExtensionId = null;
+
+        if (popupWindow?.IsVisible == true)
+            popupWindow.Close();
     }
 }

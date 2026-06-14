@@ -102,6 +102,19 @@ public static class NativeMethods
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr handle, int flags);
 
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    public static bool IsCurrentProcessForeground()
+    {
+        IntPtr foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow == IntPtr.Zero)
+            return false;
+
+        GetWindowThreadProcessId(foregroundWindow, out uint processId);
+        return processId == (uint)Environment.ProcessId;
+    }
+
     public static void SetWindowCorners(Window window, DWM_WINDOW_CORNER_PREFERENCE preference)
     {
         try

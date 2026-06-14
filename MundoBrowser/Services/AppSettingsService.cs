@@ -94,6 +94,12 @@ public sealed class AppSettingsService : IAppSettingsService
         settings.StartPage = NormalizeStartPage(settings.StartPage);
         settings.EcoModeMinutes = Math.Clamp(settings.EcoModeMinutes, 1, 1440);
         settings.SidebarWidth = Math.Clamp(settings.SidebarWidth, 200, 400);
+        settings.ProtectionDisabledSites = (settings.ProtectionDisabledSites ?? [])
+            .Select(site => site.Trim().TrimEnd('.').ToLowerInvariant())
+            .Where(site => !string.IsNullOrWhiteSpace(site))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(site => site, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string NormalizeStartPage(string? value)

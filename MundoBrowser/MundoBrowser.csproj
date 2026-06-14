@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
@@ -8,6 +8,7 @@
         <UseWPF>true</UseWPF>
         <UseWindowsForms>true</UseWindowsForms>
         <ApplicationIcon>Assets\Icons\logo.ico</ApplicationIcon>
+        <Version>1.1.0</Version>
     </PropertyGroup>
 
 
@@ -17,6 +18,7 @@
         <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3796-prerelease" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="Svg" Version="3.4.7" />
+        <PackageReference Include="Velopack" Version="1.2.0" />
         <PackageReference Include="WPF-UI" Version="4.3.0" />
     </ItemGroup>
 
