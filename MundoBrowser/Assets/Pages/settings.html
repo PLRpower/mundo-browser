@@ -222,6 +222,17 @@
                     </div>
                     <input type="text" id="start-page" value="https://www.google.com" style="width: 250px;">
                 </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Continuer à fonctionner en arrière-plan</div>
+                        <div class="setting-description">À la fermeture de la fenêtre, conserver MundoBrowser dans la zone de notification pour accélérer la prochaine ouverture. Utilisez le menu de l'icône pour quitter complètement.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="minimize-to-tray-on-close" checked
+                               onchange="updateSetting('minimizeToTrayOnClose', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </section>
 
             <section>
@@ -451,6 +462,9 @@
                     }
                     if (document.getElementById('ecomode-duration')) {
                         document.getElementById('ecomode-duration').value = String(data.ecoModeDuration);
+                    }
+                    if (document.getElementById('minimize-to-tray-on-close')) {
+                        document.getElementById('minimize-to-tray-on-close').checked = data.minimizeToTrayOnClose;
                     }
                     if (document.getElementById('sidebar-visible')) {
                         document.getElementById('sidebar-visible').checked = data.sidebarVisible;

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
+using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Models;
 
@@ -14,8 +15,7 @@ namespace MundoBrowser.Services
         public ExtensionService()
         {
             _downloader = new ExtensionDownloader();
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _extensionsPath = Path.Combine(appData, "MundoBrowser", "Extensions");
+            _extensionsPath = Path.Combine(AppRuntime.LocalDataDirectory, "Extensions");
             Directory.CreateDirectory(_extensionsPath);
         }
 

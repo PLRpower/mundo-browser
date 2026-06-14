@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 using MundoBrowser.Models;
 using MundoBrowser.Interfaces;
@@ -18,8 +19,7 @@ namespace MundoBrowser.Services
 
         public SessionManager()
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var appFolder = Path.Combine(appData, "MundoBrowser");
+            var appFolder = AppRuntime.LocalDataDirectory;
             Directory.CreateDirectory(appFolder);
             _sessionFilePath = Path.Combine(appFolder, "last_session.json");
             _sessionBackupPath = Path.Combine(appFolder, "last_session.json.bak");

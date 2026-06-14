@@ -6,6 +6,9 @@ obj/
 x64/
 x86/
 build/
+publish/
+Releases/
+InstallerOutput/
 
 ## Rider / IntelliJ / JetBrains
 .idea/

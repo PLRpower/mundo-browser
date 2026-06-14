@@ -6,7 +6,7 @@ namespace MundoBrowser.Helpers;
 
 public static class NativeMethods
 {
-    public const string AppUserModelId = "MundoBrowser.App";
+    public const string AppUserModelId = AppRuntime.AppUserModelId;
 
     public enum DWMWINDOWATTRIBUTE
     {

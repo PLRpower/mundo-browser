@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using MundoBrowser.Helpers;
 using MundoBrowser.Models;
 using MundoBrowser.Interfaces;
 
@@ -17,10 +18,7 @@ namespace MundoBrowser.Services
 
         public HistoryManager()
         {
-            var appDataPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MundoBrowser"
-            );
+            var appDataPath = AppRuntime.RoamingDataDirectory;
             
             Directory.CreateDirectory(appDataPath);
             _historyFilePath = Path.Combine(appDataPath, "history.json");

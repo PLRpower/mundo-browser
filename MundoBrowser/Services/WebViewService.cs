@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 using MundoBrowser.Interfaces;
 
@@ -55,9 +56,7 @@ public class WebViewService : IWebViewService
             AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2"
         };
 
-        var userDataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "MundoBrowser", "WebView2Data");
+        var userDataFolder = Path.Combine(AppRuntime.LocalDataDirectory, "WebView2Data");
         
         Directory.CreateDirectory(userDataFolder);
         _environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
@@ -362,6 +361,10 @@ public class WebViewService : IWebViewService
                 EcoModeMinutes = _settingsService.Current.EcoModeMinutes;
                 break;
 
+            case "minimizeToTrayOnClose":
+                _settingsService.Update(settings => settings.MinimizeToTrayOnClose = value.GetBoolean());
+                break;
+
             case "sidebarVisible":
                 if (vm != null)
                     vm.IsSidebarVisible = value.GetBoolean();
@@ -468,6 +471,7 @@ public class WebViewService : IWebViewService
                 startPage = settings.StartPage,
                 ecoModeEnabled = settings.EcoModeEnabled,
                 ecoModeDuration = settings.EcoModeMinutes,
+                minimizeToTrayOnClose = settings.MinimizeToTrayOnClose,
                 sidebarVisible = settings.IsSidebarVisible,
                 sidebarWidth = settings.SidebarWidth,
                 adBlockerEnabled = settings.IsAdBlockerEnabled,

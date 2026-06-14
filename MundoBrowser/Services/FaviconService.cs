@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 using MundoBrowser.Interfaces;
 
@@ -23,9 +24,7 @@ public class FaviconService : IFaviconService
 
     public FaviconService()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appFolder = Path.Combine(appData, "MundoBrowser");
-        _faviconsPath = Path.Combine(appFolder, "Favicons");
+        _faviconsPath = Path.Combine(AppRuntime.LocalDataDirectory, "Favicons");
         Directory.CreateDirectory(_faviconsPath);
 
         _httpClient = new HttpClient(new HttpClientHandler { MaxConnectionsPerServer = 4 });
@@ -72,8 +71,7 @@ public class FaviconService : IFaviconService
     public string? GetAbsoluteFaviconPath(string relativePath)
     {
         if (string.IsNullOrEmpty(relativePath)) return relativePath;
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var fullPath = Path.Combine(appData, "MundoBrowser", relativePath);
+        var fullPath = Path.Combine(AppRuntime.LocalDataDirectory, relativePath);
         return File.Exists(fullPath) ? new Uri(fullPath).AbsoluteUri : null;
     }
 
@@ -431,9 +429,7 @@ public class FaviconService : IFaviconService
             {
                 if (!activeDomains.Contains(kvp.Key))
                 {
-                    var fullPath = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "MundoBrowser", kvp.Value);
+                    var fullPath = Path.Combine(AppRuntime.LocalDataDirectory, kvp.Value);
                     if (File.Exists(fullPath))
                     {
                         try { File.Delete(fullPath); } catch { }

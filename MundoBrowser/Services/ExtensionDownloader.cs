@@ -1,6 +1,7 @@
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using MundoBrowser.Helpers;
 
 namespace MundoBrowser.Services
 {
@@ -18,8 +19,7 @@ namespace MundoBrowser.Services
         public ExtensionDownloader()
         {
             // Create a folder for downloaded extensions
-            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _extensionsPath = Path.Combine(appDataPath, "MundoBrowser", "Extensions");
+            _extensionsPath = Path.Combine(AppRuntime.LocalDataDirectory, "Extensions");
             Directory.CreateDirectory(_extensionsPath);
         }
 

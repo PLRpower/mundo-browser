@@ -34,10 +34,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         _startArgs = args;
         InitializeComponent();
+
+        Title = AppRuntime.DisplayName;
         
         var vm = (MainViewModel)DataContext;
         _webViewService = new WebViewService();
 
+        InitializeTrayIcon();
         InitializeWindow();
         InitializeEvents(vm);
 
@@ -78,30 +81,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         Activated += (_, _) => UpdateEdgeTriggerState(forceReopen: true);
         Deactivated += (_, _) => HideFloatingSidebar(animate: false);
-        Closing += async (_, e) => {
-            if (!_isClosingSafe)
-            {
-                e.Cancel = true;
-                if (_isSavingSession)
-                    return;
-
-                _isSavingSession = true;
-                try
-                {
-                    SyncWindowPlacementToViewModel();
-                    if (DataContext is MainViewModel vm)
-                    {
-                        await vm.SaveCurrentSessionAsync();
-                    }
-                }
-                finally
-                {
-                    _isSavingSession = false;
-                }
-                _isClosingSafe = true;
-                Close();
-            }
-        };
+        Closing += MainWindow_Closing;
+        Closed += (_, _) => DisposeTrayIcon();
         
         AddHandler(PreviewMouseDownEvent, new MouseButtonEventHandler(Window_PreviewMouseDown), true);
 

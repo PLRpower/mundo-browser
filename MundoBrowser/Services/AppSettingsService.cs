@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Models;
 
@@ -17,9 +18,7 @@ public sealed class AppSettingsService : IAppSettingsService
 
     public AppSettingsService()
     {
-        var appFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "MundoBrowser");
+        var appFolder = AppRuntime.LocalDataDirectory;
 
         Directory.CreateDirectory(appFolder);
         _settingsFilePath = Path.Combine(appFolder, "settings.json");

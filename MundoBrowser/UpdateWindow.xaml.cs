@@ -52,9 +52,6 @@ public partial class UpdateWindow : Window
 
     private void LaunchMainWindow()
     {
-        var mainWindow = new MainWindow(_args);
-        mainWindow.Show();
-        App.StartArgsListener(mainWindow);
-        Close();
+        App.LaunchMainWindow(_args, this);
     }
 }
