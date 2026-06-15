@@ -1,9 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using Microsoft.Web.WebView2.Core;
-using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Models;
+using MundoBrowser.Services.Extensions;
 
 namespace MundoBrowser.Services
 {
@@ -16,90 +15,56 @@ namespace MundoBrowser.Services
         public ExtensionService(ExtensionDownloader downloader)
         {
             _downloader = downloader;
-            _extensionsPath = Path.Combine(AppRuntime.LocalDataDirectory, "Extensions");
+            _extensionsPath = ExtensionRuntime.ExtensionsPath;
             Directory.CreateDirectory(_extensionsPath);
         }
 
-        public async Task<List<ExtensionInfo>> LoadExtensionsAsync(CoreWebView2Profile profile)
+        public async Task<List<ExtensionInfo>> LoadExtensionsAsync()
         {
             var loadedExtensions = new List<ExtensionInfo>();
             if (!Directory.Exists(_extensionsPath)) return loadedExtensions;
 
-            var exts = await profile.GetBrowserExtensionsAsync();
-            
-            foreach (var ext in exts)
+            foreach (var dir in ExtensionRuntime.GetInstalledDirectories())
             {
-                var extName = ext.Name ?? "Extension";
-                if (!ext.IsEnabled || extName.Contains("Microsoft")) continue;
+                var manifestPath = Path.Combine(dir, "manifest.json");
+                if (!IsReadableJsonFile(manifestPath))
+                    continue;
 
-                var info = new ExtensionInfo(ext.Id, extName, true);
-
-                if (Directory.Exists(_extensionsPath))
+                try
                 {
-                    var directExtensionDirectory = Path.Combine(_extensionsPath, ext.Id);
-                    IEnumerable<string> candidateDirectories = Directory.Exists(directExtensionDirectory)
-                        ? [directExtensionDirectory]
-                        : Directory.EnumerateDirectories(_extensionsPath);
-
-                    foreach (var dir in candidateDirectories)
-                    {
-                        var manifestPath = Path.Combine(dir, "manifest.json");
-                        if (!IsReadableJsonFile(manifestPath)) continue;
-
-                        try
-                        {
-                            var json = await File.ReadAllTextAsync(manifestPath);
-                            using var doc = JsonDocument.Parse(json);
-                            var root = doc.RootElement;
-                            
-                            var manifestName = root.TryGetProperty("name", out var n) ? n.GetString() : null;
-                            var shortName = root.TryGetProperty("short_name", out var sn) ? sn.GetString() : null;
-                            var resolvedName = ResolveName(manifestName, dir, root);
-                            var resolvedShortName = ResolveName(shortName, dir, root);
-                            
-                            bool isMatch = false;
-                            if (resolvedName != null && ext.Name != null && (ext.Name.Contains(resolvedName) || resolvedName.Contains(ext.Name))) isMatch = true;
-                            else if (resolvedShortName != null && ext.Name != null && ext.Name.Contains(resolvedShortName)) isMatch = true;
-                            else if (ext.Id.Equals(Path.GetFileName(dir), StringComparison.OrdinalIgnoreCase)) isMatch = true;
-                            
-                            if (isMatch)
-                            {
-                                ProcessManifest(root, dir, ext.Id, info);
-                                break;
-                            }
-                        }
-                        catch
-                        {
-                            // Ignorer les erreurs de parsing pour une extension
-                        }
-                    }
+                    loadedExtensions.Add(await CreateExtensionInfoAsync(dir));
                 }
-                loadedExtensions.Add(info);
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Unable to load extension from '{dir}': {ex.Message}");
+                }
             }
+
             return loadedExtensions;
         }
 
-        public async Task<ExtensionInfo> InstallExtensionAsync(string extensionId, CoreWebView2Profile profile)
+        public async Task<ExtensionInfo> InstallExtensionAsync(string extensionId)
         {
             var path = await _downloader.DownloadAndExtractExtension(extensionId);
-            var extension = await profile.AddBrowserExtensionAsync(path);
-            
-            if (extension == null) throw new Exception("Failed to load extension after download.");
+            return await CreateExtensionInfoAsync(path);
+        }
 
-            var info = new ExtensionInfo(extension.Id, extension.Name, true);
-            var manifestPath = Path.Combine(path, "manifest.json");
-            
-            if (IsReadableJsonFile(manifestPath))
-            {
-                try
-                {
-                    var json = await File.ReadAllTextAsync(manifestPath);
-                    using var doc = JsonDocument.Parse(json);
-                    ProcessManifest(doc.RootElement, path, extension.Id, info);
-                }
-                catch { }
-            }
+        private async Task<ExtensionInfo> CreateExtensionInfoAsync(string extensionDirectory)
+        {
+            var manifestPath = Path.Combine(extensionDirectory, "manifest.json");
+            if (!IsReadableJsonFile(manifestPath))
+                throw new InvalidDataException($"Extension manifest is missing or invalid: '{manifestPath}'.");
 
+            var json = await File.ReadAllTextAsync(manifestPath);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            string sourceId = Path.GetFileName(extensionDirectory);
+            string runtimeId = ExtensionRuntime.GetRuntimeId(extensionDirectory, root);
+            var manifestName = root.TryGetProperty("name", out var name) ? name.GetString() : null;
+            var resolvedName = ResolveName(manifestName, extensionDirectory, root) ?? "Extension";
+            var info = new ExtensionInfo(sourceId, resolvedName, true);
+            ProcessManifest(root, extensionDirectory, runtimeId, info);
             return info;
         }
 

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Animation;
+using MundoBrowser.Services.Browser;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -11,9 +12,9 @@ public partial class TopBarView
         if (DataContext is MainViewModel vm && vm.SelectedTab != null)
         {
             vm.SelectedTab.ZoomFactor = 1.0;
-            var webView = GetWebView();
-            if (webView != null)
-                webView.ZoomFactor = 1.0;
+            var browser = GetBrowser();
+            if (browser != null)
+                browser.ZoomLevel = BrowserService.ZoomFactorToLevel(1.0);
         }
     }
 

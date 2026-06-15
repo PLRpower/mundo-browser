@@ -35,7 +35,7 @@ public partial class TopBarView
             ClearInlineCompletion();
             ClearAcceptedCompletion();
             IsSuggestionsOpen = false;
-            GetWebView()?.Focus();
+            GetBrowser()?.Focus();
             e.Handled = true;
         }
         else if (e.Key == Key.Down && IsSuggestionsOpen)
@@ -69,9 +69,9 @@ public partial class TopBarView
                 }
 
                 AddressTextBox.SelectionLength = 0;
-                var webView = GetWebView();
-                if (webView != null)
-                    webView.Focus();
+                var browser = GetBrowser();
+                if (browser != null)
+                    browser.Focus();
                 else
                     Keyboard.ClearFocus();
             }

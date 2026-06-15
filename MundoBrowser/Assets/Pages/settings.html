@@ -328,7 +328,7 @@
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Prévention du suivi</div>
-                        <div class="setting-description">Utiliser la protection native WebView2 contre les traqueurs.</div>
+                        <div class="setting-description">Activer la protection Chromium contre les traqueurs.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="tracking-prevention-enabled"
@@ -391,7 +391,7 @@
                     <h2 style="border: none; margin-bottom: 10px;">MundoBrowser</h2>
                     <p id="app-version" style="color: var(--secondary-text)">Version 1.0.0 (Build stable)</p>
                     <p style="margin-top: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
-                        Un navigateur moderne, rapide et élégant basé sur WebView2 et .NET.
+                        Un navigateur moderne, rapide et élégant basé sur Chromium Embedded Framework et .NET.
                         <br>
                         Créé par Paul Thomas
                     </p>
@@ -438,8 +438,8 @@
         });
 
         function updateSetting(key, value) {
-            if (window.chrome && window.chrome.webview) {
-                window.chrome.webview.postMessage({
+            if (window.CefSharp && window.CefSharp.PostMessage) {
+                window.CefSharp.PostMessage({
                     type: 'settingChanged',
                     key: key,
                     value: value
@@ -449,8 +449,8 @@
         }
 
         // Écouter les messages venant du C# (si besoin)
-        if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.addEventListener('message', event => {
+        {
+            window.addEventListener('message', event => {
                 const data = event.data;
                 if (data.type === 'initSettings') {
                     // Initialiser les valeurs du formulaire avec les données du navigateur

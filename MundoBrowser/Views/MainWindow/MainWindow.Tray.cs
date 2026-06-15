@@ -143,6 +143,13 @@ public partial class MainWindow
         Close();
     }
 
+    private void RequestRestart()
+    {
+        _restartRequested = true;
+        _isExitRequested = true;
+        Close();
+    }
+
     internal void PrepareForSystemShutdown()
     {
         _isExitRequested = true;

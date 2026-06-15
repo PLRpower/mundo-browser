@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using CefSharp.Wpf.HwndHost;
 using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.ViewModels;
@@ -8,10 +9,11 @@ namespace MundoBrowser;
 
 public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
-    private readonly IWebViewService _webViewService;
+    private readonly IBrowserService _browserService;
     private readonly IExtensionService _extensionService;
     private readonly IAppSettingsService _settingsService;
     private readonly HashSet<TabViewModel> _trackedTabs = [];
+    private readonly HashSet<string> _installingExtensionIds = [];
     private MainViewModel? _viewModel;
     private int _tabSwitchVersion;
     private bool _contentInitialized;
@@ -23,6 +25,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _isSidebarFloating;
     private bool _isClosingSafe;
     private bool _isSavingSession;
+    private bool _restartRequested;
     private WindowState _windowStateBeforeTray = WindowState.Normal;
     private string? _currentExtensionId;
     private ExtensionPopupWindow? _extensionPopupWindow;
@@ -35,12 +38,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     public MainWindow(
         MainViewModel viewModel,
-        IWebViewService webViewService,
+        IBrowserService browserService,
         IExtensionService extensionService,
         IAppSettingsService settingsService,
         string[]? args = null)
     {
-        _webViewService = webViewService;
+        _browserService = browserService;
         _extensionService = extensionService;
         _settingsService = settingsService;
         _startArgs = args;
@@ -114,7 +117,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 UpdateResizeOverlayState(forceReopen: true);
                 UpdateEdgeTriggerState(forceReopen: true);
 
-                await _webViewService.InitializeAsync(WebViewsContainer);
+                await _browserService.InitializeAsync(BrowsersContainer);
 
                 if (DataContext is MainViewModel vm)
                 {
@@ -162,7 +165,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
-    public Microsoft.Web.WebView2.Wpf.WebView2? GetActiveWebView() => _webViewService.ActiveWebView;
+    public ChromiumWebBrowser? GetActiveBrowser() => _browserService.ActiveBrowser;
 
     public void HandleExternalArguments(string[] args)
     {

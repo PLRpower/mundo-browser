@@ -1,28 +1,21 @@
 using System.Windows;
+using System.Text.Json;
+using CefSharp;
+using CefSharp.Wpf.HwndHost;
 using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
 using MundoBrowser.Services;
+using MundoBrowser.Services.Extensions;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
 
 public partial class MainWindow
 {
-    private void CheckForExtensionStorePage(TabViewModel tab, string url)
-    {
-        if (string.IsNullOrEmpty(url)) { tab.IsExtensionStorePage = false; tab.InstallableExtensionId = null; return; }
-        var extensionId = ExtensionDownloader.ExtractExtensionIdFromUrl(url);
-        if (DataContext is MainViewModel vm && extensionId != null && vm.InstalledExtensions.Any(e => e.Id == extensionId)) { tab.IsExtensionStorePage = false; tab.InstallableExtensionId = null; return; }
-        tab.InstallableExtensionId = extensionId;
-        tab.IsExtensionStorePage = !string.IsNullOrEmpty(extensionId);
-    }
-
     private async Task LoadExtensionsAsync()
     {
-        if (_webViewService.ActiveWebView?.CoreWebView2 == null || DataContext is not MainViewModel vm) return;
-        var profile = _webViewService.ActiveWebView.CoreWebView2.Profile;
-        
-        var extensions = await _extensionService.LoadExtensionsAsync(profile);
+        if (DataContext is not MainViewModel vm) return;
+        var extensions = await _extensionService.LoadExtensionsAsync();
         
         vm.InstalledExtensions.Clear();
         foreach (var ext in extensions)
@@ -31,28 +24,69 @@ public partial class MainWindow
         }
     }
 
-    private async void InstallExtensionFromBar_Click(object sender, RoutedEventArgs e)
+    private async Task HandleExtensionStoreMessageAsync(
+        ChromiumWebBrowser browser,
+        object? message)
     {
-        if (DataContext is MainViewModel vm && vm.SelectedTab?.InstallableExtensionId != null)
+        string? extensionId = GetRequestedExtensionId(message);
+        if (extensionId == null
+            || !string.Equals(
+                ExtensionDownloader.ExtractExtensionIdFromUrl(browser.Address),
+                extensionId,
+                StringComparison.Ordinal)
+            || ExtensionRuntime.IsInstalled(extensionId)
+            || !_installingExtensionIds.Add(extensionId))
+            return;
+
+        SetExtensionStoreState(browser, "installing");
+        try
         {
-            InstallProgressBar.Visibility = Visibility.Visible;
-            InstallStatusText.Visibility = Visibility.Visible;
-            InstallStatusText.Text = "Téléchargement...";
-            try {
-                // Get profile from active WebView to install extension
-                if (_webViewService.ActiveWebView?.CoreWebView2?.Profile != null)
-                {
-                    InstallStatusText.Text = "Installation...";
-                    await _extensionService.InstallExtensionAsync(vm.SelectedTab.InstallableExtensionId, _webViewService.ActiveWebView.CoreWebView2.Profile);
-                    await LoadExtensionsAsync();
-                    vm.SelectedTab.IsExtensionStorePage = false;
-                }
-            } catch (Exception ex) { MessageBox.Show("Erreur installation: " + ex.Message); }
-            finally { InstallProgressBar.Visibility = Visibility.Collapsed; InstallStatusText.Visibility = Visibility.Collapsed; }
+            await _extensionService.InstallExtensionAsync(extensionId);
+            SetExtensionStoreState(browser, "installed");
+
+            var restart = MessageBox.Show(
+                "L'extension est installée. Chromium doit redémarrer pour l'activer.\n\nRedémarrer MundoBrowser maintenant ?",
+                "Extension installée",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+            if (restart == MessageBoxResult.Yes)
+                RequestRestart();
+        }
+        catch (Exception ex)
+        {
+            SetExtensionStoreState(browser, "error");
+            MessageBox.Show("Erreur installation: " + ex.Message);
+        }
+        finally
+        {
+            _installingExtensionIds.Remove(extensionId);
         }
     }
 
-    private void CloseInstallBar_Click(object sender, RoutedEventArgs e) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) vm.SelectedTab.IsExtensionStorePage = false; }
+    private static string? GetRequestedExtensionId(object? message)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(message));
+            var root = doc.RootElement;
+            return root.TryGetProperty("type", out var type)
+                   && type.GetString() == "extensionInstallRequested"
+                   && root.TryGetProperty("extensionId", out var id)
+                ? id.GetString()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SetExtensionStoreState(ChromiumWebBrowser browser, string state)
+    {
+        string serializedState = JsonSerializer.Serialize(state);
+        browser.ExecuteScriptAsync(
+            $"window.__mundoExtensionStore?.setState({serializedState});");
+    }
 
     public async void ShowExtensionPopup(string extId, Button btn)
     {
@@ -72,8 +106,7 @@ public partial class MainWindow
 
         var ext = vm.InstalledExtensions.FirstOrDefault(extension => extension.Id == extId);
         if (ext == null
-            || string.IsNullOrEmpty(ext.PopupUrl)
-            || _webViewService.WebViewEnvironment == null)
+            || string.IsNullOrEmpty(ext.PopupUrl))
             return;
 
         var popupWindow = new ExtensionPopupWindow(this, btn);
@@ -94,7 +127,7 @@ public partial class MainWindow
 
         try
         {
-            await popupWindow.InitializeAsync(_webViewService.WebViewEnvironment, ext.PopupUrl);
+            await popupWindow.InitializeAsync(ext.PopupUrl);
         }
         catch (Exception ex)
         {

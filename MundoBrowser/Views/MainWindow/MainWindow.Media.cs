@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CefSharp;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -20,8 +21,8 @@ public partial class MainWindow
 
         try
         {
-            var webView = _webViewService.GetWebViewForTab(vm.ActiveMediaTab);
-            if (webView?.CoreWebView2 == null) return;
+            var browser = _browserService.GetBrowserForTab(vm.ActiveMediaTab);
+            if (browser == null) return;
 
             const string script = @"
                 (function() {
@@ -47,10 +48,11 @@ public partial class MainWindow
                     };
                 })()";
 
-            string json = await webView.CoreWebView2.ExecuteScriptAsync(script);
-            if (string.IsNullOrEmpty(json) || json == "null") return;
+            var response = await browser.EvaluateScriptAsync(script);
+            if (!response.Success || response.Result == null) return;
 
-            var data = JsonSerializer.Deserialize<MediaData>(json);
+            var data = JsonSerializer.Deserialize<MediaData>(
+                JsonSerializer.Serialize(response.Result));
             if (data != null && data.hasMedia)
             {
                 var tab = vm.ActiveMediaTab;
@@ -69,12 +71,12 @@ public partial class MainWindow
         }
     }
 
-    private async void OnMediaActionRequested(object? sender, string action)
+    private void OnMediaActionRequested(object? sender, string action)
     {
         if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null) return;
         
-        var webView = _webViewService.GetWebViewForTab(vm.ActiveMediaTab);
-        if (webView?.CoreWebView2 == null) return;
+        var browser = _browserService.GetBrowserForTab(vm.ActiveMediaTab);
+        if (browser == null) return;
 
         string script = "";
         if (action.StartsWith("seek:"))
@@ -131,7 +133,7 @@ public partial class MainWindow
 
         if (!string.IsNullOrEmpty(script))
         {
-            try { await webView.CoreWebView2.ExecuteScriptAsync(script); } catch { }
+            try { browser.ExecuteScriptAsync(script); } catch { }
         }
     }
 

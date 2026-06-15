@@ -109,7 +109,7 @@
     <Grid x:Name="MainGrid" MouseDown="MainGrid_MouseDown" Focusable="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- TopBar : pleine largeur -->
-            <RowDefinition Height="*"/>    <!-- Sidebar + WebView -->
+            <RowDefinition Height="*"/>    <!-- Sidebar + browser -->
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="200" MaxWidth="400" /> <!-- Sidebar Column -->
@@ -154,7 +154,7 @@
             </local:SidebarView.Style>
         </local:SidebarView>
 
-        <!-- Floating Sidebar Popup (to bypass WebView2 Airspace issue) -->
+        <!-- Floating Sidebar Popup -->
         <Popup x:Name="FloatingSidebarPopup" 
                AllowsTransparency="True" 
                PopupAnimation="None" 
@@ -188,40 +188,16 @@
                       ResizeDirection="Columns"/>
 
         <!-- ════════════════════════════════════════════════ -->
-        <!-- CONTENU PRINCIPAL — WebView (Row 1, Col 2) -->
+        <!-- CONTENU PRINCIPAL — Navigateur (Row 1, Col 2) -->
         <!-- ════════════════════════════════════════════════ -->
         <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="#CC121212">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- Extension Installation Bar -->
-            <Border x:Name="ExtensionInstallBar" Grid.Row="0" Background="#2D2D30" BorderBrush="#3E3E42" BorderThickness="0,0,0,1"
-                    Visibility="{Binding SelectedTab.IsExtensionStorePage, Converter={StaticResource BoolToVis}}">
-                <Grid Margin="15,8">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="🧩" FontSize="18" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <TextBlock Text="Cette extension est compatible avec MundoBrowser." Foreground="White" VerticalAlignment="Center" FontSize="13"/>
-                        <Button x:Name="InstallExtensionBtn" Content="Installer l'extension" Click="InstallExtensionFromBar_Click" 
-                                Margin="15,0" Padding="15,5" Cursor="Hand" Style="{StaticResource NavButtonStyle}" 
-                                Background="#007ACC" FontWeight="SemiBold"/>
-                        <ProgressBar x:Name="InstallProgressBar" Width="100" Height="4" VerticalAlignment="Center" Visibility="Collapsed" IsIndeterminate="True" Margin="10,0"/>
-                        <TextBlock x:Name="InstallStatusText" Foreground="#888" VerticalAlignment="Center" FontSize="12" Visibility="Collapsed"/>
-                    </StackPanel>
-                    <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" 
-                            Foreground="#888" Click="CloseInstallBar_Click" Width="30" FontSize="16" Cursor="Hand"
-                            Style="{StaticResource GrayHoverButtonStyle}"/>
-                </Grid>
-            </Border>
-
-            <!-- Container for multiple WebView2 instances (one per tab) -->
-            <Grid x:Name="WebViewsContainer" Grid.Row="1"/>
+            <!-- Container for one Chromium browser instance per tab -->
+            <Grid x:Name="BrowsersContainer"/>
         </Grid>
              
-        <!-- Resize Edge Triggers - Moved to root for better hit testing over WebView2 -->
         <!-- Resize Edge Triggers -->
-        <!-- Left edge for sidebar toggle (using Popup to catch mouse over WebView2) -->
+        <!-- Resize Edge Triggers -->
+        <!-- Left edge for sidebar toggle -->
         <Popup x:Name="EdgeTriggerPopup"
                AllowsTransparency="True"
                Placement="Relative"
@@ -234,7 +210,7 @@
             <Border Background="#01000000" MouseEnter="Edge_MouseEnter" MouseMove="Edge_MouseEnter" />
         </Popup>
 
-        <!-- Native resize overlays. Popups stay above WebView2 child HWNDs, unlike WPF borders. -->
+        <!-- Native resize overlays -->
         <Popup x:Name="ResizeLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
             <Border Width="6" Height="{Binding ActualHeight, ElementName=MainGrid}" Background="#01000000"
                     Cursor="SizeWE" Tag="10" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>

@@ -1,11 +1,13 @@
 using System.IO;
 using System.IO.Pipes;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Services;
+using MundoBrowser.Services.Browser;
 using MundoBrowser.ViewModels;
 using Velopack;
 
@@ -14,6 +16,7 @@ namespace MundoBrowser;
 public partial class App : System.Windows.Application
 {
     private const string UniqueEventName = AppRuntime.UniqueInstanceName;
+    private const string RestartArgumentPrefix = "--mundo-restart-after-pid=";
     private static Mutex? _mutex;
     private readonly ServiceProvider _serviceProvider;
 
@@ -25,7 +28,16 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        VelopackApp.Build().Run();
+        string[] startupArgs = WaitForRestartSource(e.Args);
+        VelopackApp.Build()
+            .SetAppUserModelId(AppRuntime.AppUserModelId)
+            .OnAfterInstallFastCallback(_ => WindowsBrowserRegistration.RegisterInstalledBrowser())
+            .OnAfterUpdateFastCallback(_ => WindowsBrowserRegistration.RegisterInstalledBrowser())
+            .OnBeforeUninstallFastCallback(_ => WindowsBrowserRegistration.UnregisterBrowser())
+            .Run();
+
+        // Repairs registrations for users who already installed a Velopack release.
+        WindowsBrowserRegistration.RegisterInstalledBrowser();
 
         // Check for single instance
         _mutex = new Mutex(true, UniqueEventName, out bool isNewInstance);
@@ -36,18 +48,19 @@ public partial class App : System.Windows.Application
             NativeMethods.AllowSetForegroundWindow(NativeMethods.ASW_ANY);
 
             // Another instance is running, send arguments to it
-            SendArgsToRunningInstance(e.Args);
+            SendArgsToRunningInstance(startupArgs);
 
             App.Current.Shutdown();
             return;
         }
 
+        CefRuntime.Initialize();
         base.OnStartup(e);
 
 #if DEBUG
-        LaunchMainWindow(e.Args);
+        LaunchMainWindow(startupArgs);
 #else
-        var updateWindow = new UpdateWindow(e.Args);
+        var updateWindow = new UpdateWindow(startupArgs);
         updateWindow.Show();
 #endif
     }
@@ -64,6 +77,7 @@ public partial class App : System.Windows.Application
     {
         _serviceProvider.Dispose();
         _mutex?.Dispose();
+        CefRuntime.Shutdown();
         base.OnExit(e);
     }
 
@@ -123,6 +137,44 @@ public partial class App : System.Windows.Application
         thread.Start();
     }
 
+    internal static void RestartAfterCurrentProcessExits()
+    {
+        if (Environment.ProcessPath is not { } processPath)
+            return;
+
+        Process.Start(new ProcessStartInfo(
+            processPath,
+            RestartArgumentPrefix + Environment.ProcessId)
+        {
+            UseShellExecute = true
+        });
+    }
+
+    private static string[] WaitForRestartSource(string[] args)
+    {
+        var restartArgument = args.FirstOrDefault(argument =>
+            argument.StartsWith(RestartArgumentPrefix, StringComparison.Ordinal));
+        if (restartArgument == null)
+            return args;
+
+        if (int.TryParse(restartArgument[RestartArgumentPrefix.Length..], out int processId))
+        {
+            try
+            {
+                Process.GetProcessById(processId).WaitForExit(15_000);
+            }
+            catch (Exception ex) when (ex is ArgumentException
+                                       or InvalidOperationException
+                                       or System.ComponentModel.Win32Exception)
+            {
+                // The source process already exited.
+            }
+        }
+
+        return args.Where(argument =>
+            !argument.StartsWith(RestartArgumentPrefix, StringComparison.Ordinal)).ToArray();
+    }
+
     internal static void LaunchMainWindow(string[]? args, Window? startupWindow = null)
     {
         if (Current is not App app)
@@ -130,7 +182,7 @@ public partial class App : System.Windows.Application
 
         var mainWindow = new MainWindow(
             app._serviceProvider.GetRequiredService<MainViewModel>(),
-            app._serviceProvider.GetRequiredService<IWebViewService>(),
+            app._serviceProvider.GetRequiredService<IBrowserService>(),
             app._serviceProvider.GetRequiredService<IExtensionService>(),
             app._serviceProvider.GetRequiredService<IAppSettingsService>(),
             args);
@@ -147,7 +199,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IHistoryManager, HistoryManager>();
         services.AddSingleton<ISessionManager, SessionManager>();
         services.AddSingleton<IFaviconService, FaviconService>();
-        services.AddSingleton<IWebViewService, WebViewService>();
+        services.AddSingleton<IBrowserService, BrowserService>();
         services.AddSingleton<ExtensionDownloader>();
         services.AddSingleton<IExtensionService, ExtensionService>();
         services.AddSingleton<IAdBlockerService, AdBlockerService>();

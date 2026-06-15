@@ -13,7 +13,7 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private bool _isDiscarded = true;
 
-        // The active URL of the WebView
+        // The active URL of the embedded browser
         [ObservableProperty]
         private string _url = "https://www.google.com";
 
@@ -42,9 +42,6 @@ namespace MundoBrowser.ViewModels
 
         [ObservableProperty]
         private string? _faviconRelativePath;
-
-        [ObservableProperty]
-        private bool _isExtensionStorePage;
 
         [ObservableProperty]
         private bool _isPlayingAudio;
@@ -87,9 +84,6 @@ namespace MundoBrowser.ViewModels
                 ? time.ToString(@"h\:mm\:ss") 
                 : time.ToString(@"m\:ss");
         }
-
-        [ObservableProperty]
-        private string? _installableExtensionId;
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(ZoomPercentage))]

@@ -1,5 +1,7 @@
 using System.Collections.Specialized;
-using Microsoft.Web.WebView2.Wpf;
+using CefSharp;
+using CefSharp.Wpf.HwndHost;
+using MundoBrowser.Services.Browser;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -15,7 +17,6 @@ public partial class MainWindow
             pinnedTab.PropertyChanged += PinnedTab_PropertyChanged;
 
         SynchronizeTrackedTabs();
-
         vm.NewTabRequested += MainViewModel_NewTabRequested;
         vm.MediaActionRequested += OnMediaActionRequested;
     }
@@ -26,15 +27,16 @@ public partial class MainWindow
             return;
 
         int switchVersion = Interlocked.Increment(ref _tabSwitchVersion);
+        var browser = await _browserService.GetOrCreateBrowserAsync(
+            tab,
+            instance => SetupBrowserEvents(instance, tab));
 
-        var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
         if (switchVersion != Volatile.Read(ref _tabSwitchVersion)
             || _viewModel?.SelectedTab != tab
             || !_trackedTabs.Contains(tab))
             return;
 
-        await _webViewService.SwitchToTabAsync(tab, webView);
-
+        await _browserService.SwitchToTabAsync(tab, browser);
         if (_viewModel is { } vm)
         {
             TopBarControl?.SetAddressBarText(tab.AddressUrl);
@@ -42,7 +44,9 @@ public partial class MainWindow
         }
     }
 
-    private async void OnTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private async void OnTabPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(TabViewModel.Url) || sender is not TabViewModel tab)
             return;
@@ -58,13 +62,15 @@ public partial class MainWindow
 
         try
         {
-            var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-            if (_trackedTabs.Contains(tab) && webView.CoreWebView2.Source != tab.Url)
-                webView.CoreWebView2.Navigate(tab.Url);
+            var browser = await _browserService.GetOrCreateBrowserAsync(
+                tab,
+                instance => SetupBrowserEvents(instance, tab));
+            if (_trackedTabs.Contains(tab)
+                && !string.Equals(browser.Address, tab.Url, StringComparison.OrdinalIgnoreCase))
+                browser.Load(tab.Url);
         }
         catch (ObjectDisposedException)
         {
-            // The tab was closed while its WebView was being initialized.
         }
     }
 
@@ -83,7 +89,6 @@ public partial class MainWindow
             }
             catch (ObjectDisposedException)
             {
-                // The selected tab changed again while its WebView was initializing.
             }
         }
         else if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
@@ -96,8 +101,8 @@ public partial class MainWindow
         }
     }
 
-    private void Tabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        => SynchronizeTrackedTabs();
+    private void Tabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        SynchronizeTrackedTabs();
 
     private void PinnedTab_PropertyChanged(
         object? sender,
@@ -119,7 +124,7 @@ public partial class MainWindow
         foreach (var removedTab in _trackedTabs.Except(currentTabs).ToList())
         {
             removedTab.PropertyChanged -= OnTabPropertyChanged;
-            _webViewService.RemoveTab(removedTab);
+            _browserService.RemoveTab(removedTab);
             _trackedTabs.Remove(removedTab);
         }
 
@@ -157,134 +162,117 @@ public partial class MainWindow
             tab.PropertyChanged -= OnTabPropertyChanged;
         _trackedTabs.Clear();
 
-        if (_webViewService is IDisposable disposableWebViewService)
-            disposableWebViewService.Dispose();
+        if (_browserService is IDisposable disposable)
+            disposable.Dispose();
+
+        if (_restartRequested)
+            App.RestartAfterCurrentProcessExits();
     }
 
-    private void SetupWebViewEvents(WebView2 webView, TabViewModel tab)
+    private void SetupBrowserEvents(ChromiumWebBrowser browser, TabViewModel tab)
     {
-        webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
-        {
-            tab.IsPlayingAudio = webView.CoreWebView2.IsDocumentPlayingAudio;
-            if (tab.IsPlayingAudio && DataContext is MainViewModel vm)
+        browser.DisplayHandler = new BrowserDisplayHandler(
+            _ => Dispatcher.BeginInvoke(async () =>
             {
-                vm.ActiveMediaTab = tab;
-                vm.IsMediaBarVisible = true;
-            }
+                if (_viewModel is { } vm)
+                    await vm.FaviconService.ResolveFaviconAsync(browser, tab, forceReload: true);
+            }),
+            fullscreen => Dispatcher.BeginInvoke(() => SetFullscreen(fullscreen, true)));
+
+        browser.LifeSpanHandler = new BrowserLifeSpanHandler(
+            url => Dispatcher.BeginInvoke(() => _viewModel?.AddTabWithUrl(url)),
+            () => Dispatcher.BeginInvoke(() => _viewModel?.CloseTab(tab)));
+
+        browser.JavascriptMessageReceived += (_, args) =>
+            Dispatcher.BeginInvoke(async () =>
+                await HandleExtensionStoreMessageAsync(browser, args.Message));
+
+        browser.LoadingStateChanged += (_, args) =>
+            Dispatcher.BeginInvoke(() =>
+            {
+                tab.CanGoBack = args.CanGoBack;
+                tab.CanGoForward = args.CanGoForward;
+                tab.IsLoading = args.IsLoading;
+                if (!args.IsLoading)
+                    OnBrowserLoadCompleted(browser, tab);
+            });
+
+        browser.FrameLoadStart += (_, args) =>
+        {
+            if (args.Frame.IsMain)
+                Dispatcher.BeginInvoke(async () =>
+                    await OnBrowserAddressChanged(browser, tab, args.Url));
         };
 
-        webView.CoreWebView2.NavigationCompleted += (_, args) =>
+        browser.TitleChanged += (_, args) =>
+            Dispatcher.BeginInvoke(() =>
+            {
+                string? title = args.NewValue as string;
+                tab.Title = string.IsNullOrWhiteSpace(title) ? tab.Url : title;
+                if (_viewModel?.SelectedTab == tab)
+                    UpdateTitle();
+            });
+    }
+
+    private void OnBrowserLoadCompleted(ChromiumWebBrowser browser, TabViewModel tab)
+    {
+        if (DataContext is not MainViewModel vm)
+            return;
+
+        string source = browser.Address;
+        if (source.Contains("internals.mundobrowser", StringComparison.OrdinalIgnoreCase))
         {
-            if (!args.IsSuccess || DataContext is not MainViewModel vm || vm.SelectedTab != tab)
-                return;
-
-            var source = webView.CoreWebView2.Source;
-            if (source.Contains("internals.mundobrowser"))
+            if (source.Contains("settings.html", StringComparison.OrdinalIgnoreCase))
             {
-                if (source.Contains("settings.html"))
-                {
-                    string version = System.Reflection.Assembly.GetExecutingAssembly()
-                        .GetName().Version?.ToString(3) ?? "1.0.0";
-                    _ = webView.CoreWebView2.ExecuteScriptAsync(
-                        $"if(document.getElementById('app-version')) document.getElementById('app-version').innerText = 'Version {version} (Build stable)';");
-                }
-
-                if (string.IsNullOrEmpty(tab.AddressUrl)
-                    || !tab.AddressUrl.StartsWith("about:preferences"))
-                {
-                    string hash = source.Contains("#") ? source[source.IndexOf("#")..] : "#general";
-                    tab.AddressUrl = "about:preferences" + hash;
-                }
+                string version = System.Reflection.Assembly.GetExecutingAssembly()
+                    .GetName().Version?.ToString(3) ?? "1.0.0";
+                browser.ExecuteScriptAsync(
+                    $"if(document.getElementById('app-version')) document.getElementById('app-version').innerText = 'Version {version} (Build stable)';");
             }
-            else
-            {
-                tab.Url = tab.AddressUrl = source;
-            }
+        }
+        else if (!string.IsNullOrWhiteSpace(source))
+        {
+            tab.Url = source;
+        }
 
-            UpdateTitle();
-            vm.HistoryManager.AddEntry(tab.Url, webView.CoreWebView2.DocumentTitle);
+        vm.HistoryManager.AddEntry(tab.Url, browser.Title);
+        UpdateTitle();
+    }
 
+    private async Task OnBrowserAddressChanged(
+        ChromiumWebBrowser browser,
+        TabViewModel tab,
+        string source)
+    {
+        if (source.Contains("internals.mundobrowser", StringComparison.OrdinalIgnoreCase))
+        {
+            string hash = source.Contains('#') ? source[source.IndexOf('#')..] : "#general";
+            tab.AddressUrl = "about:preferences" + hash;
+        }
+        else if (!string.Equals(source, "about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            tab.Url = tab.AddressUrl = source;
+        }
+
+        if (_viewModel is { } vm && vm.SelectedTab == tab)
+        {
             if (TopBarControl?.AddressBar.IsFocused == false)
             {
                 TopBarControl.SetAddressBarText(tab.AddressUrl);
                 vm.AddressBarText = tab.AddressUrl;
             }
+        }
 
-            CheckForExtensionStorePage(tab, tab.Url);
-        };
-
-        webView.CoreWebView2.DocumentTitleChanged += (_, _) =>
-        {
-            if (_viewModel?.SelectedTab == tab)
-                UpdateTitle();
-        };
-
-        webView.CoreWebView2.SourceChanged += async (_, _) =>
-        {
-            var source = webView.CoreWebView2.Source;
-            if (webView.CoreWebView2.DocumentTitle == "about:preferences"
-                || source.Contains("internals.mundobrowser"))
-            {
-                if (source.Contains("settings.html"))
-                {
-                    string hash = source.Contains("#") ? source[source.IndexOf("#")..] : "#general";
-                    tab.AddressUrl = "about:preferences" + hash;
-                }
-                else if (string.IsNullOrEmpty(tab.AddressUrl)
-                         || !tab.AddressUrl.StartsWith("about:preferences"))
-                {
-                    tab.AddressUrl = "about:preferences#general";
-                }
-            }
-            else if (source != "about:blank")
-            {
-                tab.AddressUrl = source;
-            }
-
-            if (_viewModel is { } vm && vm.SelectedTab == tab)
-            {
-                if (TopBarControl?.AddressBar.IsFocused == false)
-                {
-                    TopBarControl.SetAddressBarText(tab.AddressUrl);
-                    vm.AddressBarText = tab.AddressUrl;
-                }
-
-                CheckForExtensionStorePage(tab, tab.AddressUrl);
-            }
-
-            if (_viewModel is { } mainVm)
-                await mainVm.FaviconService.ResolveFaviconAsync(webView, tab);
-        };
-
-        webView.CoreWebView2.FaviconChanged += async (_, _) =>
-        {
-            if (_viewModel is not { } vm)
-                return;
-
-            bool shouldRefreshImmediately = vm.SelectedTab == tab || string.IsNullOrEmpty(tab.FaviconUrl);
-            if (shouldRefreshImmediately)
-                await vm.FaviconService.ResolveFaviconAsync(webView, tab, forceReload: true);
-        };
-
-        webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) =>
-            SetFullscreen(webView.CoreWebView2.ContainsFullScreenElement, true);
-
-        webView.CoreWebView2.NewWindowRequested += (_, args) =>
-        {
-            args.Handled = true;
-            _viewModel?.AddTabWithUrl(args.Uri);
-        };
-
-        webView.CoreWebView2.WindowCloseRequested += (_, _) => _viewModel?.CloseTab(tab);
+        if (_viewModel is { } mainVm)
+            await mainVm.FaviconService.ResolveFaviconAsync(browser, tab);
     }
 
     private void UpdateTitle()
     {
-        if (_webViewService.ActiveWebView?.CoreWebView2 == null
-            || _viewModel?.SelectedTab is not { } selectedTab)
-            return; 
+        if (_browserService.ActiveBrowser == null || _viewModel?.SelectedTab is not { } selectedTab)
+            return;
 
-        var title = _webViewService.ActiveWebView.CoreWebView2.DocumentTitle;
-        selectedTab.Title = !string.IsNullOrWhiteSpace(title) ? title : selectedTab.Url;
+        string title = _browserService.ActiveBrowser.Title;
+        selectedTab.Title = string.IsNullOrWhiteSpace(title) ? selectedTab.Url : title;
     }
 }

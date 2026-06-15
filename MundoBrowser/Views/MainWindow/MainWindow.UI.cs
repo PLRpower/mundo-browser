@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Input;
+using CefSharp;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MundoBrowser.Helpers;
+using MundoBrowser.Services.Browser;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -163,13 +165,13 @@ public partial class MainWindow
         var modifiers = Keyboard.Modifiers;
         var key = e.Key;
         if (key == Key.D && modifiers == ModifierKeys.Control) { ToggleSidebar(); e.Handled = true; }
-        else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control)) { _webViewService.ActiveWebView?.Reload(); e.Handled = true; }
+        else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control)) { _browserService.ActiveBrowser?.Reload(); e.Handled = true; }
         else if (key == Key.F11) { SetFullscreen(!_isFullscreen); e.Handled = true; }
         else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
         else if (key == Key.W && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { vm.CloseTabCommand.Execute(vm.SelectedTab); e.Handled = true; } }
         else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { TopBarControl.AddressBar.Focus(); TopBarControl.AddressBar.SelectAll(); e.Handled = true; }
-        else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
-        else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward) { _webViewService.ActiveWebView.GoForward(); e.Handled = true; } }
+        else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return; if (_browserService.ActiveBrowser is { CanGoBack: true } browser) { browser.Back(); e.Handled = true; } }
+        else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_browserService.ActiveBrowser is { CanGoForward: true } browser) { browser.Forward(); e.Handled = true; } }
         else if (key == Key.Escape && _extensionPopupWindow?.IsVisible == true) { CloseExtensionPopup(); e.Handled = true; }
         else if (modifiers == ModifierKeys.Control)
         {
@@ -181,20 +183,20 @@ public partial class MainWindow
 
     private void AdjustZoom(double delta)
     {
-        if (DataContext is MainViewModel vm && vm.SelectedTab != null && _webViewService.ActiveWebView != null)
+        if (DataContext is MainViewModel vm && vm.SelectedTab != null && _browserService.ActiveBrowser != null)
         {
             double newZoom = Math.Clamp(vm.SelectedTab.ZoomFactor + delta, 0.25, 5.0);
             vm.SelectedTab.ZoomFactor = newZoom;
-            _webViewService.ActiveWebView.ZoomFactor = newZoom;
+            _browserService.ActiveBrowser.ZoomLevel = BrowserService.ZoomFactorToLevel(newZoom);
         }
     }
 
     private void ResetZoom()
     {
-        if (DataContext is MainViewModel vm && vm.SelectedTab != null && _webViewService.ActiveWebView != null)
+        if (DataContext is MainViewModel vm && vm.SelectedTab != null && _browserService.ActiveBrowser != null)
         {
             vm.SelectedTab.ZoomFactor = 1.0;
-            _webViewService.ActiveWebView.ZoomFactor = 1.0;
+            _browserService.ActiveBrowser.ZoomLevel = BrowserService.ZoomFactorToLevel(1.0);
         }
     }
 
@@ -227,9 +229,8 @@ public partial class MainWindow
                     }
                 }
 
-                // Focus WebView if available, otherwise clear focus
-                var wv = GetActiveWebView();
-                if (wv != null) wv.Focus();
+                var browser = GetActiveBrowser();
+                if (browser != null) browser.Focus();
                 else Keyboard.ClearFocus();
             }
         }

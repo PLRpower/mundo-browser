@@ -1,7 +1,8 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
-using Microsoft.Web.WebView2.Core;
+using CefSharp;
+using CefSharp.Wpf.HwndHost;
 using MundoBrowser.Helpers;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Point = System.Windows.Point;
@@ -11,6 +12,7 @@ namespace MundoBrowser;
 public partial class ExtensionPopupWindow : Window
 {
     private readonly FrameworkElement _placementTarget;
+    private readonly ChromiumWebBrowser _popupBrowser;
 
     public ExtensionPopupWindow(MainWindow owner, FrameworkElement placementTarget)
     {
@@ -18,6 +20,8 @@ public partial class ExtensionPopupWindow : Window
 
         Owner = owner;
         _placementTarget = placementTarget;
+        _popupBrowser = new ChromiumWebBrowser();
+        PopupHost.Child = _popupBrowser;
 
         SourceInitialized += (_, _) =>
         {
@@ -35,22 +39,16 @@ public partial class ExtensionPopupWindow : Window
         {
             owner.LocationChanged -= OwnerBoundsChanged;
             owner.SizeChanged -= OwnerBoundsChanged;
-            PopupWebView.Dispose();
+            _popupBrowser.Dispose();
         };
     }
 
-    public async Task InitializeAsync(CoreWebView2Environment environment, string popupUrl)
+    public async Task InitializeAsync(string popupUrl)
     {
-        await PopupWebView.EnsureCoreWebView2Async(environment);
-        if (!IsVisible) return;
-
-        PopupWebView.CoreWebView2.Settings.IsScriptEnabled = true;
-        PopupWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
-        PopupWebView.CoreWebView2.Navigate(popupUrl);
-
-        await Task.Delay(100);
+        _popupBrowser.Load(popupUrl);
+        await _popupBrowser.WaitForInitialLoadAsync();
         if (IsVisible && NativeMethods.IsCurrentProcessForeground())
-            PopupWebView.Focus();
+            _popupBrowser.Focus();
     }
 
     public void PositionNextToTarget()

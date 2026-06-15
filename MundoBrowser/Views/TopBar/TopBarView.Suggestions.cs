@@ -110,7 +110,7 @@ public partial class TopBarView
             SuggestionsListBox.SelectedItem = entry;
             NavigateToAddress(vm, GetSuggestionNavigationUrl(entry));
             IsSuggestionsOpen = false;
-            GetWebView()?.Focus();
+            GetBrowser()?.Focus();
             e.Handled = true;
         }
     }
@@ -129,7 +129,7 @@ public partial class TopBarView
         {
             NavigateToAddress(vm, GetSuggestionNavigationUrl(entry));
             IsSuggestionsOpen = false;
-            GetWebView()?.Focus();
+            GetBrowser()?.Focus();
             e.Handled = true;
         }
     }

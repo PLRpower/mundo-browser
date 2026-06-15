@@ -1,4 +1,6 @@
 using System.Windows;
+using CefSharp;
+using CefSharp.Wpf.HwndHost;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -60,9 +62,9 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         };
     }
 
-    private void Back_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoBack();
-    private void Forward_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoForward();
-    private void Reload_Click(object sender, RoutedEventArgs e) => GetWebView()?.Reload();
+    private void Back_Click(object sender, RoutedEventArgs e) => GetBrowser()?.Back();
+    private void Forward_Click(object sender, RoutedEventArgs e) => GetBrowser()?.Forward();
+    private void Reload_Click(object sender, RoutedEventArgs e) => GetBrowser()?.Reload();
 
     private void AdBlockerButton_Click(object sender, RoutedEventArgs e)
     {
@@ -93,13 +95,13 @@ public partial class TopBarView : System.Windows.Controls.UserControl
 
         bool disable = !service.IsProtectionDisabledForSite(url);
         if (service.SetProtectionDisabledForSite(url, disable))
-            GetWebView()?.Reload();
+            GetBrowser()?.Reload();
     }
 
-    private Microsoft.Web.WebView2.Wpf.WebView2? GetWebView()
+    private ChromiumWebBrowser? GetBrowser()
     {
         var mw = Window.GetWindow(this) as MainWindow;
-        return mw?.GetActiveWebView();
+        return mw?.GetActiveBrowser();
     }
 
     private void ExtensionIcon_Click(object sender, RoutedEventArgs e)

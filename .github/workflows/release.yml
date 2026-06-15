@@ -32,7 +32,7 @@ jobs:
       run: dotnet tool install -g vpk --version 1.2.0
 
     - name: Pack with Velopack
-      run: vpk pack -u MundoBrowser -v ${{ steps.version.outputs.version }} -p publish -e MundoBrowser.exe
+      run: vpk pack -u MundoBrowser -v ${{ steps.version.outputs.version }} -p publish -e MundoBrowser.exe --aumid MundoBrowser.App
       
     - name: Upload to GitHub Releases
       uses: softprops/action-gh-release@v2

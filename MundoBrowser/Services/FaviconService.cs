@@ -1,8 +1,8 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
+using CefSharp;
+using CefSharp.Wpf.HwndHost;
 using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 using MundoBrowser.Interfaces;
@@ -43,10 +43,12 @@ public partial class FaviconService : IFaviconService, IDisposable
     private readonly Dictionary<string, DateTime> _failedDomains = [];
     private readonly Dictionary<string, DateTime> _lastForcedResolutions = [];
 
-    public async Task ResolveFaviconAsync(WebView2 wv, TabViewModel tab, bool forceReload = false)
+    public async Task ResolveFaviconAsync(
+        ChromiumWebBrowser browser,
+        TabViewModel tab,
+        bool forceReload = false)
     {
-        if (wv.CoreWebView2 == null) return;
-        var source = wv.CoreWebView2.Source;
+        var source = browser.Address;
         if (string.IsNullOrEmpty(source)) return;
 
         if (!Uri.TryCreate(source, UriKind.Absolute, out var sourceUri)
@@ -129,7 +131,7 @@ public partial class FaviconService : IFaviconService, IDisposable
             if (_activeResolutions.TryGetValue(domain, out resolutionTask)) { }
             else
             {
-                resolutionTask = PerformResolveFaviconAsync(wv, domain);
+                resolutionTask = PerformResolveFaviconAsync(browser, domain);
                 _activeResolutions[domain] = resolutionTask;
             }
         }
@@ -163,32 +165,16 @@ public partial class FaviconService : IFaviconService, IDisposable
         }
     }
 
-    private async Task<string?> PerformResolveFaviconAsync(WebView2 wv, string domain)
+    private async Task<string?> PerformResolveFaviconAsync(ChromiumWebBrowser browser, string domain)
     {
         string? bestLocalPath = null;
-        
-        // 1. Try to get it from WebView2 directly (fastest)
+
         try
         {
-            using var stream = await wv.CoreWebView2.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
-            if (stream != null)
-            {
-                var saved = await SaveFaviconAsync(stream, domain, "png", QualityStandard);
-                if (saved != null) bestLocalPath = saved;
-            }
+            var highResPath = await FetchHighResIconAsync(browser, domain);
+            if (highResPath != null) bestLocalPath = highResPath;
         }
         catch { }
-
-        // Only inspect the page DOM when WebView2 did not provide a native favicon.
-        if (bestLocalPath == null)
-        {
-            try
-            {
-                var highResPath = await FetchHighResIconAsync(wv, domain);
-                if (highResPath != null) bestLocalPath = highResPath;
-            }
-            catch { }
-        }
 
         if (bestLocalPath != null) return bestLocalPath;
 
@@ -225,7 +211,7 @@ public partial class FaviconService : IFaviconService, IDisposable
         return $"https://www.google.com/s2/favicons?sz=128&domain_url={domain}";
     }
 
-    private async Task<string?> FetchHighResIconAsync(WebView2 wv, string domain)
+    private async Task<string?> FetchHighResIconAsync(ChromiumWebBrowser browser, string domain)
     {
         string script = @"
             (function() {
@@ -273,8 +259,8 @@ public partial class FaviconService : IFaviconService, IDisposable
                 }
             })()";
 
-        var iconUrl = await wv.CoreWebView2.ExecuteScriptAsync(script);
-        iconUrl = iconUrl?.Trim('\"');
+        var response = await browser.EvaluateScriptAsync(script);
+        var iconUrl = response.Success ? response.Result as string : null;
 
         if (string.IsNullOrEmpty(iconUrl) || iconUrl == "null") return null;
 
@@ -312,17 +298,17 @@ public partial class FaviconService : IFaviconService, IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
             request.Headers.Add("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
             
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            if (!response.IsSuccessStatusCode) return null;
+            using var downloadResponse = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (!downloadResponse.IsSuccessStatusCode) return null;
             
-            var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+            var contentType = downloadResponse.Content.Headers.ContentType?.MediaType ?? "";
             var ext = GetExtensionFromContentType(contentType);
             
             // Re-detect extension from URL if contentType is generic
             if (ext == "png" && contentType == "application/octet-stream" && iconUrl.Contains(".ico")) ext = "ico";
             if (ext == "png" && iconUrl.Contains(".svg")) ext = "svg";
             
-            var bytes = await ReadImageBytesAsync(response.Content);
+            var bytes = await ReadImageBytesAsync(downloadResponse.Content);
             if (bytes == null) return null;
             
             using var ms = new MemoryStream(bytes);
