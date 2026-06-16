@@ -275,6 +275,7 @@ public partial class WebViewService : IWebViewService, IDisposable
                         {
                             try
                             {
+                                WindowsDefaultBrowserRegistration.Register();
                                 // Open Windows Default Apps settings
                                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:defaultapps") { UseShellExecute = true });
                             }

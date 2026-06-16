@@ -18,11 +18,13 @@
                 <ColumnDefinition Width="*"/>
                 <!-- Col 4: Zoom Indicator -->
                 <ColumnDefinition Width="Auto"/>
-                <!-- Col 5: AdBlocker -->
+                <!-- Col 5: Site data -->
                 <ColumnDefinition Width="Auto"/>
-                <!-- Col 6: Extensions -->
+                <!-- Col 6: AdBlocker -->
                 <ColumnDefinition Width="Auto"/>
-                <!-- Col 7: Separator before window controls -->
+                <!-- Col 7: Extensions -->
+                <ColumnDefinition Width="Auto"/>
+                <!-- Col 8: Separator before window controls -->
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -289,8 +291,29 @@
                 </StackPanel>
             </Button>
 
+            <!-- Site Data -->
+            <Button x:Name="SiteDataButton" Grid.Column="5" Width="28" Height="28" Margin="4,0,0,0"
+                    Style="{StaticResource IconHoverButtonStyle}" Padding="4" Cursor="Hand"
+                    ToolTip="Cookies et données du site" Click="SiteDataButton_Click">
+                <Button.ContextMenu>
+                    <ContextMenu x:Name="SiteDataContextMenu"
+                                 Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42"
+                                 Opened="SiteDataContextMenu_Opened">
+                        <MenuItem x:Name="CurrentSiteDataHostMenuItem" Header="Site indisponible" IsEnabled="False"/>
+                        <Separator/>
+                        <MenuItem x:Name="ClearCurrentSiteDataMenuItem"
+                                  Header="Supprimer les cookies et données du site"
+                                  Click="ClearCurrentSiteData_Click"/>
+                    </ContextMenu>
+                </Button.ContextMenu>
+                <Viewbox Width="17" Height="17" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Path Fill="White"
+                          Data="M18.75 12.75h1.5a.75.75 0 0 0 0-1.5h-1.5a.75.75 0 0 0 0 1.5ZM12 6a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 12 6ZM12 18a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 12 18ZM3.75 6.75h1.5a.75.75 0 1 0 0-1.5h-1.5a.75.75 0 0 0 0 1.5ZM5.25 18.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 0 1.5ZM3 12a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 3 12ZM9 3.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5ZM12.75 12a2.25 2.25 0 1 1 4.5 0 2.25 2.25 0 0 1-4.5 0ZM9 15.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z"/>
+                </Viewbox>
+            </Button>
+
             <!-- AdBlocker -->
-            <Button x:Name="AdBlockerButton" Grid.Column="5" Width="28" Height="28" Margin="4,0,0,0"
+            <Button x:Name="AdBlockerButton" Grid.Column="6" Width="28" Height="28" Margin="4,0,0,0"
                     Style="{StaticResource IconHoverButtonStyle}" Padding="4" Cursor="Hand"
                     ToolTip="Boucliers Mundo Browser" Click="AdBlockerButton_Click">
                 <Button.ContextMenu>
@@ -327,7 +350,7 @@
             </Button>
 
             <!-- Extensions Icons -->
-            <ItemsControl Grid.Column="6" ItemsSource="{Binding InstalledExtensions}" VerticalAlignment="Center" Margin="10,0">
+            <ItemsControl Grid.Column="7" ItemsSource="{Binding InstalledExtensions}" VerticalAlignment="Center" Margin="10,0">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
@@ -375,7 +398,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Rectangle Grid.Column="7"
+            <Rectangle Grid.Column="8"
                        Width="1"
                        Height="20"
                        Margin="5,0,28,0"

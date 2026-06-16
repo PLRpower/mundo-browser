@@ -26,6 +26,9 @@ public static class NativeMethods
     [DllImport("shell32.dll", SetLastError = true)]
     public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
 
+    [DllImport("shell32.dll")]
+    public static extern void SHChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
+
     [DllImport("shell32.dll", PreserveSig = false)]
     public static extern void SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore propertyStore);
 
@@ -283,6 +286,9 @@ public static class NativeMethods
 
     public const int SW_RESTORE = 9;
     public const int ASW_ANY = -1;
+    public const uint SHCNE_ASSOCCHANGED = 0x08000000;
+    public const uint SHCNF_IDLIST = 0x0000;
+    public const uint SHCNF_FLUSH = 0x1000;
     public const int WM_NCLBUTTONDOWN = 0x00A1;
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public static readonly IntPtr HWND_NOTOPMOST = new(-2);

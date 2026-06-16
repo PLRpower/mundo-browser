@@ -25,7 +25,22 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        VelopackApp.Build().Run();
+        VelopackApp.Build()
+            .SetAppUserModelId(AppRuntime.AppUserModelId)
+            .OnAfterInstallFastCallback(_ => WindowsDefaultBrowserRegistration.Register())
+            .OnAfterUpdateFastCallback(_ => WindowsDefaultBrowserRegistration.Register())
+            .OnBeforeUninstallFastCallback(_ => WindowsDefaultBrowserRegistration.Unregister())
+            .Run();
+
+        if (WindowsDefaultBrowserRegistration.TryHandleCommandLine(e.Args))
+        {
+            Shutdown();
+            return;
+        }
+
+#if !DEBUG
+        WindowsDefaultBrowserRegistration.Register();
+#endif
 
         // Check for single instance
         _mutex = new Mutex(true, UniqueEventName, out bool isNewInstance);
