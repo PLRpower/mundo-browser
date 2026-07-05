@@ -142,7 +142,7 @@ public static class NativeMethods
         SetWindowFrameColors(window, showSubtleBorder: false);
     }
 
-    public static void SetWindowFrameColors(Window window, bool showSubtleBorder)
+        public static void SetWindowFrameColors(Window window, bool showSubtleBorder)
     {
         try
         {
@@ -152,6 +152,29 @@ public static class NativeMethods
 
             DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR, ref borderColor, sizeof(uint));
             DwmSetWindowAttribute(hWnd, DWMWINDOWATTRIBUTE.DWMWA_CAPTION_COLOR, ref noColor, sizeof(uint));
+        }
+        catch { }
+    }
+
+    public static void ApplyDarkMode(Window window)
+    {
+        try
+        {
+            var helper = new WindowInteropHelper(window);
+            Action apply = () =>
+            {
+                int trueValue = 1;
+                DwmSetWindowAttribute(helper.Handle, (DWMWINDOWATTRIBUTE)20, ref trueValue, sizeof(int));
+            };
+
+            if (helper.Handle == IntPtr.Zero)
+            {
+                window.SourceInitialized += (s, e) => apply();
+            }
+            else
+            {
+                apply();
+            }
         }
         catch { }
     }

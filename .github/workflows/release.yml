@@ -2,6 +2,9 @@ name: Release
 
 on:
   push:
+    branches:
+      - master
+      - main
     tags:
       - 'v*.*.*'
 
@@ -25,18 +28,30 @@ jobs:
       id: version
       shell: pwsh
       run: |
-        $version = "${{ github.ref_name }}" -replace '^v', ''
+        if ("${{ github.ref_type }}" -eq "tag") {
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $channel = "Release"
+        } else {
+          $xml = [xml](Get-Content MundoBrowser/MundoBrowser.csproj)
+          $baseVersion = $xml.Project.PropertyGroup.Version
+          if (-not $baseVersion) { $baseVersion = "1.0.0" }
+          $version = "$baseVersion-beta${{ github.run_number }}"
+          $channel = "beta"
+        }
         "version=$version" >> $env:GITHUB_OUTPUT
+        "channel=$channel" >> $env:GITHUB_OUTPUT
       
     - name: Install Velopack CLI
       run: dotnet tool install -g vpk --version 1.2.0
 
     - name: Pack with Velopack
-      run: vpk pack -u MundoBrowser -v ${{ steps.version.outputs.version }} -p publish -e MundoBrowser.exe
+      run: vpk pack -u MundoBrowser -v ${{ steps.version.outputs.version }} -c ${{ steps.version.outputs.channel }} -p publish -e MundoBrowser.exe
       
     - name: Upload to GitHub Releases
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+        prerelease: ${{ github.ref_type != 'tag' }}
         files: Releases/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

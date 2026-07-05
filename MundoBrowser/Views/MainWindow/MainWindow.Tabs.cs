@@ -272,7 +272,49 @@ public partial class MainWindow
         webView.CoreWebView2.NewWindowRequested += (_, args) =>
         {
             args.Handled = true;
-            _viewModel?.AddTabWithUrl(args.Uri);
+
+            if (args.WindowFeatures.HasSize || args.WindowFeatures.HasPosition)
+            {
+                var deferral = args.GetDeferral();
+                var popupWindow = new System.Windows.Window
+                {
+                    Title = "Mundo Browser",
+                    Width = args.WindowFeatures.HasSize && args.WindowFeatures.Width > 0 ? args.WindowFeatures.Width : 800,
+                    Height = args.WindowFeatures.HasSize && args.WindowFeatures.Height > 0 ? args.WindowFeatures.Height : 600,
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+                    Owner = this
+                };
+
+                Helpers.NativeMethods.ApplyDarkMode(popupWindow);
+
+                var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
+                popupWindow.Content = popupWebView;
+
+                popupWebView.CoreWebView2InitializationCompleted += (s, ev) =>
+                {
+                    if (ev.IsSuccess)
+                    {
+                        args.NewWindow = popupWebView.CoreWebView2;
+                        
+                        popupWebView.CoreWebView2.WindowCloseRequested += (s2, e2) =>
+                        {
+                            popupWindow.Close();
+                        };
+                        popupWebView.CoreWebView2.DocumentTitleChanged += (s2, e2) =>
+                        {
+                            popupWindow.Title = popupWebView.CoreWebView2.DocumentTitle;
+                        };
+                    }
+                    deferral.Complete();
+                };
+
+                _ = popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
+                popupWindow.Show();
+            }
+            else
+            {
+                _viewModel?.AddTabWithUrl(args.Uri);
+            }
         };
 
         webView.CoreWebView2.WindowCloseRequested += (_, _) => _viewModel?.CloseTab(tab);

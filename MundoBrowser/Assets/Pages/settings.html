@@ -387,6 +387,18 @@
         <div id="page-about" class="page">
             <h1>À propos de MundoBrowser</h1>
             <section>
+                <h2>Mises à jour</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Canal Beta</div>
+                        <div class="setting-description">Recevoir les mises à jour expérimentales. Ces versions peuvent être instables.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="beta-channel-enabled"
+                               onchange="updateSetting('betaChannelEnabled', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
                 <div style="text-align: center; padding: 40px 0;">
                     <h2 style="border: none; margin-bottom: 10px;">MundoBrowser</h2>
                     <p id="app-version" style="color: var(--secondary-text)">Version 1.0.0 (Build stable)</p>
@@ -486,6 +498,9 @@
                     }
                     if (document.getElementById('general-autofill-enabled')) {
                         document.getElementById('general-autofill-enabled').checked = data.generalAutofillEnabled;
+                    }
+                    if (document.getElementById('beta-channel-enabled')) {
+                        document.getElementById('beta-channel-enabled').checked = data.betaChannelEnabled;
                     }
                 }
             });

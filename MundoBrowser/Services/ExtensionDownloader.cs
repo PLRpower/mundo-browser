@@ -103,6 +103,10 @@ namespace MundoBrowser.Services
                 // We need to skip the CRX header and extract the ZIP content
                 await ExtractCrxBytes(crxBytes, extractPath);
 
+                // MundoBrowser Hack: Patch the extension to support chrome.tabs and chrome.scripting APIs via C# backend
+                // Disabled for now as it needs more refinement
+                // ExtensionPatcher.PatchExtension(extractPath);
+
                 return extractPath;
             }
             catch (Exception ex)

@@ -100,9 +100,23 @@ namespace MundoBrowser.Services
                 await File.WriteAllTextAsync(temporaryPath, json).ConfigureAwait(false);
 
                 if (File.Exists(_sessionFilePath))
-                    File.Replace(temporaryPath, _sessionFilePath, _sessionBackupPath, ignoreMetadataErrors: true);
+                {
+                    try
+                    {
+                        File.Replace(temporaryPath, _sessionFilePath, _sessionBackupPath, ignoreMetadataErrors: true);
+                    }
+                    catch
+                    {
+                        if (File.Exists(_sessionBackupPath))
+                            File.Delete(_sessionBackupPath);
+                        File.Move(_sessionFilePath, _sessionBackupPath);
+                        File.Move(temporaryPath, _sessionFilePath);
+                    }
+                }
                 else
+                {
                     File.Move(temporaryPath, _sessionFilePath);
+                }
             }
             catch (Exception ex)
             {

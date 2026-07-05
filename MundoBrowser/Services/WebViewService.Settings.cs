@@ -81,6 +81,11 @@ public partial class WebViewService
                 foreach (var webView in _webViews.Values)
                     ApplyAutofillSettings(webView);
                 break;
+
+            case "betaChannelEnabled":
+                var betaEnabled = value.GetBoolean();
+                _settingsService.Update(settings => settings.IsBetaChannelEnabled = betaEnabled);
+                break;
         }
     }
 
@@ -147,7 +152,8 @@ public partial class WebViewService
                 cookieBlockerEnabled = settings.IsCookieBlockerEnabled,
                 trackingPreventionEnabled = settings.IsTrackingPreventionEnabled,
                 passwordAutosaveEnabled = settings.IsPasswordAutosaveEnabled,
-                generalAutofillEnabled = settings.IsGeneralAutofillEnabled
+                generalAutofillEnabled = settings.IsGeneralAutofillEnabled,
+                betaChannelEnabled = settings.IsBetaChannelEnabled
             });
 
             webView.CoreWebView2.PostWebMessageAsJson(message);

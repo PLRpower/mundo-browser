@@ -150,6 +150,8 @@ public partial class App : System.Windows.Application
             app._serviceProvider.GetRequiredService<IAppSettingsService>(),
             args);
         Current.MainWindow = mainWindow;
+        // var server = app._serviceProvider.GetRequiredService<MundoExtensionServer>();
+        // server.Start();
         mainWindow.Show();
         StartArgsListener(mainWindow);
         startupWindow?.Close();
@@ -166,6 +168,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ExtensionDownloader>();
         services.AddSingleton<IExtensionService, ExtensionService>();
         services.AddSingleton<IAdBlockerService, AdBlockerService>();
+        services.AddSingleton<MundoExtensionServer>();
         services.AddTransient<MainViewModel>();
         return services.BuildServiceProvider();
     }

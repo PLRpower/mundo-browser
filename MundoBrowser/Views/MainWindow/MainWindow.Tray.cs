@@ -37,7 +37,7 @@ public partial class MainWindow
                 Icon = _trayIconImage ?? System.Drawing.SystemIcons.Application,
                 Text = AppRuntime.DisplayName,
                 ContextMenuStrip = menu,
-                Visible = false
+                Visible = true
             };
             _trayIcon.MouseClick += TrayIcon_MouseClick;
         }
@@ -128,9 +128,6 @@ public partial class MainWindow
         if (wasHidden && !_isFullscreen)
             WindowState = _windowStateBeforeTray;
 
-        if (_trayIcon != null)
-            _trayIcon.Visible = false;
-
         var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         ForceForeground(handle);
         Activate();
@@ -146,6 +143,20 @@ public partial class MainWindow
     internal void PrepareForSystemShutdown()
     {
         _isExitRequested = true;
+        _isClosingSafe = true;
+        
+        try
+        {
+            SyncWindowPlacementToViewModel();
+            if (DataContext is MainViewModel vm)
+            {
+                Task.Run(async () => await vm.SaveCurrentSessionAsync()).GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save state during shutdown: {ex}");
+        }
     }
 
     private void DisposeTrayIcon()

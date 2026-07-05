@@ -14,4 +14,5 @@ public sealed class AppSettings
     public bool IsTrackingPreventionEnabled { get; set; } = true;
     public bool IsPasswordAutosaveEnabled { get; set; } = false;
     public bool IsGeneralAutofillEnabled { get; set; } = true;
+    public bool IsBetaChannelEnabled { get; set; } = false;
 }

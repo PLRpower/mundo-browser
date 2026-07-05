@@ -26,8 +26,15 @@ public partial class WebViewService
                     var tabsToDiscard = new Queue<TabViewModel>(
                         _webViews
                             .Where(entry =>
-                                entry.Value != _activeWebView
-                                && (now - entry.Key.LastAccessed).TotalMinutes > EcoModeMinutes)
+                            {
+                                if (entry.Value == _activeWebView) return false;
+                                if ((now - entry.Key.LastAccessed).TotalMinutes <= EcoModeMinutes) return false;
+
+                                bool isPlayingAudio = false;
+                                try { isPlayingAudio = entry.Value.CoreWebView2?.IsDocumentPlayingAudio ?? false; } catch { }
+
+                                return !isPlayingAudio;
+                            })
                             .Select(entry => entry.Key));
 
                     DiscardTabsAtIdle(tabsToDiscard);
