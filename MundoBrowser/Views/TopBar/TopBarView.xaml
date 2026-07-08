@@ -29,7 +29,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Nav Buttons -->
-            <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="12,0,15,0" VerticalAlignment="Center" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="4,0,15,0" VerticalAlignment="Center" HorizontalAlignment="Left">
                 <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Back_Click">
                     <Viewbox Width="19" Height="19">
                         <Path Data="{StaticResource IconLeft}" Fill="White" Width="20" Height="20"/>
@@ -48,7 +48,8 @@
             </StackPanel>
 
             <!-- URL Box -->
-            <Border x:Name="UrlBarBorder" Grid.Column="2" Background="#1E1E1E" Height="34" VerticalAlignment="Center" Margin="0,2">
+            <Border x:Name="UrlBarBorder" Grid.Column="2" Background="#1E1E1E" Height="34" VerticalAlignment="Center" Margin="0,2"
+                    PreviewMouseLeftButtonDown="UrlBarBorder_PreviewMouseLeftButtonDown">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="CornerRadius" Value="17"/>
@@ -91,7 +92,7 @@
                                   Data="M21,21 L15.803,15.803 M15.803,15.803 A7.5,7.5 0 1 0 5.196,5.196 A7.5,7.5 0 0 0 15.803,15.803 Z"/>
                         </Viewbox>
                         <TextBlock Text="Saisir l'adresse du nouvel onglet..."
-                                   Foreground="#666" VerticalAlignment="Center" Margin="34,0,0,0"
+                                   Foreground="#666" VerticalAlignment="Center" Margin="36,0,0,0"
                                    IsHitTestVisible="False" FontSize="14" FontStyle="Italic">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -110,7 +111,7 @@
                         </TextBlock>
                         <TextBlock x:Name="AddressDisplayTextBlock"
                                    VerticalAlignment="Center"
-                                   Margin="34,0,15,0"
+                                   Margin="36,0,15,0"
                                    FontSize="15"
                                    TextTrimming="CharacterEllipsis"
                                    IsHitTestVisible="False"
@@ -124,9 +125,8 @@
                                  CaretBrush="White"
                                  PreviewKeyDown="AddressBar_KeyDown"
                                  TextChanged="AddressTextBox_TextChanged"
-                                 GotFocus="AddressTextBox_GotFocus"
-                                 LostFocus="AddressTextBox_LostFocus"
-                                 PreviewMouseLeftButtonDown="AddressTextBox_PreviewMouseLeftButtonDown"/>
+                                 GotKeyboardFocus="AddressTextBox_GotKeyboardFocus"
+                                 LostKeyboardFocus="AddressTextBox_LostKeyboardFocus"/>
                     </Grid>
                     <!-- Hide the bottom border visually without changing its thickness or moving the input. -->
                     <Border Height="1"

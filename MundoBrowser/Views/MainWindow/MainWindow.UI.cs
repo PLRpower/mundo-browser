@@ -106,7 +106,21 @@ public partial class MainWindow
         FloatingSidebarContent.RenderTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slideOut);
     }
 
-    private void FloatingSidebarContent_MouseLeave(object sender, MouseEventArgs e) => HideFloatingSidebar();
+    private void FloatingSidebarContent_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (DataContext is MainViewModel { IsDraggingTab: true })
+            return;
+
+        HideFloatingSidebar();
+    }
+
+    private void MainViewModel_TabDragCompleted(object? sender, EventArgs e)
+    {
+        if (_isSidebarFloating && FloatingSidebarPopup != null && !FloatingSidebarContent.IsMouseOver)
+        {
+            HideFloatingSidebar();
+        }
+    }
 
     private void UpdateEdgeTriggerState(bool forceReopen = false)
     {

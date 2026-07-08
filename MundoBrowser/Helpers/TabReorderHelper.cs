@@ -33,6 +33,7 @@ public class TabReorderHelper
             if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance || 
                 Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
+                _viewModel.IsDraggingTab = true;
                 item.GiveFeedback += (s, a) => { 
                     a.UseDefaultCursors = false; 
                     System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Arrow;
@@ -41,6 +42,8 @@ public class TabReorderHelper
 
                 DragDrop.DoDragDrop(item, item.DataContext, System.Windows.DragDropEffects.Move);
                 System.Windows.Input.Mouse.OverrideCursor = null;
+                _viewModel.IsDraggingTab = false;
+                _viewModel.NotifyTabDragCompleted();
             }
         }
     }

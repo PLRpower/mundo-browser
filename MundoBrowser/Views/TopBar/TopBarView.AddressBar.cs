@@ -106,7 +106,7 @@ public partial class TopBarView
         if (!string.Equals(text, _suppressedCompletionText, StringComparison.OrdinalIgnoreCase))
             _suppressedCompletionText = null;
 
-        if (!AddressTextBox.IsFocused || string.IsNullOrWhiteSpace(text))
+        if (!AddressTextBox.IsKeyboardFocused || string.IsNullOrWhiteSpace(text))
         {
             ClearInlineCompletion();
             IsSuggestionsOpen = false;
@@ -120,21 +120,45 @@ public partial class TopBarView
         SuggestionsListBox.SelectedIndex = vm.Suggestions.Count > 0 ? 0 : -1;
     }
 
-    private void AddressTextBox_GotFocus(object sender, RoutedEventArgs e)
+    private void AddressTextBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         UpdateAddressDisplay();
-        AddressTextBox.SelectAll();
-        if (!string.IsNullOrWhiteSpace(AddressTextBox.Text))
-            AddressTextBox_TextChanged(sender, null!);
+        
+        _suppressInlineCompletionUntilInsertion = true;
+            
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            AddressTextBox.SelectAll();
+            var scrollViewer = GetDescendantByType<System.Windows.Controls.ScrollViewer>(AddressTextBox);
+            if (scrollViewer != null)
+                scrollViewer.ScrollToLeftEnd();
+            else
+                AddressTextBox.ScrollToHome();
+        }), System.Windows.Threading.DispatcherPriority.Input);
     }
 
-    private async void AddressTextBox_LostFocus(object sender, RoutedEventArgs e)
+    private static T? GetDescendantByType<T>(System.Windows.DependencyObject depObj) where T : System.Windows.DependencyObject
+    {
+        if (depObj == null) return null;
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(depObj); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(depObj, i);
+            if (child is T t)
+                return t;
+            
+            var result = GetDescendantByType<T>(child);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private async void AddressTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         await Task.Delay(200);
         if (!IsLoaded)
             return;
 
-        if (!AddressTextBox.IsFocused && !SuggestionsListBox.IsKeyboardFocusWithin)
+        if (!AddressTextBox.IsKeyboardFocused && !SuggestionsListBox.IsKeyboardFocusWithin)
         {
             ClearInlineCompletion();
             ClearAcceptedCompletion();
@@ -203,9 +227,9 @@ public partial class TopBarView
         suffix = address[(domainStart + domainLength)..];
     }
 
-    private void AddressTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void UrlBarBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!AddressTextBox.IsFocused)
+        if (!AddressTextBox.IsKeyboardFocused)
         {
             AddressTextBox.Focus();
             e.Handled = true;
@@ -220,7 +244,7 @@ public partial class TopBarView
         string trimmedInput = input.Trim();
         if (_suppressInlineCompletionUntilInsertion
             || trimmedInput.Length < 2
-            || trimmedInput.Contains(' ')
+            || input.Contains(' ')
             || string.Equals(trimmedInput, _suppressedCompletionText, StringComparison.OrdinalIgnoreCase))
             return;
 

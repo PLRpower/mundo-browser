@@ -18,6 +18,7 @@ public partial class MainWindow
 
         vm.NewTabRequested += MainViewModel_NewTabRequested;
         vm.MediaActionRequested += OnMediaActionRequested;
+        vm.TabDragCompleted += MainViewModel_TabDragCompleted;
     }
 
     private async Task SwitchToTabAsync(TabViewModel tab)
@@ -149,6 +150,7 @@ public partial class MainWindow
             _viewModel.Tabs.CollectionChanged -= Tabs_CollectionChanged;
             _viewModel.NewTabRequested -= MainViewModel_NewTabRequested;
             _viewModel.MediaActionRequested -= OnMediaActionRequested;
+            _viewModel.TabDragCompleted -= MainViewModel_TabDragCompleted;
             foreach (var pinnedTab in _viewModel.PinnedTabs)
                 pinnedTab.PropertyChanged -= PinnedTab_PropertyChanged;
         }

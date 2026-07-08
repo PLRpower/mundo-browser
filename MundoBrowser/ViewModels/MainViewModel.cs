@@ -43,6 +43,16 @@ namespace MundoBrowser.ViewModels
         private bool _isPendingNewTab;
 
         [ObservableProperty]
+        private bool _isDraggingTab;
+
+        public event EventHandler? TabDragCompleted;
+
+        public void NotifyTabDragCompleted()
+        {
+            TabDragCompleted?.Invoke(this, EventArgs.Empty);
+        }
+
+        [ObservableProperty]
         private string _addressBarText = "";
 
         [ObservableProperty]
