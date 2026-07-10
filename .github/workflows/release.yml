@@ -52,6 +52,9 @@ jobs:
       with:
         tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
         prerelease: ${{ github.ref_type != 'tag' }}
-        files: Releases/*
+        files: |
+          Releases/*Setup.exe
+          Releases/*.nupkg
+          Releases/*.json
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
