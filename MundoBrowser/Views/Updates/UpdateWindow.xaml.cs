@@ -52,7 +52,7 @@ public partial class UpdateWindow : Window
             }
             if (_isManualCheck)
             {
-                MessageBox.Show("Vous êtes à jour !", "Mise à jour", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("Vous êtes à jour !", "Mise à jour", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 Close();
                 return;
             }
@@ -61,7 +61,7 @@ public partial class UpdateWindow : Window
         {
             if (_isManualCheck)
             {
-                MessageBox.Show($"Erreur lors de la vérification : {ex.Message}", "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show($"Erreur lors de la vérification : {ex.Message}", "Erreur", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                 Close();
                 return;
             }
