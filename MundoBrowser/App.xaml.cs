@@ -25,12 +25,6 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        VelopackApp.Build()
-            .SetAppUserModelId(AppRuntime.AppUserModelId)
-            .OnAfterInstallFastCallback(_ => WindowsDefaultBrowserRegistration.Register())
-            .OnAfterUpdateFastCallback(_ => WindowsDefaultBrowserRegistration.Register())
-            .OnBeforeUninstallFastCallback(_ => WindowsDefaultBrowserRegistration.Unregister())
-            .Run();
 
         if (WindowsDefaultBrowserRegistration.TryHandleCommandLine(e.Args))
         {

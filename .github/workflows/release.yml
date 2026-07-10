@@ -30,12 +30,12 @@ jobs:
       run: |
         if ("${{ github.ref_type }}" -eq "tag") {
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          $channel = "Release"
+          $channel = "release"
         } else {
           $xml = [xml](Get-Content MundoBrowser/MundoBrowser.csproj)
           $baseVersion = $xml.Project.PropertyGroup.Version
           if (-not $baseVersion) { $baseVersion = "1.0.0" }
-          $version = "$baseVersion-beta${{ github.run_number }}"
+          $version = "$baseVersion-beta.${{ github.run_number }}"
           $channel = "beta"
         }
         "version=$version" >> $env:GITHUB_OUTPUT

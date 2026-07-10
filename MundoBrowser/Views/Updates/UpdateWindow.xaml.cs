@@ -22,8 +22,13 @@ public partial class UpdateWindow : Window
         try
         {
             var settingsService = new Services.AppSettingsService();
-            var options = settingsService.Current.IsBetaChannelEnabled ? new UpdateOptions { ExplicitChannel = "beta" } : null;
-            var manager = new UpdateManager(new GithubSource("https://github.com/PLRpower/mundo-browser", null, false), options);
+            var isBeta = settingsService.Current.IsBetaChannelEnabled;
+            var options = new UpdateOptions 
+            { 
+                ExplicitChannel = isBeta ? "beta" : "release", 
+                AllowVersionDowngrade = true 
+            };
+            var manager = new UpdateManager(new GithubSource("https://github.com/PLRpower/mundo-browser", null, isBeta), options);
 
             // Small delay for UI to render and feel less sudden
             await Task.Delay(1000);
@@ -40,7 +45,7 @@ public partial class UpdateWindow : Window
                 });
 
                 StatusText.Text = "Installation en cours...";
-                manager.ApplyUpdatesAndRestart(updateInfo);
+                manager.ApplyUpdatesAndRestart(updateInfo, _args);
                 return;
             }
         }
