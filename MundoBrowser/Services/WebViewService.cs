@@ -300,6 +300,14 @@ public partial class WebViewService : IWebViewService, IDisposable
                             BroadcastSettingsToPages();
                         }
                     }
+                    else if (root.TryGetProperty("type", out var updateType) && updateType.GetString() == "checkForUpdates")
+                    {
+                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            var updateWindow = new UpdateWindow(null, true);
+                            updateWindow.ShowDialog();
+                        });
+                    }
                 }
                 catch { }
             };

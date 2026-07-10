@@ -408,7 +408,7 @@
                         Créé par Paul Thomas
                     </p>
                     <div style="margin-top: 40px;">
-                        <button class="btn-primary" onclick="alert('Vous êtes à jour !')">Rechercher des mises à jour</button>
+                        <button class="btn-primary" onclick="checkForUpdates()">Rechercher des mises à jour</button>
                     </div>
                 </div>
             </section>
@@ -458,6 +458,16 @@
                 });
             }
             console.log("Setting changed:", key, value);
+        }
+
+        function checkForUpdates() {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                    type: 'checkForUpdates'
+                });
+            } else {
+                alert("La vérification des mises à jour n'est disponible que dans l'application MundoBrowser.");
+            }
         }
 
         // Écouter les messages venant du C# (si besoin)

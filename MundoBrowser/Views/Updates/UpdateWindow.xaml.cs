@@ -9,11 +9,13 @@ namespace MundoBrowser;
 public partial class UpdateWindow : Window
 {
     private readonly string[]? _args;
+    private readonly bool _isManualCheck;
 
-    public UpdateWindow(string[]? args)
+    public UpdateWindow(string[]? args, bool isManualCheck = false)
     {
         InitializeComponent();
         _args = args;
+        _isManualCheck = isManualCheck;
         Loaded += UpdateWindow_Loaded;
     }
 
@@ -48,13 +50,27 @@ public partial class UpdateWindow : Window
                 manager.ApplyUpdatesAndRestart(updateInfo, _args);
                 return;
             }
+            if (_isManualCheck)
+            {
+                MessageBox.Show("Vous êtes à jour !", "Mise à jour", MessageBoxButton.OK, MessageBoxImage.Information);
+                Close();
+                return;
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Ignore error and launch normally
+            if (_isManualCheck)
+            {
+                MessageBox.Show($"Erreur lors de la vérification : {ex.Message}", "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+                Close();
+                return;
+            }
         }
 
-        LaunchMainWindow();
+        if (!_isManualCheck)
+        {
+            LaunchMainWindow();
+        }
     }
 
     private void LaunchMainWindow()
