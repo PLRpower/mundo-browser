@@ -53,5 +53,50 @@ namespace MundoBrowser.Interfaces
         /// Gets the WebView2 instance for a tab if it exists.
         /// </summary>
         WebView2? GetWebViewForTab(TabViewModel tab);
+
+        /// <summary>
+        /// Registers an active download for a WebView2 instance to delay disposal until download finishes.
+        /// </summary>
+        void RegisterActiveDownload(WebView2 webView, CoreWebView2DownloadOperation download);
+
+        /// <summary>
+        /// Whether any WebView has active downloads in progress.
+        /// </summary>
+        bool HasActiveDownloads { get; }
+
+        /// <summary>
+        /// Total number of active downloads across all WebViews.
+        /// </summary>
+        int ActiveDownloadCount { get; }
+
+        /// <summary>
+        /// Event fired when the active download list changes.
+        /// </summary>
+        event Action? ActiveDownloadsChanged;
+
+        /// <summary>
+        /// Opens the default download dialog if available.
+        /// </summary>
+        void OpenDownloadDialog();
+
+        /// <summary>
+        /// Opens DevTools in a side panel to the right of the webview for the specified tab.
+        /// </summary>
+        Task<WebView2?> OpenDevToolsForTabAsync(TabViewModel tab);
+
+        /// <summary>
+        /// Closes the DevTools side panel for the specified tab.
+        /// </summary>
+        void CloseDevToolsForTab(TabViewModel tab);
+
+        /// <summary>
+        /// Returns true if the DevTools side panel is currently open for the tab.
+        /// </summary>
+        bool IsDevToolsOpenForTab(TabViewModel tab);
+
+        /// <summary>
+        /// Toggles the DevTools side panel state for the specified tab.
+        /// </summary>
+        Task ToggleDevToolsForTabAsync(TabViewModel tab);
     }
 }

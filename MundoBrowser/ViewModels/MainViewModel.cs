@@ -11,7 +11,37 @@ namespace MundoBrowser.ViewModels
     {
         private readonly IAppSettingsService _appSettingsService;
         private readonly IAdBlockerService _adBlockerService;
+        private readonly IUpdateService _updateService;
+        public IAppSettingsService AppSettingsService => _appSettingsService;
         internal IAdBlockerService AdBlockerService => _adBlockerService;
+        public IUpdateService UpdateService => _updateService;
+
+        [ObservableProperty]
+        private bool _isUpdateAvailable;
+
+        [ObservableProperty]
+        private bool _isUpdateDownloading;
+
+        [ObservableProperty]
+        private bool _isUpdateReady;
+
+        [ObservableProperty]
+        private double _updateProgress;
+
+        [ObservableProperty]
+        private string? _updateVersionText;
+
+        [ObservableProperty]
+        private string _updateToolTipText = "Mise à jour disponible";
+
+        [ObservableProperty]
+        private string _updateMenuHeader = "Mise à jour disponible";
+
+        [RelayCommand]
+        private void ApplyUpdate() => _updateService.ApplyUpdateAndRestart();
+
+        [RelayCommand]
+        private async Task CheckForUpdates() => await _updateService.CheckForUpdatesManualAsync();
 
         [ObservableProperty]
         private ObservableCollection<TabViewModel> _tabs = new();
@@ -189,15 +219,42 @@ namespace MundoBrowser.ViewModels
                        StringComparison.OrdinalIgnoreCase);
         }
 
+        private readonly IWebViewService _webViewService;
+        public IWebViewService WebViewService => _webViewService;
+
+        [ObservableProperty]
+        private bool _hasActiveDownloads;
+
+        [ObservableProperty]
+        private int _activeDownloadCount;
+
+        [RelayCommand]
+        public void OpenDownloads() => _webViewService.OpenDownloadDialog();
+
+        private void OnActiveDownloadsChanged()
+        {
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                HasActiveDownloads = _webViewService.HasActiveDownloads;
+                ActiveDownloadCount = _webViewService.ActiveDownloadCount;
+            });
+        }
+
         public MainViewModel(
             IAppSettingsService appSettingsService,
             IHistoryManager historyManager,
             ISessionManager sessionManager,
             IFaviconService faviconService,
-            IAdBlockerService adBlockerService)
+            IAdBlockerService adBlockerService,
+            IUpdateService updateService,
+            IWebViewService webViewService)
         {
             _appSettingsService = appSettingsService;
             _adBlockerService = adBlockerService;
+            _updateService = updateService;
+            _webViewService = webViewService;
+            _webViewService.ActiveDownloadsChanged += OnActiveDownloadsChanged;
+            _updateService.UpdateStatusChanged += OnUpdateStatusChanged;
             HistoryManager = historyManager;
             SessionManager = sessionManager;
             FaviconService = faviconService;
@@ -303,11 +360,20 @@ namespace MundoBrowser.ViewModels
             _appSettingsService.Update(settings => settings.SidebarWidth = SidebarWidth);
         }
 
-        public void AddTabWithUrl(string url)
+        public TabViewModel AddTabWithUrl(string url, TabViewModel? openedByTab = null, bool isFromNewWindow = false)
         {
-            var newTab = new TabViewModel { Title = "Loading...", Url = url, AddressUrl = url, IsDiscarded = false };
+            var newTab = new TabViewModel 
+            { 
+                Title = "Loading...", 
+                Url = url, 
+                AddressUrl = url, 
+                IsDiscarded = false,
+                IsCreatedFromNewWindow = isFromNewWindow,
+                OpenedByTab = openedByTab
+            };
             Tabs.Add(newTab);
             SelectedTab = newTab;
+            return newTab;
         }
 
         [RelayCommand]
@@ -338,40 +404,121 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        public void CloseTab(TabViewModel tab)
+        public async Task CloseTab(TabViewModel tab)
         {
+            if (tab == null) return;
+            if (tab.IsClosing) return;
+
             bool wasSelected = (SelectedTab == tab);
             bool removed = false;
 
-            if (Tabs.Contains(tab)) { Tabs.Remove(tab); removed = true; }
+            if (Tabs.Contains(tab))
+            {
+                tab.IsClosing = true;
+                removed = true;
+
+                if (wasSelected)
+                {
+                    SelectNextTabAfterClose(tab);
+                }
+
+                await Task.Delay(150);
+
+                if (Tabs.Contains(tab))
+                {
+                    Tabs.Remove(tab);
+                }
+            }
             else
             {
                 foreach (var p in PinnedTabs)
                 {
-                    if (p.Tab == tab) { p.Tab = null; removed = true; break; }
+                    if (p.Tab == tab)
+                    {
+                        p.Tab = null;
+                        removed = true;
+                        break;
+                    }
+                }
+
+                if (wasSelected)
+                {
+                    SelectNextTabAfterClose(tab);
                 }
             }
-            
+
             if (removed && ActiveMediaTab == tab) ActiveMediaTab = null;
-            
-            if (removed && wasSelected)
+        }
+
+        private void SelectNextTabAfterClose(TabViewModel tabBeingClosed)
+        {
+            var remainingTabs = Tabs.Where(t => t != tabBeingClosed && !t.IsClosing).ToList();
+            if (remainingTabs.Count > 0)
             {
-                if (Tabs.Count > 0) SelectedTab = Tabs[^1];
+                int currentIndex = Tabs.IndexOf(tabBeingClosed);
+                if (currentIndex >= 0 && currentIndex < remainingTabs.Count)
+                {
+                    SelectedTab = remainingTabs[currentIndex];
+                }
                 else
                 {
-                    var firstPinned = PinnedTabs.FirstOrDefault(p => !p.IsEmpty);
-                    if (firstPinned != null) SelectedTab = firstPinned.Tab;
-                    else CreateDefaultTab();
+                    SelectedTab = remainingTabs[^1];
+                }
+            }
+            else
+            {
+                var firstPinned = PinnedTabs.FirstOrDefault(p => !p.IsEmpty);
+                if (firstPinned != null)
+                {
+                    SelectedTab = firstPinned.Tab;
+                }
+                else
+                {
+                    CreateDefaultTab();
                 }
             }
         }
 
         [RelayCommand]
-        public void CloseOtherTabs()
+        public async Task CloseOtherTabs()
         {
             // We only clean the "regular" tabs list. Pinned tabs (the grid) are kept.
-            var toRemove = Tabs.Where(t => t != SelectedTab).ToList();
+            var toRemove = Tabs.Where(t => t != SelectedTab && !t.IsClosing).ToList();
+            if (toRemove.Count == 0) return;
+
+            foreach (var tab in toRemove) tab.IsClosing = true;
+
+            await Task.Delay(150);
+
             foreach (var tab in toRemove) Tabs.Remove(tab);
+        }
+
+        private void OnUpdateStatusChanged(object? sender, EventArgs e)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                IsUpdateAvailable = _updateService.IsUpdateAvailable;
+                IsUpdateDownloading = _updateService.IsDownloading;
+                IsUpdateReady = _updateService.IsUpdateReady;
+                UpdateProgress = _updateService.DownloadProgress;
+                UpdateVersionText = _updateService.NewVersionText;
+
+                if (IsUpdateReady)
+                {
+                    UpdateToolTipText = $"Mise à jour v{UpdateVersionText} prête. Cliquez pour installer et redémarrer.";
+                    UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} prête";
+                }
+                else if (IsUpdateDownloading)
+                {
+                    UpdateToolTipText = $"Téléchargement de la mise à jour v{UpdateVersionText} ({UpdateProgress:F0}%)...";
+                    UpdateMenuHeader = $"Téléchargement v{UpdateVersionText} ({UpdateProgress:F0}%)";
+                }
+                else if (IsUpdateAvailable)
+                {
+                    UpdateToolTipText = $"Mise à jour v{UpdateVersionText} disponible";
+                    UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} disponible";
+                }
+            });
         }
     }
 }

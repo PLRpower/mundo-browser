@@ -11,6 +11,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly IWebViewService _webViewService;
     private readonly IExtensionService _extensionService;
     private readonly IAppSettingsService _settingsService;
+    private readonly IUpdateService _updateService;
     private readonly HashSet<TabViewModel> _trackedTabs = [];
     private MainViewModel? _viewModel;
     private int _tabSwitchVersion;
@@ -38,11 +39,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         IWebViewService webViewService,
         IExtensionService extensionService,
         IAppSettingsService settingsService,
+        IUpdateService updateService,
         string[]? args = null)
     {
         _webViewService = webViewService;
         _extensionService = extensionService;
         _settingsService = settingsService;
+        _updateService = updateService;
         _startArgs = args;
         InitializeComponent();
         DataContext = viewModel;
@@ -137,6 +140,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     }
                     
                     await LoadExtensionsAsync();
+                    _updateService.CheckForUpdatesInBackground(_startArgs);
                 }
             }
             catch (Exception ex)

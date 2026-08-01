@@ -94,8 +94,8 @@ public partial class TopBarView
         }
     }
 
-    private static string GetSuggestionNavigationUrl(Models.HistoryEntry entry)
-        => entry.VisitCount == -1 ? BuildGoogleSearchUrl(entry.Url) : entry.Url;
+    private static string GetSuggestionNavigationUrl(MainViewModel vm, Models.HistoryEntry entry)
+        => entry.VisitCount == -1 ? BuildSearchUrl(vm, entry.Url) : entry.Url;
 
     private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -108,7 +108,7 @@ public partial class TopBarView
         if (clickedItem?.DataContext is Models.HistoryEntry entry && DataContext is MainViewModel vm)
         {
             SuggestionsListBox.SelectedItem = entry;
-            NavigateToAddress(vm, GetSuggestionNavigationUrl(entry));
+            NavigateToAddress(vm, GetSuggestionNavigationUrl(vm, entry));
             IsSuggestionsOpen = false;
             GetWebView()?.Focus();
             e.Handled = true;
@@ -127,7 +127,7 @@ public partial class TopBarView
                  && SuggestionsListBox.SelectedItem is Models.HistoryEntry entry
                  && DataContext is MainViewModel vm)
         {
-            NavigateToAddress(vm, GetSuggestionNavigationUrl(entry));
+            NavigateToAddress(vm, GetSuggestionNavigationUrl(vm, entry));
             IsSuggestionsOpen = false;
             GetWebView()?.Focus();
             e.Handled = true;

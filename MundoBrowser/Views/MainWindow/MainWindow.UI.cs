@@ -179,6 +179,8 @@ public partial class MainWindow
         if (key == Key.D && modifiers == ModifierKeys.Control) { ToggleSidebar(); e.Handled = true; }
         else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control)) { _webViewService.ActiveWebView?.Reload(); e.Handled = true; }
         else if (key == Key.F11) { SetFullscreen(!_isFullscreen); e.Handled = true; }
+        else if (key == Key.F12 || (key == Key.I && modifiers == (ModifierKeys.Control | ModifierKeys.Shift))) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { _ = _webViewService.ToggleDevToolsForTabAsync(vm.SelectedTab); e.Handled = true; } }
+        else if (key == Key.J && modifiers == ModifierKeys.Control) { _webViewService.OpenDownloadDialog(); e.Handled = true; }
         else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
         else if (key == Key.W && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { vm.CloseTabCommand.Execute(vm.SelectedTab); e.Handled = true; } }
         else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { TopBarControl.AddressBar.Focus(); TopBarControl.AddressBar.SelectAll(); e.Handled = true; }

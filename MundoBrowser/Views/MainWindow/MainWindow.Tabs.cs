@@ -271,6 +271,40 @@ public partial class MainWindow
         webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) =>
             SetFullscreen(webView.CoreWebView2.ContainsFullScreenElement, true);
 
+        webView.CoreWebView2.ContextMenuRequested += (_, args) =>
+        {
+            var menuItems = args.MenuItems;
+            Microsoft.Web.WebView2.Core.CoreWebView2ContextMenuItem? inspectItem = null;
+
+            foreach (var item in menuItems)
+            {
+                if (item.Name == "inspectElement" || item.Label.Contains("Inspect", StringComparison.OrdinalIgnoreCase))
+                {
+                    inspectItem = item;
+                    break;
+                }
+            }
+
+            if (inspectItem != null)
+            {
+                int index = menuItems.IndexOf(inspectItem);
+                menuItems.RemoveAt(index);
+
+                var customInspect = webView.CoreWebView2.Environment.CreateContextMenuItem(
+                    "Inspecter", null, Microsoft.Web.WebView2.Core.CoreWebView2ContextMenuItemKind.Command);
+
+                customInspect.CustomItemSelected += (_, _) =>
+                {
+                    Dispatcher.BeginInvoke(async () =>
+                    {
+                        await _webViewService.OpenDevToolsForTabAsync(tab);
+                    });
+                };
+
+                menuItems.Insert(index, customInspect);
+            }
+        };
+
         webView.CoreWebView2.NewWindowRequested += (_, args) =>
         {
             args.Handled = true;
@@ -315,7 +349,43 @@ public partial class MainWindow
             }
             else
             {
-                _viewModel?.AddTabWithUrl(args.Uri);
+                _viewModel?.AddTabWithUrl(args.Uri, tab, isFromNewWindow: true);
+            }
+        };
+
+        webView.CoreWebView2.DownloadStarting += (sender, args) =>
+        {
+            var downloadOp = args.DownloadOperation;
+            _webViewService.RegisterActiveDownload(webView, downloadOp);
+
+            bool isBlankDownloadTab = tab.IsCreatedFromNewWindow ||
+                (!webView.CoreWebView2.CanGoBack &&
+                 (string.IsNullOrEmpty(webView.CoreWebView2.DocumentTitle) 
+                  || webView.CoreWebView2.DocumentTitle == "about:blank" 
+                  || webView.CoreWebView2.Source == tab.Url));
+
+            if (isBlankDownloadTab)
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_viewModel != null)
+                    {
+                        if (_viewModel.SelectedTab == tab)
+                        {
+                            var targetTab = (tab.OpenedByTab != null && _trackedTabs.Contains(tab.OpenedByTab))
+                                ? tab.OpenedByTab
+                                : _viewModel.Tabs.FirstOrDefault(t => t != tab)
+                                  ?? _viewModel.PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
+
+                            if (targetTab != null)
+                            {
+                                _viewModel.SelectedTab = targetTab;
+                            }
+                        }
+
+                        _viewModel.CloseTab(tab);
+                    }
+                });
             }
         };
 

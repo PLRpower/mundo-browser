@@ -56,14 +56,68 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
         return host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? host[4..] : host;
     }
 
+    public bool IsAdBlockerEnabledForSite(string? url)
+    {
+        if (!IsAdBlockerEnabled) return false;
+        string? host = GetSiteHost(url);
+        if (host == null) return IsAdBlockerEnabled;
+
+        return !_settingsService.Current.AdBlockDisabledSites.Contains(
+            host,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    public bool SetAdBlockerEnabledForSite(string? url, bool enabled)
+    {
+        string? host = GetSiteHost(url);
+        if (host == null) return false;
+
+        _settingsService.Update(settings =>
+        {
+            settings.AdBlockDisabledSites.RemoveAll(
+                site => site.Equals(host, StringComparison.OrdinalIgnoreCase));
+
+            if (!enabled)
+                settings.AdBlockDisabledSites.Add(host);
+        });
+
+        return true;
+    }
+
+    public bool IsCookieBlockerEnabledForSite(string? url)
+    {
+        if (!IsCookieBlockerEnabled) return false;
+        string? host = GetSiteHost(url);
+        if (host == null) return IsCookieBlockerEnabled;
+
+        return !_settingsService.Current.CookieBlockDisabledSites.Contains(
+            host,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    public bool SetCookieBlockerEnabledForSite(string? url, bool enabled)
+    {
+        string? host = GetSiteHost(url);
+        if (host == null) return false;
+
+        _settingsService.Update(settings =>
+        {
+            settings.CookieBlockDisabledSites.RemoveAll(
+                site => site.Equals(host, StringComparison.OrdinalIgnoreCase));
+
+            if (!enabled)
+                settings.CookieBlockDisabledSites.Add(host);
+        });
+
+        return true;
+    }
+
     public bool IsProtectionDisabledForSite(string? url)
     {
         string? host = GetSiteHost(url);
         if (host == null) return false;
 
-        return _settingsService.Current.ProtectionDisabledSites.Contains(
-            host,
-            StringComparer.OrdinalIgnoreCase);
+        return !IsAdBlockerEnabledForSite(url) && !IsCookieBlockerEnabledForSite(url);
     }
 
     public bool SetProtectionDisabledForSite(string? url, bool disabled)
@@ -71,15 +125,8 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
         string? host = GetSiteHost(url);
         if (host == null) return false;
 
-        _settingsService.Update(settings =>
-        {
-            settings.ProtectionDisabledSites.RemoveAll(
-                site => site.Equals(host, StringComparison.OrdinalIgnoreCase));
-
-            if (disabled)
-                settings.ProtectionDisabledSites.Add(host);
-        });
-
+        SetAdBlockerEnabledForSite(url, !disabled);
+        SetCookieBlockerEnabledForSite(url, !disabled);
         return true;
     }
 

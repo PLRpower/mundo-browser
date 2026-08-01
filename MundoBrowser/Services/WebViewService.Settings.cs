@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser.Services;
@@ -14,7 +15,55 @@ public partial class WebViewService
         switch (key)
         {
             case "startPage":
-                _settingsService.Update(settings => settings.StartPage = value.GetString() ?? "");
+                _settingsService.Update(settings =>
+                {
+                    settings.StartPage = value.GetString() ?? "";
+                    if (settings.UseSearchEngineAsStartPage &&
+                        !string.Equals(settings.StartPage, SearchEngineHelper.GetEngineHomeUrl(settings.SearchEngine, settings.CustomSearchUrl), StringComparison.OrdinalIgnoreCase))
+                    {
+                        settings.UseSearchEngineAsStartPage = false;
+                    }
+                });
+                BroadcastSettingsToPages();
+                break;
+
+            case "searchEngine":
+                var searchEngine = SearchEngineHelper.NormalizeSearchEngine(value.GetString());
+                _settingsService.Update(settings =>
+                {
+                    settings.SearchEngine = searchEngine;
+                    if (settings.UseSearchEngineAsStartPage)
+                    {
+                        settings.StartPage = SearchEngineHelper.GetEngineHomeUrl(searchEngine, settings.CustomSearchUrl);
+                    }
+                });
+                BroadcastSettingsToPages();
+                break;
+
+            case "customSearchUrl":
+                var customUrl = value.GetString() ?? "";
+                _settingsService.Update(settings =>
+                {
+                    settings.CustomSearchUrl = customUrl;
+                    if (settings.SearchEngine == "custom" && settings.UseSearchEngineAsStartPage)
+                    {
+                        settings.StartPage = SearchEngineHelper.GetEngineHomeUrl("custom", customUrl);
+                    }
+                });
+                BroadcastSettingsToPages();
+                break;
+
+            case "useSearchEngineAsStartPage":
+                var useAsStartPage = value.GetBoolean();
+                _settingsService.Update(settings =>
+                {
+                    settings.UseSearchEngineAsStartPage = useAsStartPage;
+                    if (useAsStartPage)
+                    {
+                        settings.StartPage = SearchEngineHelper.GetEngineHomeUrl(settings.SearchEngine, settings.CustomSearchUrl);
+                    }
+                });
+                BroadcastSettingsToPages();
                 break;
 
             case "ecoModeEnabled":
@@ -143,6 +192,9 @@ public partial class WebViewService
             {
                 type = "initSettings",
                 startPage = settings.StartPage,
+                searchEngine = settings.SearchEngine,
+                customSearchUrl = settings.CustomSearchUrl,
+                useSearchEngineAsStartPage = settings.UseSearchEngineAsStartPage,
                 ecoModeEnabled = settings.EcoModeEnabled,
                 ecoModeDuration = settings.EcoModeMinutes,
                 minimizeToTrayOnClose = settings.MinimizeToTrayOnClose,

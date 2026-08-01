@@ -91,15 +91,48 @@ public sealed class AppSettingsService : IAppSettingsService
 
     private static void Normalize(AppSettings settings)
     {
-        settings.StartPage = NormalizeStartPage(settings.StartPage);
+        settings.SearchEngine = SearchEngineHelper.NormalizeSearchEngine(settings.SearchEngine);
+        settings.CustomSearchUrl = settings.CustomSearchUrl?.Trim() ?? "";
+
+        if (settings.UseSearchEngineAsStartPage)
+        {
+            settings.StartPage = SearchEngineHelper.GetEngineHomeUrl(settings.SearchEngine, settings.CustomSearchUrl);
+        }
+        else
+        {
+            settings.StartPage = NormalizeStartPage(settings.StartPage);
+        }
+
         settings.EcoModeMinutes = Math.Clamp(settings.EcoModeMinutes, 1, 1440);
         settings.SidebarWidth = Math.Clamp(settings.SidebarWidth, 200, 400);
-        settings.ProtectionDisabledSites = (settings.ProtectionDisabledSites ?? [])
+        settings.AdBlockDisabledSites = (settings.AdBlockDisabledSites ?? [])
             .Select(site => site.Trim().TrimEnd('.').ToLowerInvariant())
             .Where(site => !string.IsNullOrWhiteSpace(site))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(site => site, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        settings.CookieBlockDisabledSites = (settings.CookieBlockDisabledSites ?? [])
+            .Select(site => site.Trim().TrimEnd('.').ToLowerInvariant())
+            .Where(site => !string.IsNullOrWhiteSpace(site))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(site => site, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (settings.ProtectionDisabledSites != null && settings.ProtectionDisabledSites.Count > 0)
+        {
+            foreach (var legacySite in settings.ProtectionDisabledSites)
+            {
+                var cleanSite = legacySite.Trim().TrimEnd('.').ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(cleanSite))
+                {
+                    if (!settings.AdBlockDisabledSites.Contains(cleanSite, StringComparer.OrdinalIgnoreCase))
+                        settings.AdBlockDisabledSites.Add(cleanSite);
+                    if (!settings.CookieBlockDisabledSites.Contains(cleanSite, StringComparer.OrdinalIgnoreCase))
+                        settings.CookieBlockDisabledSites.Add(cleanSite);
+                }
+            }
+            settings.ProtectionDisabledSites.Clear();
+        }
     }
 
     private static string NormalizeStartPage(string? value)

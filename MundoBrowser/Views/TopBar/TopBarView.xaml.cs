@@ -77,12 +77,58 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
         string? host = service?.GetSiteHost(url);
 
-        CurrentSiteProtectionMenuItem.IsEnabled = host != null;
-        CurrentSiteProtectionMenuItem.Header = host == null
-            ? "Indisponible sur cette page"
-            : service!.IsProtectionDisabledForSite(url)
-                ? $"Réactiver sur {host}"
-                : $"Désactiver sur {host}";
+        if (service == null || host == null)
+        {
+            CurrentSiteHeaderMenuItem.Header = "Protections indisponibles";
+            CurrentSiteAdBlockerMenuItem.IsEnabled = false;
+            CurrentSiteCookieBlockerMenuItem.IsEnabled = false;
+            CurrentSiteProtectionMenuItem.IsEnabled = false;
+            CurrentSiteProtectionMenuItem.Header = "Indisponible sur cette page";
+            return;
+        }
+
+        CurrentSiteHeaderMenuItem.Header = $"Protections pour {host}";
+
+        bool adBlockEnabled = service.IsAdBlockerEnabledForSite(url);
+        bool cookieBlockEnabled = service.IsCookieBlockerEnabledForSite(url);
+
+        CurrentSiteAdBlockerMenuItem.IsEnabled = true;
+        CurrentSiteAdBlockerMenuItem.IsChecked = adBlockEnabled;
+
+        CurrentSiteCookieBlockerMenuItem.IsEnabled = true;
+        CurrentSiteCookieBlockerMenuItem.IsChecked = cookieBlockEnabled;
+
+        bool allDisabled = !adBlockEnabled && !cookieBlockEnabled;
+        CurrentSiteProtectionMenuItem.IsEnabled = true;
+        CurrentSiteProtectionMenuItem.Header = allDisabled
+            ? $"Réactiver toutes les protections sur {host}"
+            : $"Désactiver toutes les protections sur {host}";
+    }
+
+    private void ToggleCurrentSiteAdBlocker_Click(object sender, RoutedEventArgs e)
+    {
+        var service = (DataContext as MainViewModel)?.AdBlockerService;
+        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
+        if (service == null || service.GetSiteHost(url) == null) return;
+
+        bool currentStatus = service.IsAdBlockerEnabledForSite(url);
+        if (service.SetAdBlockerEnabledForSite(url, !currentStatus))
+        {
+            GetWebView()?.Reload();
+        }
+    }
+
+    private void ToggleCurrentSiteCookieBlocker_Click(object sender, RoutedEventArgs e)
+    {
+        var service = (DataContext as MainViewModel)?.AdBlockerService;
+        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
+        if (service == null || service.GetSiteHost(url) == null) return;
+
+        bool currentStatus = service.IsCookieBlockerEnabledForSite(url);
+        if (service.SetCookieBlockerEnabledForSite(url, !currentStatus))
+        {
+            GetWebView()?.Reload();
+        }
     }
 
     private void ToggleCurrentSiteProtection_Click(object sender, RoutedEventArgs e)
@@ -91,9 +137,12 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
         if (service == null || service.GetSiteHost(url) == null) return;
 
-        bool disable = !service.IsProtectionDisabledForSite(url);
-        if (service.SetProtectionDisabledForSite(url, disable))
-            GetWebView()?.Reload();
+        bool allDisabled = !service.IsAdBlockerEnabledForSite(url) && !service.IsCookieBlockerEnabledForSite(url);
+        bool newStatus = allDisabled; // If all disabled, re-enable all (true). Otherwise disable all (false).
+
+        service.SetAdBlockerEnabledForSite(url, newStatus);
+        service.SetCookieBlockerEnabledForSite(url, newStatus);
+        GetWebView()?.Reload();
     }
 
     private Microsoft.Web.WebView2.Wpf.WebView2? GetWebView()
@@ -115,5 +164,12 @@ public partial class TopBarView : System.Windows.Controls.UserControl
             var ext = vm.InstalledExtensions.FirstOrDefault(x => x.Id == id);
             if (ext != null) vm.InstalledExtensions.Remove(ext);
         }
+    }
+
+    private void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateContextMenu.PlacementTarget = UpdateButton;
+        UpdateContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        UpdateContextMenu.IsOpen = true;
     }
 }

@@ -4,118 +4,301 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>about:preferences</title>
+    <!-- Police Moderne Google Font Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #121212;
-            --sidebar-color: #1e1e1e;
-            --accent-color: #175ddc;
-            --text-color: #e0e0e0;
-            --secondary-text: #b0b0b0;
-            --border-color: #333;
-            --hover-color: #2d2d2d;
+            --bg-color: #0d0f14;
+            --card-bg: rgba(22, 26, 36, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --card-hover-border: rgba(255, 255, 255, 0.15);
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+            --accent-color: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.3);
+            --text-color: #f1f5f9;
+            --secondary-text: #94a3b8;
+            --muted-text: #64748b;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --hover-color: rgba(255, 255, 255, 0.05);
+            --input-bg: #141721;
+            --nav-bg: rgba(13, 15, 20, 0.85);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(99, 102, 241, 0.05) 0%, transparent 40%);
+            background-attachment: fixed;
             color: var(--text-color);
-            margin: 0;
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .sidebar {
-            width: 250px;
-            background-color: var(--sidebar-color);
-            border-right: 1px solid var(--border-color);
-            padding: 20px 0;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .sidebar-item {
-            padding: 12px 25px;
-            cursor: pointer;
-            transition: background 0.2s;
-            color: var(--secondary-text);
+        /* Menu de Navigation en Haut (Top Navbar) */
+        .top-navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--nav-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .navbar-container {
+            max-width: 1000px;
+            margin: 0 auto;
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            height: 64px;
         }
 
-        .sidebar-item:hover {
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: -0.02em;
+            color: var(--text-color);
+        }
+
+        .brand-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            background: var(--accent-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px var(--accent-glow);
+        }
+
+        .brand-icon svg {
+            width: 18px;
+            height: 18px;
+            fill: none;
+            stroke: #ffffff;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .nav-tabs {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-tab {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--secondary-text);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+            border: 1px solid transparent;
+        }
+
+        .nav-tab svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: transform 0.2s ease;
+        }
+
+        .nav-tab:hover {
+            color: var(--text-color);
             background-color: var(--hover-color);
-            color: white;
         }
 
-        .sidebar-item.active {
-            border-left: 4px solid var(--accent-color);
-            background-color: var(--hover-color);
-            color: white;
-            padding-left: 21px;
+        .nav-tab:hover svg {
+            transform: translateY(-1px);
         }
 
+        .nav-tab.active {
+            color: #ffffff;
+            background: var(--accent-gradient);
+            box-shadow: 0 4px 12px var(--accent-glow);
+            font-weight: 600;
+        }
+
+        .nav-tab.active svg {
+            stroke: #ffffff;
+        }
+
+        /* Contenu Principal Centré */
         .content {
             flex: 1;
-            padding: 40px 60px;
-            overflow-y: auto;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 36px 24px 60px 24px;
         }
 
         .page {
             display: none;
+            animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .page.active {
             display: block;
         }
 
-        h1 {
-            font-size: 28px;
-            margin-bottom: 30px;
-            font-weight: 400;
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        section {
-            margin-bottom: 40px;
-            max-width: 800px;
+        .page-header {
+            margin-bottom: 28px;
         }
 
-        h2 {
-            font-size: 20px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-            font-weight: 500;
+        .page-title {
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-color);
+            margin-bottom: 6px;
         }
 
-        .setting-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px 0;
-            border-bottom: 1px solid #222;
-        }
-
-        .setting-info {
-            flex: 1;
-            padding-right: 20px;
-        }
-
-        .setting-title {
-            font-weight: 500;
-            margin-bottom: 5px;
-        }
-
-        .setting-description {
+        .page-subtitle {
             font-size: 14px;
             color: var(--secondary-text);
         }
 
+        /* Cartes de Paramètres (Cards UI) */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: border-color 0.2s ease;
+            position: relative;
+            z-index: 1;
+        }
+
+        .card:has(.custom-select-wrapper.open) {
+            z-index: 50;
+        }
+
+        .card:hover {
+            border-color: var(--card-hover-border);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-header-icon {
+            width: 24px;
+            height: 24px;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-header-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: var(--text-color);
+        }
+
+        /* Lignes d'options */
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            position: relative;
+        }
+
+        .setting-item:not(:last-child) {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .setting-info {
+            flex: 1;
+            padding-right: 24px;
+        }
+
+        .setting-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-color);
+            margin-bottom: 4px;
+        }
+
+        .setting-description {
+            font-size: 13px;
+            color: var(--secondary-text);
+            line-height: 1.5;
+        }
+
+        /* Custom Switch Toggle moderne */
         .toggle-switch {
             position: relative;
             display: inline-block;
-            width: 44px;
-            height: 22px;
+            width: 46px;
+            height: 24px;
+            flex-shrink: 0;
         }
 
         .toggle-switch input {
@@ -131,79 +314,288 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #444;
-            transition: .4s;
-            border-radius: 22px;
+            background-color: rgba(255, 255, 255, 0.15);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .slider:before {
             position: absolute;
             content: "";
-            height: 16px;
-            width: 16px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #ffffff;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
 
         input:checked + .slider {
-            background-color: var(--accent-color);
+            background: var(--accent-gradient);
+            box-shadow: 0 2px 8px var(--accent-glow);
         }
 
         input:checked + .slider:before {
             transform: translateX(22px);
         }
 
+        /* Inputs & Selects */
         select, input[type="text"], input[type="number"] {
-            background-color: #2d2d2d;
+            background-color: var(--input-bg);
             border: 1px solid var(--border-color);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 4px;
+            color: var(--text-color);
+            padding: 9px 14px;
+            border-radius: 8px;
             outline: none;
+            font-family: inherit;
+            font-size: 13.5px;
+            transition: all 0.2s ease;
         }
 
+        select:focus, input[type="text"]:focus, input[type="number"]:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        input[type="text"]:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Buttons */
         button.btn-primary {
-            background-color: var(--accent-color);
+            background: var(--accent-gradient);
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
+            padding: 9px 18px;
+            border-radius: 8px;
             cursor: pointer;
-            font-weight: 500;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 13.5px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px var(--accent-glow);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
         button.btn-primary:hover {
-            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+            filter: brightness(1.08);
         }
 
-        .extension-badge {
+        button.btn-primary:active {
+            transform: translateY(0);
+        }
+
+        /* Custom Select Dropdown Styles */
+        .custom-select-wrapper {
+            position: relative;
+            user-select: none;
+            min-width: 210px;
+        }
+
+        .custom-select-wrapper.open {
+            z-index: 100;
+        }
+
+        .custom-select-trigger {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 9px 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .custom-select-trigger:hover, .custom-select-wrapper.open .custom-select-trigger {
+            border-color: var(--accent-color);
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .custom-option-icon {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .custom-select-trigger span {
+            font-size: 13.5px;
+            color: var(--text-color);
+            font-weight: 500;
+        }
+
+        .custom-select-arrow {
+            margin-left: auto;
+            font-size: 10px;
+            color: var(--secondary-text);
+            transition: transform 0.2s ease;
+        }
+
+        .custom-select-wrapper.open .custom-select-arrow {
+            transform: rotate(180deg);
+        }
+
+        .custom-select-options {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            right: 0;
+            background-color: #161922;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+            display: none;
+            flex-direction: column;
+            z-index: 1000;
+            overflow: hidden;
+            padding: 4px;
+            backdrop-filter: blur(16px);
+        }
+
+        .custom-select-wrapper.open .custom-select-options {
+            display: flex;
+            animation: dropdownFade 0.2s ease;
+        }
+
+        @keyframes dropdownFade {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .custom-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            font-size: 13.5px;
+            color: var(--secondary-text);
+        }
+
+        .custom-option:hover {
+            background-color: rgba(255, 255, 255, 0.07);
+            color: var(--text-color);
+        }
+
+        .custom-option.selected {
+            background-color: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            font-weight: 600;
+        }
+
+        /* Section À propos */
+        .about-card {
+            text-align: center;
+            padding: 40px 24px;
+            background: linear-gradient(180deg, rgba(30, 34, 45, 0.8) 0%, rgba(20, 23, 32, 0.8) 100%);
+            border-radius: 16px;
+            border: 1px solid var(--card-border);
+        }
+
+        .about-logo {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 16px auto;
+            border-radius: 18px;
+            background: var(--accent-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 24px var(--accent-glow);
+        }
+
+        .about-logo svg {
+            width: 36px;
+            height: 36px;
+            fill: none;
+            stroke: #ffffff;
+            stroke-width: 2;
+        }
+
+        .version-badge {
             display: inline-block;
-            padding: 2px 8px;
-            background: #333;
-            border-radius: 10px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: rgba(59, 130, 246, 0.12);
+            color: #60a5fa;
             font-size: 12px;
-            margin-right: 5px;
+            font-weight: 600;
+            margin-top: 8px;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        code {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            color: #93c5fd;
         }
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="sidebar-item active" onclick="showPage('general')">Général</div>
-        <div class="sidebar-item" onclick="showPage('appearance')">Apparence</div>
-        <div class="sidebar-item" onclick="showPage('privacy')">Confidentialité</div>
-        <div class="sidebar-item" onclick="showPage('extensions')">Extensions</div>
-        <div class="sidebar-item" onclick="showPage('about')">À propos</div>
-    </div>
+
+    <!-- Navigation Supérieure (Top Navigation Bar) -->
+    <header class="top-navbar">
+        <div class="navbar-container">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </div>
+                <span>Paramètres</span>
+            </div>
+
+            <nav class="nav-tabs">
+                <div class="nav-tab active" data-page="general" onclick="showPage('general')">
+                    <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Général</span>
+                </div>
+                <div class="nav-tab" data-page="privacy" onclick="showPage('privacy')">
+                    <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Confidentialité</span>
+                </div>
+                <div class="nav-tab" data-page="extensions" onclick="showPage('extensions')">
+                    <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <span>Extensions</span>
+                </div>
+                <div class="nav-tab" data-page="about" onclick="showPage('about')">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>À propos</span>
+                </div>
+            </nav>
+        </div>
+    </header>
     
-    <div class="content">
+    <!-- Contenu des pages -->
+    <main class="content">
         <!-- GENERAL -->
         <div id="page-general" class="page active">
-            <h1>Général</h1>
-            <section>
-                <h2>Navigateur par défaut</h2>
+            <div class="page-header">
+                <h1 class="page-title">Général</h1>
+                <p class="page-subtitle">Configurez le comportement de base et la recherche de MundoBrowser.</p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <div class="card-title">Navigateur par défaut</div>
+                </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Faire de MundoBrowser mon navigateur par défaut</div>
@@ -211,21 +603,102 @@
                     </div>
                     <button class="btn-primary" onclick="updateSetting('makeDefault', true)">Définir par défaut</button>
                 </div>
-            </section>
+            </div>
 
-            <section>
-                <h2>Démarrage</h2>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </div>
+                    <div class="card-title">Moteur de recherche par défaut</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Moteur de recherche de la barre d'adresse</div>
+                        <div class="setting-description">Choisissez le moteur de recherche à utiliser par défaut pour vos requêtes web.</div>
+                    </div>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select-trigger" onclick="toggleSearchEngineDropdown(event)">
+                            <img id="trigger-engine-icon" src="engines/google.png" alt="" class="custom-option-icon">
+                            <span id="trigger-engine-name">Google</span>
+                            <span class="custom-select-arrow">▼</span>
+                        </div>
+                        
+                        <div id="search-engine-dropdown" class="custom-select-options">
+                            <div class="custom-option" data-value="google" onclick="selectSearchEngineOption('google', 'Google', 'engines/google.png')">
+                                <img src="engines/google.png" alt="Google" class="custom-option-icon">
+                                <span>Google</span>
+                            </div>
+                            <div class="custom-option" data-value="duckduckgo" onclick="selectSearchEngineOption('duckduckgo', 'DuckDuckGo', 'engines/duckduckgo.png')">
+                                <img src="engines/duckduckgo.png" alt="DuckDuckGo" class="custom-option-icon">
+                                <span>DuckDuckGo</span>
+                            </div>
+                            <div class="custom-option" data-value="qwant" onclick="selectSearchEngineOption('qwant', 'Qwant', 'engines/qwant.png')">
+                                <img src="engines/qwant.png" alt="Qwant" class="custom-option-icon">
+                                <span>Qwant</span>
+                            </div>
+                            <div class="custom-option" data-value="ecosia" onclick="selectSearchEngineOption('ecosia', 'Ecosia', 'engines/ecosia.png')">
+                                <img src="engines/ecosia.png" alt="Ecosia" class="custom-option-icon">
+                                <span>Ecosia</span>
+                            </div>
+                            <div class="custom-option" data-value="brave" onclick="selectSearchEngineOption('brave', 'Brave Search', 'engines/brave.png')">
+                                <img src="engines/brave.png" alt="Brave Search" class="custom-option-icon">
+                                <span>Brave Search</span>
+                            </div>
+                            <div class="custom-option" data-value="startpage" onclick="selectSearchEngineOption('startpage', 'Startpage', 'engines/startpage.png')">
+                                <img src="engines/startpage.png" alt="Startpage" class="custom-option-icon">
+                                <span>Startpage</span>
+                            </div>
+                            <div class="custom-option" data-value="searxng" onclick="selectSearchEngineOption('searxng', 'SearXNG', 'engines/searxng.png')">
+                                <img src="engines/searxng.png" alt="SearXNG" class="custom-option-icon">
+                                <span>SearXNG</span>
+                            </div>
+                            <div class="custom-option" data-value="custom" onclick="selectSearchEngineOption('custom', 'Personnalisé', 'engines/custom.png')">
+                                <img src="engines/custom.png" alt="Personnalisé" class="custom-option-icon">
+                                <span>Personnalisé</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="custom-search-container" style="display: none; margin-top: 15px; background: rgba(255,255,255,0.02); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div class="setting-title" style="margin-bottom: 6px;">URL de recherche personnalisée</div>
+                    <div class="setting-description" style="margin-bottom: 12px;">
+                        Inscrivez l'URL de recherche en utilisant <code>{query}</code> comme emplacement pour les termes de recherche.
+                    </div>
+                    <input type="text" id="custom-search-url" placeholder="https://votre-moteur.com/search?q={query}" style="width: 100%; box-sizing: border-box;" onchange="updateSetting('customSearchUrl', this.value)">
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    </div>
+                    <div class="card-title">Démarrage</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Utiliser le moteur de recherche comme page de démarrage</div>
+                        <div class="setting-description">Définit automatiquement la page d'accueil de la recherche sélectionnée comme page de démarrage des nouveaux onglets.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="use-search-engine-as-start-page"
+                               onchange="updateSetting('useSearchEngineAsStartPage', this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Page de démarrage</div>
                         <div class="setting-description">L'URL qui s'ouvre lors de la création d'un nouvel onglet.</div>
                     </div>
-                    <input type="text" id="start-page" value="https://www.google.com" style="width: 250px;">
+                    <input type="text" id="start-page" value="https://www.google.com" style="width: 280px;" onchange="updateSetting('startPage', this.value)">
                 </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Continuer à fonctionner en arrière-plan</div>
-                        <div class="setting-description">À la fermeture de la fenêtre, conserver MundoBrowser dans la zone de notification pour accélérer la prochaine ouverture. Utilisez le menu de l'icône pour quitter complètement.</div>
+                        <div class="setting-description">À la fermeture de la fenêtre, conserver MundoBrowser dans la zone de notification pour accélérer la prochaine ouverture.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="minimize-to-tray-on-close" checked
@@ -233,10 +706,15 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-            </section>
+            </div>
 
-            <section>
-                <h2>Performance</h2>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    </div>
+                    <div class="card-title">Performance</div>
+                </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Économie de Mémoire (EcoMode)</div>
@@ -260,53 +738,34 @@
                         <option value="60">1 heure</option>
                     </select>
                 </div>
-            </section>
-        </div>
-
-        <!-- APPEARANCE -->
-        <div id="page-appearance" class="page">
-            <h1>Apparence</h1>
-            <section>
-                <h2>Thème</h2>
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">Mode sombre</div>
-                        <div class="setting-description">Utiliser une interface sombre pour reposer vos yeux.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" checked disabled>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </section>
-            <section>
-                <h2>Interface</h2>
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">Largeur de la barre latérale</div>
-                        <div class="setting-description">Ajuster la taille par défaut de la barre latérale.</div>
-                    </div>
-                    <input type="number" value="250" style="width: 80px;">
-                </div>
-            </section>
+            </div>
         </div>
 
         <!-- PRIVACY -->
         <div id="page-privacy" class="page">
-            <h1>Confidentialité et Sécurité</h1>
-            <section>
-                <h2>Navigation</h2>
+            <div class="page-header">
+                <h1 class="page-title">Confidentialité et Sécurité</h1>
+                <p class="page-subtitle">Gérez la protection de vos données, les bloqueurs et la saisie automatique.</p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <div class="card-title">Navigation & Protection</div>
+                </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Effacer les données de navigation</div>
-                        <div class="setting-description">Supprimer l'historique, les cookies et le cache.</div>
+                        <div class="setting-description">Supprimer l'historique, les cookies et le cache de votre session.</div>
                     </div>
                     <button class="btn-primary" onclick="alert('Données effacées !')">Effacer maintenant</button>
                 </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Bloquer les publicités</div>
-                        <div class="setting-description">Bloquer les domaines et éléments publicitaires connus.</div>
+                        <div class="setting-description">Bloquer les domaines et éléments publicitaires connus sur les sites web.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="adblock-enabled"
@@ -317,7 +776,7 @@
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Masquer les demandes de cookies</div>
-                        <div class="setting-description">Masquer les bannières de consentement connues.</div>
+                        <div class="setting-description">Masquer automatiquement les bannières de consentement aux cookies.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="cookieblock-enabled"
@@ -328,7 +787,7 @@
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Prévention du suivi</div>
-                        <div class="setting-description">Utiliser la protection native WebView2 contre les traqueurs.</div>
+                        <div class="setting-description">Utiliser la protection native WebView2 contre les traqueurs en ligne.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="tracking-prevention-enabled"
@@ -336,10 +795,15 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-            </section>
+            </div>
 
-            <section>
-                <h2>Saisie automatique</h2>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    </div>
+                    <div class="card-title">Saisie automatique</div>
+                </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Proposer d'enregistrer les mots de passe</div>
@@ -354,7 +818,7 @@
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Saisie automatique des formulaires</div>
-                        <div class="setting-description">Remplir automatiquement les e-mails, adresses, numéros de téléphone et d'autres informations générales.</div>
+                        <div class="setting-description">Remplir automatiquement les e-mails, adresses et informations de formulaires.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="general-autofill-enabled"
@@ -362,36 +826,72 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-            </section>
+            </div>
         </div>
 
         <!-- EXTENSIONS -->
         <div id="page-extensions" class="page">
-            <h1>Extensions</h1>
-            <section>
-                <div id="extensions-list">
-                    <p style="color: var(--secondary-text)">Gérez vos extensions installées depuis le Chrome Web Store.</p>
-                    <!-- Liste dynamique à venir ou statique pour le moment -->
-                    <div class="setting-item">
-                        <div class="setting-info">
-                            <div class="setting-title">Accéder au catalogue</div>
-                            <div class="setting-description">Trouvez de nouvelles extensions sur le Chrome Web Store.</div>
-                        </div>
-                        <button class="btn-primary" onclick="window.location.href='https://chromewebstore.google.com/'">Parcourir</button>
+            <div class="page-header">
+                <h1 class="page-title">Extensions</h1>
+                <p class="page-subtitle">Personnalisez votre navigateur en y ajoutant de nouvelles fonctionnalités.</p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                     </div>
+                    <div class="card-title">Catalogue Chrome Web Store</div>
                 </div>
-            </section>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">Accéder au catalogue d'extensions</div>
+                        <div class="setting-description">Trouvez et installez de nouvelles extensions depuis le Chrome Web Store officiel.</div>
+                    </div>
+                    <button class="btn-primary" onclick="window.location.href='https://chromewebstore.google.com/'">Parcourir</button>
+                </div>
+            </div>
         </div>
 
         <!-- ABOUT -->
         <div id="page-about" class="page">
-            <h1>À propos de MundoBrowser</h1>
-            <section>
-                <h2>Mises à jour</h2>
+            <div class="page-header">
+                <h1 class="page-title">À propos</h1>
+                <p class="page-subtitle">Informations sur l'application et mises à jour système.</p>
+            </div>
+
+            <div class="about-card card">
+                <div class="about-logo">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2z"/><path d="M12 6v6l4 2"/></svg>
+                </div>
+                <h2 style="font-size: 22px; font-weight: 700; color: var(--text-color); margin-bottom: 4px;">MundoBrowser</h2>
+                <span class="version-badge" id="app-version">Version 1.0.0 (Build stable)</span>
+                
+                <p style="margin-top: 20px; color: var(--secondary-text); max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.6; font-size: 14px;">
+                    Un navigateur web moderne, rapide et confidentiel basé sur WebView2 et .NET.
+                    <br>
+                    <span style="color: var(--muted-text); font-size: 13px;">Créé par Paul Thomas</span>
+                </p>
+
+                <div style="margin-top: 28px;">
+                    <button class="btn-primary" onclick="checkForUpdates()">
+                        <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                        Rechercher des mises à jour
+                    </button>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <div class="card-header-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                    </div>
+                    <div class="card-title">Canaux de mise à jour</div>
+                </div>
                 <div class="setting-item">
                     <div class="setting-info">
                         <div class="setting-title">Canal Beta</div>
-                        <div class="setting-description">Recevoir les mises à jour expérimentales. Ces versions peuvent être instables.</div>
+                        <div class="setting-description">Recevoir les mises à jour expérimentales. Ces versions peuvent contenir de nouvelles fonctionnalités avant la version stable.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="beta-channel-enabled"
@@ -399,38 +899,47 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div style="text-align: center; padding: 40px 0;">
-                    <h2 style="border: none; margin-bottom: 10px;">MundoBrowser</h2>
-                    <p id="app-version" style="color: var(--secondary-text)">Version 1.0.0 (Build stable)</p>
-                    <p style="margin-top: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
-                        Un navigateur moderne, rapide et confidentiel basé sur WebView2 et .NET.
-                        <br>
-                        Créé par Paul Thomas
-                    </p>
-                    <div style="margin-top: 40px;">
-                        <button class="btn-primary" onclick="checkForUpdates()">Rechercher des mises à jour</button>
-                    </div>
-                </div>
-            </section>
+            </div>
         </div>
-    </div>
+    </main>
 
     <script>
+        const engineNames = {
+            'google': 'Google',
+            'duckduckgo': 'DuckDuckGo',
+            'qwant': 'Qwant',
+            'ecosia': 'Ecosia',
+            'brave': 'Brave Search',
+            'startpage': 'Startpage',
+            'searxng': 'SearXNG',
+            'custom': 'Personnalisé'
+        };
+
         function showPage(pageId, updateHash = true) {
-            // Update sidebar
-            document.querySelectorAll('.sidebar-item').forEach(item => {
+            // Mise à jour de la barre de navigation en haut
+            document.querySelectorAll('.nav-tab').forEach(item => {
                 item.classList.remove('active');
-                if (item.getAttribute('onclick')?.includes(`'${pageId}'`)) {
+                if (item.getAttribute('data-page') === pageId) {
                     item.classList.add('active');
                 }
             });
 
-            // Update content
+            // Affichage de la page sélectionnée
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
+
             const targetPage = document.getElementById('page-' + pageId);
-            if (targetPage) targetPage.classList.add('active');
+            if (targetPage) {
+                targetPage.classList.add('active');
+            } else {
+                // Si la page demandée n'existe pas (ex: 'appearance' supprimé), rediriger vers 'general'
+                pageId = 'general';
+                const defaultPage = document.getElementById('page-general');
+                if (defaultPage) defaultPage.classList.add('active');
+                const defaultTab = document.querySelector('.nav-tab[data-page="general"]');
+                if (defaultTab) defaultTab.classList.add('active');
+            }
 
             if (updateHash) {
                 window.location.hash = pageId;
@@ -438,7 +947,61 @@
             }
         }
 
-        // Handle initial hash and back/forward
+        function toggleSearchEngineDropdown(event) {
+            event.stopPropagation();
+            const wrapper = document.querySelector('.custom-select-wrapper');
+            if (wrapper) {
+                const isOpen = wrapper.classList.toggle('open');
+                const card = wrapper.closest('.card');
+                if (card) {
+                    card.style.zIndex = isOpen ? '100' : '';
+                }
+            }
+        }
+
+        function selectSearchEngineOption(value, name, iconUrl, notify = true) {
+            const triggerIcon = document.getElementById('trigger-engine-icon');
+            const triggerName = document.getElementById('trigger-engine-name');
+            
+            if (triggerIcon) triggerIcon.src = iconUrl;
+            if (triggerName) triggerName.textContent = name;
+
+            document.querySelectorAll('.custom-option').forEach(opt => {
+                if (opt.getAttribute('data-value') === value) {
+                    opt.classList.add('selected');
+                } else {
+                    opt.classList.remove('selected');
+                }
+            });
+
+            const wrapper = document.querySelector('.custom-select-wrapper');
+            if (wrapper) {
+                wrapper.classList.remove('open');
+                const card = wrapper.closest('.card');
+                if (card) card.style.zIndex = '';
+            }
+
+            const customContainer = document.getElementById('custom-search-container');
+            if (customContainer) {
+                customContainer.style.display = (value === 'custom') ? 'block' : 'none';
+            }
+
+            if (notify) {
+                updateSetting('searchEngine', value);
+            }
+        }
+
+        // Fermer le dropdown lors d'un clic à l'extérieur
+        document.addEventListener('click', (e) => {
+            const wrapper = document.querySelector('.custom-select-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                wrapper.classList.remove('open');
+                const card = wrapper.closest('.card');
+                if (card) card.style.zIndex = '';
+            }
+        });
+
+        // Gestion de l'ancre Hash et de la navigation historique
         window.addEventListener('hashchange', () => {
             const hash = window.location.hash.substring(1) || 'general';
             showPage(hash, false);
@@ -470,14 +1033,26 @@
             }
         }
 
-        // Écouter les messages venant du C# (si besoin)
+        // Écouter les messages venant de C# (WebView2)
         if (window.chrome && window.chrome.webview) {
             window.chrome.webview.addEventListener('message', event => {
                 const data = event.data;
                 if (data.type === 'initSettings') {
-                    // Initialiser les valeurs du formulaire avec les données du navigateur
+                    if (data.searchEngine) {
+                        const val = data.searchEngine;
+                        const name = engineNames[val] || 'Google';
+                        const iconUrl = 'engines/' + (val || 'google') + '.png';
+                        selectSearchEngineOption(val, name, iconUrl, false);
+                    }
+                    if (document.getElementById('custom-search-url')) {
+                        document.getElementById('custom-search-url').value = data.customSearchUrl || '';
+                    }
+                    if (document.getElementById('use-search-engine-as-start-page')) {
+                        document.getElementById('use-search-engine-as-start-page').checked = !!data.useSearchEngineAsStartPage;
+                    }
                     if (document.getElementById('start-page')) {
                         document.getElementById('start-page').value = data.startPage || '';
+                        document.getElementById('start-page').disabled = !!data.useSearchEngineAsStartPage;
                     }
                     if (document.getElementById('ecomode-enabled')) {
                         document.getElementById('ecomode-enabled').checked = data.ecoModeEnabled;
@@ -487,12 +1062,6 @@
                     }
                     if (document.getElementById('minimize-to-tray-on-close')) {
                         document.getElementById('minimize-to-tray-on-close').checked = data.minimizeToTrayOnClose;
-                    }
-                    if (document.getElementById('sidebar-visible')) {
-                        document.getElementById('sidebar-visible').checked = data.sidebarVisible;
-                    }
-                    if (document.getElementById('sidebar-width')) {
-                        document.getElementById('sidebar-width').value = String(data.sidebarWidth);
                     }
                     if (document.getElementById('adblock-enabled')) {
                         document.getElementById('adblock-enabled').checked = data.adBlockerEnabled;
@@ -518,4 +1087,3 @@
     </script>
 </body>
 </html>
-

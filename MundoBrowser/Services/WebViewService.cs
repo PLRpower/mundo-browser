@@ -10,7 +10,15 @@ namespace MundoBrowser.Services;
 
 public partial class WebViewService : IWebViewService, IDisposable
 {
+    private class TabContainer
+    {
+        public required System.Windows.Controls.Grid ContainerGrid { get; init; }
+        public required WebView2 MainWebView { get; init; }
+    }
+
     private readonly Dictionary<TabViewModel, WebView2> _webViews = new();
+    private readonly Dictionary<TabViewModel, TabContainer> _tabContainers = new();
+    private TabContainer? _activeTabContainer;
     private System.Windows.Controls.Panel? _container;
     private CoreWebView2Environment? _environment;
     private WebView2? _activeWebView;
@@ -18,6 +26,7 @@ public partial class WebViewService : IWebViewService, IDisposable
     private int _memoryOptimizationRunning;
     private readonly IAppSettingsService _settingsService;
     private readonly IAdBlockerService _adBlockerService;
+    private readonly IUpdateService _updateService;
     private bool _disposed;
 
     public bool EcoModeEnabled { get; set; } = true;
@@ -26,16 +35,19 @@ public partial class WebViewService : IWebViewService, IDisposable
     private readonly Dictionary<TabViewModel, Task<WebView2>> _initializationTasks = new();
     private readonly HashSet<TabViewModel> _removedTabs = [];
     private readonly SemaphoreSlim _initSemaphore = new SemaphoreSlim(1, 1);
+    private readonly Dictionary<WebView2, HashSet<CoreWebView2DownloadOperation>> _activeDownloads = new();
+    private readonly List<WebView2> _pendingDisposalWebViews = new();
 
     public WebView2? ActiveWebView => _activeWebView;
     public CoreWebView2Environment? WebViewEnvironment => _environment;
 
     public WebView2? GetWebViewForTab(TabViewModel tab) => _webViews.TryGetValue(tab, out var wv) ? wv : null;
 
-    public WebViewService(IAppSettingsService settingsService, IAdBlockerService adBlockerService)
+    public WebViewService(IAppSettingsService settingsService, IAdBlockerService adBlockerService, IUpdateService updateService)
     {
         _settingsService = settingsService;
         _adBlockerService = adBlockerService;
+        _updateService = updateService;
 
         EcoModeEnabled = _settingsService.Current.EcoModeEnabled;
         EcoModeMinutes = _settingsService.Current.EcoModeMinutes;
@@ -53,8 +65,7 @@ public partial class WebViewService : IWebViewService, IDisposable
         var options = new CoreWebView2EnvironmentOptions
         {
             AreBrowserExtensionsEnabled = true,
-            EnableTrackingPrevention = true,
-            AdditionalBrowserArguments = "--disable-features=DownloadBubble,DownloadBubbleV2"
+            EnableTrackingPrevention = true
         };
 
         var userDataFolder = Path.Combine(AppRuntime.LocalDataDirectory, "WebView2Data");
@@ -115,12 +126,18 @@ public partial class WebViewService : IWebViewService, IDisposable
 
         await _initSemaphore.WaitAsync();
         WebView2? webView = null;
+        System.Windows.Controls.Grid? containerGrid = null;
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+
+            containerGrid = new System.Windows.Controls.Grid();
+
             webView = new WebView2();
             webView.DefaultBackgroundColor = System.Drawing.Color.White;
-            _container.Children.Add(webView);
+            containerGrid.Children.Add(webView);
+
+            _container.Children.Add(containerGrid);
 
             try { await webView.EnsureCoreWebView2Async(_environment); }
             catch (System.Runtime.InteropServices.COMException ex) when (ex.ErrorCode == unchecked((int)0x80004004))
@@ -195,8 +212,7 @@ public partial class WebViewService : IWebViewService, IDisposable
 
                 webView.CoreWebView2.WebResourceRequested += (s, e) =>
                 {
-                    if (adBlocker.IsAdBlockerEnabled
-                        && !adBlocker.IsProtectionDisabledForSite(currentPageUrl))
+                    if (adBlocker.IsAdBlockerEnabledForSite(currentPageUrl))
                     {
                         var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
                             null, 204, "No Content", ""
@@ -302,11 +318,7 @@ public partial class WebViewService : IWebViewService, IDisposable
                     }
                     else if (root.TryGetProperty("type", out var updateType) && updateType.GetString() == "checkForUpdates")
                     {
-                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            var updateWindow = new UpdateWindow(null, true);
-                            updateWindow.ShowDialog();
-                        });
+                        _ = _updateService.CheckForUpdatesManualAsync();
                     }
                 }
                 catch { }
@@ -330,13 +342,21 @@ public partial class WebViewService : IWebViewService, IDisposable
             }
 
             _webViews[tab] = webView;
+            _tabContainers[tab] = new TabContainer
+            {
+                ContainerGrid = containerGrid,
+                MainWebView = webView
+            };
             return webView;
         }
         catch (Exception ex)
         {
+            if (containerGrid != null)
+            {
+                _container?.Children.Remove(containerGrid);
+            }
             if (webView != null)
             {
-                _container?.Children.Remove(webView);
                 webView.Dispose();
             }
 
@@ -348,11 +368,16 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     private static string BuildCosmeticFilteringScript(IAdBlockerService adBlocker, string? pageUrl)
     {
-        if (adBlocker.IsProtectionDisabledForSite(pageUrl))
-            return "";
+        bool isAdBlockActive = adBlocker.IsAdBlockerEnabledForSite(pageUrl);
+        bool isCookieBlockActive = adBlocker.IsCookieBlockerEnabledForSite(pageUrl);
 
-        string css = adBlocker.GetCosmeticCss() + adBlocker.GetCookieCosmeticCss();
-        string cookieScript = adBlocker.GetCookieRemovalScript();
+        string css = "";
+        if (isAdBlockActive)
+            css += adBlocker.GetCosmeticCss();
+        if (isCookieBlockActive)
+            css += adBlocker.GetCookieCosmeticCss();
+
+        string cookieScript = isCookieBlockActive ? adBlocker.GetCookieRemovalScript() : "";
 
         if (string.IsNullOrWhiteSpace(css) && string.IsNullOrWhiteSpace(cookieScript))
             return "";
@@ -375,45 +400,185 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     public async Task SwitchToTabAsync(TabViewModel tab, WebView2 webView)
     {
-        if (_activeWebView != null && _activeWebView != webView)
+        if (_activeTabContainer != null && _activeTabContainer.MainWebView != webView)
         {
-            _activeWebView.Visibility = Visibility.Collapsed;
+            _activeTabContainer.ContainerGrid.Visibility = Visibility.Collapsed;
             try
             {
-                if (_activeWebView.CoreWebView2 != null)
+                if (_activeTabContainer.MainWebView.CoreWebView2 != null)
                 {
                     // Lower memory priority for background tab
-                    _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+                    _activeTabContainer.MainWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
                     
                     // Suspend the tab if it's not playing audio to save CPU/RAM
                     bool isPlayingAudio = false;
-                    try { isPlayingAudio = _activeWebView.CoreWebView2.IsDocumentPlayingAudio; } catch { }
+                    try { isPlayingAudio = _activeTabContainer.MainWebView.CoreWebView2.IsDocumentPlayingAudio; } catch { }
                     
                     if (!isPlayingAudio)
                     {
-                        await _activeWebView.CoreWebView2.TrySuspendAsync();
+                        await _activeTabContainer.MainWebView.CoreWebView2.TrySuspendAsync();
                     }
                 }
             }
             catch { }
         }
 
-        _activeWebView = webView;
-        _activeWebView.Visibility = Visibility.Visible;
-        _activeWebView.ZoomFactor = tab.ZoomFactor;
-        tab.LastAccessed = DateTime.Now;
-        tab.IsDiscarded = false;
-        
+        if (_tabContainers.TryGetValue(tab, out var currentContainer))
+        {
+            _activeTabContainer = currentContainer;
+            _activeTabContainer.ContainerGrid.Visibility = Visibility.Visible;
+            _activeWebView = webView;
+            _activeWebView.ZoomFactor = tab.ZoomFactor;
+            tab.LastAccessed = DateTime.Now;
+            tab.IsDiscarded = false;
+            
+            try
+            {
+                if (_activeWebView.CoreWebView2 != null)
+                {
+                    // Resume and restore normal memory priority
+                    _activeWebView.CoreWebView2.Resume();
+                    _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+                }
+            }
+            catch { }
+        }
+    }
+
+    public Task<WebView2?> OpenDevToolsForTabAsync(TabViewModel tab)
+    {
+        if (_webViews.TryGetValue(tab, out var webView) && webView.CoreWebView2 != null)
+        {
+            webView.CoreWebView2.OpenDevToolsWindow();
+            return Task.FromResult<WebView2?>(webView);
+        }
+        return Task.FromResult<WebView2?>(null);
+    }
+
+    public void CloseDevToolsForTab(TabViewModel tab)
+    {
+    }
+
+    public bool IsDevToolsOpenForTab(TabViewModel tab)
+    {
+        return false;
+    }
+
+    public Task ToggleDevToolsForTabAsync(TabViewModel tab)
+    {
+        return OpenDevToolsForTabAsync(tab);
+    }
+
+    public bool HasActiveDownloads
+    {
+        get
+        {
+            lock (_activeDownloads)
+            {
+                return _activeDownloads.Values.Any(set => set.Count > 0);
+            }
+        }
+    }
+
+    public int ActiveDownloadCount
+    {
+        get
+        {
+            lock (_activeDownloads)
+            {
+                return _activeDownloads.Values.Sum(set => set.Count);
+            }
+        }
+    }
+
+    public event Action? ActiveDownloadsChanged;
+
+    public void OpenDownloadDialog()
+    {
         try
         {
-            if (_activeWebView.CoreWebView2 != null)
+            var targetWebView = _activeWebView ?? _webViews.Values.FirstOrDefault(w => w.CoreWebView2 != null);
+            if (targetWebView?.CoreWebView2 != null)
             {
-                // Resume and restore normal memory priority
-                _activeWebView.CoreWebView2.Resume();
-                _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+                if (targetWebView.CoreWebView2.IsDefaultDownloadDialogOpen)
+                {
+                    targetWebView.CoreWebView2.CloseDefaultDownloadDialog();
+                }
+                else
+                {
+                    targetWebView.CoreWebView2.OpenDefaultDownloadDialog();
+                }
             }
         }
         catch { }
+    }
+
+    public void RegisterActiveDownload(WebView2 webView, CoreWebView2DownloadOperation download)
+    {
+        lock (_activeDownloads)
+        {
+            if (!_activeDownloads.TryGetValue(webView, out var downloads))
+            {
+                downloads = new HashSet<CoreWebView2DownloadOperation>();
+                _activeDownloads[webView] = downloads;
+            }
+            downloads.Add(download);
+        }
+
+        ActiveDownloadsChanged?.Invoke();
+
+        download.StateChanged += (s, e) =>
+        {
+            if (download.State == CoreWebView2DownloadState.Completed ||
+                download.State == CoreWebView2DownloadState.Interrupted)
+            {
+                OnDownloadEnded(webView, download);
+            }
+            ActiveDownloadsChanged?.Invoke();
+        };
+    }
+
+    private void OnDownloadEnded(WebView2 webView, CoreWebView2DownloadOperation download)
+    {
+        bool shouldDispose = false;
+        lock (_activeDownloads)
+        {
+            if (_activeDownloads.TryGetValue(webView, out var downloads))
+            {
+                downloads.Remove(download);
+                if (downloads.Count == 0)
+                {
+                    _activeDownloads.Remove(webView);
+                    if (_pendingDisposalWebViews.Contains(webView))
+                    {
+                        _pendingDisposalWebViews.Remove(webView);
+                        shouldDispose = true;
+                    }
+                }
+            }
+        }
+
+        ActiveDownloadsChanged?.Invoke();
+
+        if (shouldDispose)
+        {
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    if (_tabContainers.Values.FirstOrDefault(c => c.MainWebView == webView) is { } container)
+                    {
+                        _container?.Children.Remove(container.ContainerGrid);
+                    }
+                    else
+                    {
+                        _container?.Children.Remove(webView);
+                    }
+                    webView.Dispose();
+                }
+                catch { }
+            });
+        }
     }
 
     public void RemoveTab(TabViewModel tab)
@@ -421,7 +586,34 @@ public partial class WebViewService : IWebViewService, IDisposable
         lock (_initializationTasks)
             _removedTabs.Add(tab);
 
-        if (_webViews.TryGetValue(tab, out var webView))
+        if (_tabContainers.TryGetValue(tab, out var container))
+        {
+            _tabContainers.Remove(tab);
+            _webViews.Remove(tab);
+            if (_activeWebView == container.MainWebView) _activeWebView = null;
+            if (_activeTabContainer == container) _activeTabContainer = null;
+
+            bool hasActiveDownloads = false;
+            lock (_activeDownloads)
+            {
+                if (_activeDownloads.TryGetValue(container.MainWebView, out var downloads) && downloads.Count > 0)
+                {
+                    hasActiveDownloads = true;
+                    _pendingDisposalWebViews.Add(container.MainWebView);
+                }
+            }
+
+            if (hasActiveDownloads)
+            {
+                container.ContainerGrid.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                _container?.Children.Remove(container.ContainerGrid);
+                try { container.MainWebView.Dispose(); } catch { }
+            }
+        }
+        else if (_webViews.TryGetValue(tab, out var webView))
         {
             _webViews.Remove(tab);
             if (_activeWebView == webView) _activeWebView = null;
@@ -440,21 +632,18 @@ public partial class WebViewService : IWebViewService, IDisposable
         _memoryTimer.Elapsed -= CheckMemoryOptimization;
         _memoryTimer.Dispose();
 
-        var webViewsToDispose = _webViews.Values
-            .Concat(_container?.Children.OfType<WebView2>() ?? Enumerable.Empty<WebView2>())
-            .Distinct()
-            .ToList();
-
-        foreach (var webView in webViewsToDispose)
+        foreach (var container in _tabContainers.Values.ToList())
         {
-            _container?.Children.Remove(webView);
-            webView.Dispose();
+            _container?.Children.Remove(container.ContainerGrid);
+            try { container.MainWebView.Dispose(); } catch { }
         }
 
+        _tabContainers.Clear();
         _webViews.Clear();
         _initializationTasks.Clear();
         _removedTabs.Clear();
         _activeWebView = null;
+        _activeTabContainer = null;
         _container = null;
         GC.SuppressFinalize(this);
     }

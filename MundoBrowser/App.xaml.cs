@@ -53,12 +53,7 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
 
-#if DEBUG
         LaunchMainWindow(e.Args);
-#else
-        var updateWindow = new UpdateWindow(e.Args);
-        updateWindow.Show();
-#endif
     }
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
@@ -142,6 +137,7 @@ public partial class App : System.Windows.Application
             app._serviceProvider.GetRequiredService<IWebViewService>(),
             app._serviceProvider.GetRequiredService<IExtensionService>(),
             app._serviceProvider.GetRequiredService<IAppSettingsService>(),
+            app._serviceProvider.GetRequiredService<IUpdateService>(),
             args);
         Current.MainWindow = mainWindow;
         // var server = app._serviceProvider.GetRequiredService<MundoExtensionServer>();
@@ -163,6 +159,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IExtensionService, ExtensionService>();
         services.AddSingleton<IAdBlockerService, AdBlockerService>();
         services.AddSingleton<MundoExtensionServer>();
+        services.AddSingleton<IUpdateService, UpdateService>();
         services.AddTransient<MainViewModel>();
         return services.BuildServiceProvider();
     }

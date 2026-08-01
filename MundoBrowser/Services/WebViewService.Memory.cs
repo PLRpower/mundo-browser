@@ -32,8 +32,17 @@ public partial class WebViewService
 
                                 bool isPlayingAudio = false;
                                 try { isPlayingAudio = entry.Value.CoreWebView2?.IsDocumentPlayingAudio ?? false; } catch { }
+                                if (isPlayingAudio) return false;
 
-                                return !isPlayingAudio;
+                                bool hasActiveDownloads = false;
+                                lock (_activeDownloads)
+                                {
+                                    if (_activeDownloads.TryGetValue(entry.Value, out var downloads) && downloads.Count > 0)
+                                        hasActiveDownloads = true;
+                                }
+                                if (hasActiveDownloads) return false;
+
+                                return true;
                             })
                             .Select(entry => entry.Key));
 

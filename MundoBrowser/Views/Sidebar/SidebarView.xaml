@@ -235,13 +235,19 @@
                         <Setter Property="Foreground" Value="#DDD"/>
                         <Setter Property="Margin" Value="6,1"/>
                         <Setter Property="Padding" Value="10,0,5,0"/>
-                        <Setter Property="Height" Value="38"/>
                         <EventSetter Event="PreviewMouseLeftButtonDown" Handler="TabItem_PreviewMouseLeftButtonDown"/>
                         <EventSetter Event="PreviewMouseMove" Handler="TabItem_PreviewMouseMove"/>
+                        <EventSetter Event="MouseDown" Handler="TabItem_MouseDown"/>
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">
-                                    <Grid Background="Transparent">
+                                    <Grid x:Name="RootGrid" Background="Transparent" Height="38">
+                                        <Grid.LayoutTransform>
+                                            <ScaleTransform x:Name="ItemScale" ScaleX="1" ScaleY="1"/>
+                                        </Grid.LayoutTransform>
+                                        <Grid.RenderTransform>
+                                            <TranslateTransform x:Name="ItemTranslate" X="0"/>
+                                        </Grid.RenderTransform>
                                         <Border x:Name="TopIndicator" Height="2" Background="White" VerticalAlignment="Top" Margin="0,-1,0,0" Visibility="Collapsed" Panel.ZIndex="10"/>
                                         <Border x:Name="BottomIndicator" Height="2" Background="White" VerticalAlignment="Bottom" Margin="0,0,0,-1" Visibility="Collapsed" Panel.ZIndex="10"/>
                                         <Border Name="Border" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
@@ -266,6 +272,38 @@
                                         <Trigger Property="Tag" Value="DropBottom">
                                             <Setter TargetName="BottomIndicator" Property="Visibility" Value="Visible"/>
                                         </Trigger>
+                                        <DataTrigger Binding="{Binding IsClosing}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetName="ItemScale"
+                                                                         Storyboard.TargetProperty="ScaleY"
+                                                                         From="1.0" To="0.0"
+                                                                         Duration="0:0:0.15">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetName="ItemTranslate"
+                                                                         Storyboard.TargetProperty="X"
+                                                                         From="0" To="-15"
+                                                                         Duration="0:0:0.15">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetName="RootGrid"
+                                                                         Storyboard.TargetProperty="Opacity"
+                                                                         From="1.0" To="0.0"
+                                                                         Duration="0:0:0.12">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                        </DataTrigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
                             </Setter.Value>
@@ -365,9 +403,11 @@
             <local:SidebarMediaBarView Grid.Row="4"/>
 
             <!-- Bottom Actions (Row 5) -->
-            <StackPanel Grid.Row="5" Margin="10,0,10,5">
+            <Grid Grid.Row="5" Margin="10,0,10,5">
+                <!-- Settings Button (Bottom Left) -->
                 <Button Command="{Binding OpenSettingsCommand}" 
-                        Background="Transparent" Foreground="#666" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Left">
+                        Background="Transparent" Foreground="#666" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Left"
+                        ToolTip="Paramètres">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="8">
@@ -384,7 +424,45 @@
                         </ControlTemplate>
                     </Button.Template>
                 </Button>
-            </StackPanel>
+
+                <!-- Downloads Button (Bottom Right) -->
+                <Button x:Name="DownloadsButton" Command="{Binding OpenDownloadsCommand}" 
+                        Background="Transparent" Foreground="#666" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Right"
+                        ToolTip="Téléchargements (Ctrl+J)">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="8">
+                                <Grid>
+                                    <Viewbox Width="18" Height="18">
+                                        <Path Fill="{TemplateBinding Foreground}"
+                                              Data="M12 2.25a.75.75 0 0 1 .75.75v11.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 1 1 1.06-1.06l3.72 3.72V3a.75.75 0 0 1 .75-.75ZM3.75 18a.75.75 0 0 0 0 1.5h16.5a.75.75 0 0 0 0-1.5H3.75Z"/>
+                                    </Viewbox>
+                                    <!-- Active Download Indicator Badge -->
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="#22C55E"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasActiveDownloads}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#2D2D30"/>
+                                    <Setter Property="Foreground" Value="#CCC"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
         </Grid>
     </Border>
 </UserControl>

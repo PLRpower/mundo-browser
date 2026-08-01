@@ -26,6 +26,18 @@ public partial class SidebarView : System.Windows.Controls.UserControl
 
     private void TabItem_PreviewMouseLeftButtonDown(object s, MouseButtonEventArgs e) => _tabReorderHelper?.HandlePreviewMouseDown(e);
     private void TabItem_PreviewMouseMove(object s, System.Windows.Input.MouseEventArgs e) => _tabReorderHelper?.HandlePreviewMouseMove(s, e);
+    private void TabItem_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Middle && sender is System.Windows.Controls.ListBoxItem item && item.DataContext is TabViewModel tab)
+        {
+            if (DataContext is MainViewModel vm)
+            {
+                vm.CloseTabCommand.Execute(tab);
+                e.Handled = true;
+            }
+        }
+    }
+
     private void TabsList_DragOver(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.HandleDragOver(e);
     private void TabsList_Drop(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.HandleDrop(e);
     private void TabsList_DragLeave(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.ClearIndicators();
@@ -93,5 +105,4 @@ public partial class SidebarView : System.Windows.Controls.UserControl
             }
         }
     }
-
 }

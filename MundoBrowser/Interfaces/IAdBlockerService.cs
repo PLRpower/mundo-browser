@@ -7,6 +7,10 @@ public interface IAdBlockerService
     IReadOnlyCollection<string> BlockedDomains { get; }
 
     string? GetSiteHost(string? url);
+    bool IsAdBlockerEnabledForSite(string? url);
+    bool SetAdBlockerEnabledForSite(string? url, bool enabled);
+    bool IsCookieBlockerEnabledForSite(string? url);
+    bool SetCookieBlockerEnabledForSite(string? url, bool enabled);
     bool IsProtectionDisabledForSite(string? url);
     bool SetProtectionDisabledForSite(string? url, bool disabled);
     string GetCosmeticCss();

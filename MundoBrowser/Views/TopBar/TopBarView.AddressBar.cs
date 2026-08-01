@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Brushes = System.Windows.Media.Brushes;
@@ -29,7 +30,7 @@ public partial class TopBarView
             string url = GetNavigableInlineCompletionUrl()
                          ?? (TryGetDirectNavigationUrl(input, out var directUrl, out _)
                              ? directUrl
-                             : BuildGoogleSearchUrl(input));
+                             : BuildSearchUrl(vm, input));
 
             NavigateToAddress(vm, url);
             ClearInlineCompletion();
@@ -415,8 +416,8 @@ public partial class TopBarView
         return false;
     }
 
-    private static string BuildGoogleSearchUrl(string query)
-        => $"https://www.google.com/search?q={Uri.EscapeDataString(query)}";
+    internal static string BuildSearchUrl(MainViewModel vm, string query)
+        => SearchEngineHelper.BuildSearchUrl(query, vm.AppSettingsService.Current.SearchEngine, vm.AppSettingsService.Current.CustomSearchUrl);
 
     private static bool UrlsMatch(string first, string second)
         => string.Equals(

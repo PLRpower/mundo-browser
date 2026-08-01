@@ -11,6 +11,9 @@ namespace MundoBrowser.ViewModels
         private DateTime _lastAccessed = DateTime.Now;
 
         [ObservableProperty]
+        private bool _isClosing;
+
+        [ObservableProperty]
         private bool _isDiscarded = true;
 
         // The active URL of the WebView
@@ -97,5 +100,9 @@ namespace MundoBrowser.ViewModels
 
         public string ZoomPercentage => $"{(int)(Math.Round(ZoomFactor * 100))}%";
 
+        [ObservableProperty]
+        private bool _isCreatedFromNewWindow;
+
+        public TabViewModel? OpenedByTab { get; set; }
     }
 }

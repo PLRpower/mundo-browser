@@ -24,7 +24,9 @@
                 <ColumnDefinition Width="Auto"/>
                 <!-- Col 7: Extensions -->
                 <ColumnDefinition Width="Auto"/>
-                <!-- Col 8: Separator before window controls -->
+                <!-- Col 8: Update Icon -->
+                <ColumnDefinition Width="Auto"/>
+                <!-- Col 9: Separator before window controls -->
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -320,8 +322,16 @@
                     <ContextMenu x:Name="AdBlockerContextMenu"
                                  Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42"
                                  Opened="AdBlockerContextMenu_Opened">
-                        <MenuItem Header="Bloqueur de publicités" IsCheckable="True" IsChecked="{Binding IsAdBlockerEnabled}"/>
-                        <MenuItem Header="Bloqueur de cookies" IsCheckable="True" IsChecked="{Binding IsCookieBlockerEnabled}"/>
+                        <MenuItem x:Name="CurrentSiteHeaderMenuItem" Header="Protections du site" IsEnabled="False"/>
+                        <Separator/>
+                        <MenuItem x:Name="CurrentSiteAdBlockerMenuItem"
+                                  Header="Bloqueur de publicités"
+                                  IsCheckable="True"
+                                  Click="ToggleCurrentSiteAdBlocker_Click"/>
+                        <MenuItem x:Name="CurrentSiteCookieBlockerMenuItem"
+                                  Header="Bloqueur de cookies"
+                                  IsCheckable="True"
+                                  Click="ToggleCurrentSiteCookieBlocker_Click"/>
                         <Separator/>
                         <MenuItem x:Name="CurrentSiteProtectionMenuItem"
                                   Header="Désactiver sur ce site"
@@ -398,7 +408,37 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Rectangle Grid.Column="8"
+            <!-- Update Button -->
+            <Button x:Name="UpdateButton" Grid.Column="8" Width="28" Height="28" Margin="4,0,0,0"
+                    Padding="4" Cursor="Hand" Click="UpdateButton_Click" ToolTip="{Binding UpdateToolTipText}">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource IconHoverButtonStyle}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsUpdateAvailable}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+                <Button.ContextMenu>
+                    <ContextMenu x:Name="UpdateContextMenu" Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
+                        <MenuItem Header="{Binding UpdateMenuHeader}" IsEnabled="False"/>
+                        <Separator/>
+                        <MenuItem Header="Installer et redémarrer"
+                                  Command="{Binding ApplyUpdateCommand}"
+                                  FontWeight="Bold"/>
+                    </ContextMenu>
+                </Button.ContextMenu>
+                <Grid>
+                    <Viewbox Width="17" Height="17" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Path Fill="#22C55E"
+                              Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M11,7V13H8L12,17L16,13H13V7H11Z"/>
+                    </Viewbox>
+                </Grid>
+            </Button>
+
+            <Rectangle Grid.Column="9"
                        Width="1"
                        Height="20"
                        Margin="5,0,28,0"
