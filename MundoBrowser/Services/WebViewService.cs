@@ -43,6 +43,16 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     public WebView2? GetWebViewForTab(TabViewModel tab) => _webViews.TryGetValue(tab, out var wv) ? wv : null;
 
+    public WebView2? GetAnyActiveWebView() => _activeWebView ?? _webViews.Values.FirstOrDefault(w => w.CoreWebView2 != null);
+
+    public IReadOnlyList<WebView2> GetAllWebViews()
+    {
+        lock (_initializationTasks)
+        {
+            return _webViews.Values.ToList();
+        }
+    }
+
     public WebViewService(IAppSettingsService settingsService, IAdBlockerService adBlockerService, IUpdateService updateService)
     {
         _settingsService = settingsService;
@@ -65,7 +75,19 @@ public partial class WebViewService : IWebViewService, IDisposable
         var options = new CoreWebView2EnvironmentOptions
         {
             AreBrowserExtensionsEnabled = true,
-            EnableTrackingPrevention = true
+            EnableTrackingPrevention = true,
+            AdditionalBrowserArguments = string.Join(" ",
+                "--enable-gpu-rasterization",
+                "--enable-zero-copy",
+                "--ignore-gpu-blocklist",
+                "--enable-smooth-scrolling",
+                "--enable-accelerated-2d-canvas",
+                "--enable-accelerated-video-decode",
+                "--enable-features=CanvasOopRasterization,UseSkiaRenderer,VaapiVideoDecoder,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
+                "--num-raster-threads=4",
+                "--enable-highres-timer",
+                "--enable-quic"
+            )
         };
 
         var userDataFolder = Path.Combine(AppRuntime.LocalDataDirectory, "WebView2Data");
@@ -103,7 +125,7 @@ public partial class WebViewService : IWebViewService, IDisposable
             {
                 if (wv.CoreWebView2 != null)
                 {
-                    wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+                    wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
                 }
             }
             catch (ObjectDisposedException) { }
@@ -134,7 +156,7 @@ public partial class WebViewService : IWebViewService, IDisposable
             containerGrid = new System.Windows.Controls.Grid();
 
             webView = new WebView2();
-            webView.DefaultBackgroundColor = System.Drawing.Color.White;
+            webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 24, 24, 26);
             containerGrid.Children.Add(webView);
 
             _container.Children.Add(containerGrid);
@@ -190,6 +212,8 @@ public partial class WebViewService : IWebViewService, IDisposable
                     else document.addEventListener('DOMContentLoaded', inject, { once: true });
                 })();
             ");
+
+            await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ChromeWebStoreHelper.InjectionScript);
 
             // AdBlocker Integration (Network and Cosmetic)
             var adBlocker = _adBlockerService;
@@ -301,14 +325,6 @@ public partial class WebViewService : IWebViewService, IDisposable
                         {
                             var pageId = value.GetString();
                             tab.AddressUrl = $"about:preferences#{pageId}";
-                            // Notify UI to update the address box text without triggering OnTabPropertyChanged
-                            if (System.Windows.Application.Current.MainWindow is MainWindow mw && 
-                                mw.DataContext is MainViewModel vm && vm.SelectedTab == tab)
-                            {
-                                // We use a trick to update the ViewModel property directly
-                                // but we need to ensure the UI follows
-                                vm.AddressBarText = tab.AddressUrl;
-                            }
                         }
                         else
                         {
@@ -398,29 +414,12 @@ public partial class WebViewService : IWebViewService, IDisposable
         ";
     }
 
-    public async Task SwitchToTabAsync(TabViewModel tab, WebView2 webView)
+    public Task SwitchToTabAsync(TabViewModel tab, WebView2 webView)
     {
         if (_activeTabContainer != null && _activeTabContainer.MainWebView != webView)
         {
             _activeTabContainer.ContainerGrid.Visibility = Visibility.Collapsed;
-            try
-            {
-                if (_activeTabContainer.MainWebView.CoreWebView2 != null)
-                {
-                    // Lower memory priority for background tab
-                    _activeTabContainer.MainWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
-                    
-                    // Suspend the tab if it's not playing audio to save CPU/RAM
-                    bool isPlayingAudio = false;
-                    try { isPlayingAudio = _activeTabContainer.MainWebView.CoreWebView2.IsDocumentPlayingAudio; } catch { }
-                    
-                    if (!isPlayingAudio)
-                    {
-                        await _activeTabContainer.MainWebView.CoreWebView2.TrySuspendAsync();
-                    }
-                }
-            }
-            catch { }
+            _ = TrySuspendWebView(_activeTabContainer.MainWebView);
         }
 
         if (_tabContainers.TryGetValue(tab, out var currentContainer))
@@ -432,17 +431,119 @@ public partial class WebViewService : IWebViewService, IDisposable
             tab.LastAccessed = DateTime.Now;
             tab.IsDiscarded = false;
             
-            try
+            TryResumeWebView(_activeWebView);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateSplitViewLayoutAsync(
+        bool isSplit,
+        TabViewModel? primaryTab,
+        TabViewModel? secondaryTab,
+        TabViewModel? activeTab,
+        System.Windows.Controls.Panel? primaryHost,
+        System.Windows.Controls.Panel? secondaryHost)
+    {
+        if (_container == null) return Task.CompletedTask;
+
+        if (isSplit && primaryTab != null && secondaryTab != null && primaryHost != null && secondaryHost != null)
+        {
+            foreach (var kvp in _tabContainers)
             {
-                if (_activeWebView.CoreWebView2 != null)
+                var tab = kvp.Key;
+                var container = kvp.Value;
+
+                if (tab == primaryTab)
                 {
-                    // Resume and restore normal memory priority
-                    _activeWebView.CoreWebView2.Resume();
-                    _activeWebView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+                    ReParentContainer(container.ContainerGrid, primaryHost);
+                    container.ContainerGrid.Visibility = Visibility.Visible;
+                    TryResumeWebView(container.MainWebView);
+                }
+                else if (tab == secondaryTab)
+                {
+                    ReParentContainer(container.ContainerGrid, secondaryHost);
+                    container.ContainerGrid.Visibility = Visibility.Visible;
+                    TryResumeWebView(container.MainWebView);
+                }
+                else
+                {
+                    ReParentContainer(container.ContainerGrid, _container);
+                    container.ContainerGrid.Visibility = Visibility.Collapsed;
+                    _ = TrySuspendWebView(container.MainWebView);
                 }
             }
-            catch { }
+
+            if (activeTab != null && _webViews.TryGetValue(activeTab, out var activeWv))
+            {
+                _activeWebView = activeWv;
+            }
         }
+        else
+        {
+            foreach (var kvp in _tabContainers)
+            {
+                var tab = kvp.Key;
+                var container = kvp.Value;
+
+                ReParentContainer(container.ContainerGrid, _container);
+                if (tab == activeTab)
+                {
+                    container.ContainerGrid.Visibility = Visibility.Visible;
+                    TryResumeWebView(container.MainWebView);
+                    _activeWebView = container.MainWebView;
+                    _activeTabContainer = container;
+                }
+                else
+                {
+                    container.ContainerGrid.Visibility = Visibility.Collapsed;
+                    _ = TrySuspendWebView(container.MainWebView);
+                }
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static void ReParentContainer(System.Windows.Controls.Grid grid, System.Windows.Controls.Panel newParent)
+    {
+        if (grid.Parent is System.Windows.Controls.Panel oldParent)
+        {
+            if (oldParent == newParent) return;
+            oldParent.Children.Remove(grid);
+        }
+        newParent.Children.Add(grid);
+    }
+
+    private static void TryResumeWebView(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 != null)
+            {
+                webView.CoreWebView2.Resume();
+                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+            }
+        }
+        catch { }
+    }
+
+    private static async Task TrySuspendWebView(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 != null)
+            {
+                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+                bool isPlaying = false;
+                try { isPlaying = webView.CoreWebView2.IsDocumentPlayingAudio; } catch { }
+                if (!isPlaying)
+                {
+                    await webView.CoreWebView2.TrySuspendAsync();
+                }
+            }
+        }
+        catch { }
     }
 
     public Task<WebView2?> OpenDevToolsForTabAsync(TabViewModel tab)
@@ -453,15 +554,6 @@ public partial class WebViewService : IWebViewService, IDisposable
             return Task.FromResult<WebView2?>(webView);
         }
         return Task.FromResult<WebView2?>(null);
-    }
-
-    public void CloseDevToolsForTab(TabViewModel tab)
-    {
-    }
-
-    public bool IsDevToolsOpenForTab(TabViewModel tab)
-    {
-        return false;
     }
 
     public Task ToggleDevToolsForTabAsync(TabViewModel tab)

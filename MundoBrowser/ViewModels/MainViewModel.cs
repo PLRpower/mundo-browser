@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MundoBrowser.Interfaces;
@@ -12,36 +11,15 @@ namespace MundoBrowser.ViewModels
         private readonly IAppSettingsService _appSettingsService;
         private readonly IAdBlockerService _adBlockerService;
         private readonly IUpdateService _updateService;
+        private readonly IWebViewService _webViewService;
+
         public IAppSettingsService AppSettingsService => _appSettingsService;
         internal IAdBlockerService AdBlockerService => _adBlockerService;
         public IUpdateService UpdateService => _updateService;
-
-        [ObservableProperty]
-        private bool _isUpdateAvailable;
-
-        [ObservableProperty]
-        private bool _isUpdateDownloading;
-
-        [ObservableProperty]
-        private bool _isUpdateReady;
-
-        [ObservableProperty]
-        private double _updateProgress;
-
-        [ObservableProperty]
-        private string? _updateVersionText;
-
-        [ObservableProperty]
-        private string _updateToolTipText = "Mise à jour disponible";
-
-        [ObservableProperty]
-        private string _updateMenuHeader = "Mise à jour disponible";
-
-        [RelayCommand]
-        private void ApplyUpdate() => _updateService.ApplyUpdateAndRestart();
-
-        [RelayCommand]
-        private async Task CheckForUpdates() => await _updateService.CheckForUpdatesManualAsync();
+        public IWebViewService WebViewService => _webViewService;
+        public IHistoryManager HistoryManager { get; }
+        public ISessionManager SessionManager { get; }
+        public IFaviconService FaviconService { get; }
 
         [ObservableProperty]
         private ObservableCollection<TabViewModel> _tabs = new();
@@ -59,11 +37,19 @@ namespace MundoBrowser.ViewModels
         private bool _isSidebarVisible = true;
 
         [ObservableProperty]
+        private bool _isTopBarVisible = true;
+
+        [ObservableProperty]
         private double _sidebarWidth = 250;
 
         partial void OnIsSidebarVisibleChanged(bool value)
         {
             _appSettingsService.Update(settings => settings.IsSidebarVisible = value);
+        }
+
+        partial void OnIsTopBarVisibleChanged(bool value)
+        {
+            _appSettingsService.Update(settings => settings.IsTopBarVisible = value);
         }
 
         [ObservableProperty]
@@ -75,13 +61,6 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private bool _isDraggingTab;
 
-        public event EventHandler? TabDragCompleted;
-
-        public void NotifyTabDragCompleted()
-        {
-            TabDragCompleted?.Invoke(this, EventArgs.Empty);
-        }
-
         [ObservableProperty]
         private string _addressBarText = "";
 
@@ -89,99 +68,114 @@ namespace MundoBrowser.ViewModels
         private ObservableCollection<ExtensionInfo> _installedExtensions = new();
 
         [ObservableProperty]
-        private TabViewModel? _activeMediaTab;
-
-        partial void OnActiveMediaTabChanged(TabViewModel? value)
-        {
-            if (value != null) IsMediaBarVisible = true;
-        }
+        private bool _hasActiveDownloads;
 
         [ObservableProperty]
-        private bool _isMediaBarVisible = true;
+        private int _activeDownloadCount;
 
-        public bool IsAdBlockerEnabled
+        public event EventHandler? TabDragCompleted;
+        public event EventHandler? NewTabRequested;
+
+        public void NotifyTabDragCompleted()
         {
-            get => _adBlockerService.IsAdBlockerEnabled;
-            set
+            TabDragCompleted?.Invoke(this, EventArgs.Empty);
+        }
+
+        public MainViewModel(
+            IAppSettingsService appSettingsService,
+            IHistoryManager historyManager,
+            ISessionManager sessionManager,
+            IFaviconService faviconService,
+            IAdBlockerService adBlockerService,
+            IUpdateService updateService,
+            IWebViewService webViewService)
+        {
+            _appSettingsService = appSettingsService;
+            _adBlockerService = adBlockerService;
+            _updateService = updateService;
+            _webViewService = webViewService;
+            HistoryManager = historyManager;
+            SessionManager = sessionManager;
+            FaviconService = faviconService;
+
+            _webViewService.ActiveDownloadsChanged += OnActiveDownloadsChanged;
+            _updateService.UpdateStatusChanged += OnUpdateStatusChanged;
+            _appSettingsService.SettingsChanged += OnAppSettingsChanged;
+            Tabs.CollectionChanged += (_, _) => UpdateSplitTabFlags();
+
+            IsSidebarVisible = _appSettingsService.Current.IsSidebarVisible;
+            IsTopBarVisible = _appSettingsService.Current.IsTopBarVisible;
+            SidebarWidth = _appSettingsService.Current.SidebarWidth;
+
+            for (int i = 0; i < 6; i++) PinnedTabs.Add(new PinnedTab(i));
+
+            var session = SessionManager.LoadSession();
+            if (session != null)
             {
-                _adBlockerService.IsAdBlockerEnabled = value;
-                OnPropertyChanged(nameof(IsAdBlockerEnabled));
+                RestoreSession(session);
             }
-        }
-
-        public bool IsCookieBlockerEnabled
-        {
-            get => _adBlockerService.IsCookieBlockerEnabled;
-            set
+            else
             {
-                _adBlockerService.IsCookieBlockerEnabled = value;
-                OnPropertyChanged(nameof(IsCookieBlockerEnabled));
+                CreateDefaultTab();
             }
+
+            if (SelectedTab == null) SelectedTab = Tabs.FirstOrDefault() ?? PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
+            if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
         }
 
-        [RelayCommand]
-        private void CloseMediaBar() => IsMediaBarVisible = false;
-
-        [RelayCommand]
-        private void MediaPlayPause()
+        private void OnAppSettingsChanged(AppSettings settings)
         {
-            if (ActiveMediaTab != null) ActiveMediaTab.IsMediaPaused = !ActiveMediaTab.IsMediaPaused;
-            RequestMediaAction("playPause");
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                if (IsSidebarVisible != settings.IsSidebarVisible)
+                    IsSidebarVisible = settings.IsSidebarVisible;
+                if (IsTopBarVisible != settings.IsTopBarVisible)
+                    IsTopBarVisible = settings.IsTopBarVisible;
+                if (Math.Abs(SidebarWidth - settings.SidebarWidth) > 0.1)
+                    SidebarWidth = settings.SidebarWidth;
+            });
         }
-
-        [RelayCommand]
-        private void MediaNext() => RequestMediaAction("next");
-
-        [RelayCommand]
-        private void MediaPrevious() => RequestMediaAction("previous");
-
-        [RelayCommand]
-        private void MediaVolume()
-        {
-            if (ActiveMediaTab != null) ActiveMediaTab.IsMediaMuted = !ActiveMediaTab.IsMediaMuted;
-            RequestMediaAction("volume");
-        }
-
-        [RelayCommand]
-        private void MediaSeek(double percent) => RequestMediaAction($"seek:{percent.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-
-        public event EventHandler<string>? MediaActionRequested;
-        private void RequestMediaAction(string action) => MediaActionRequested?.Invoke(this, action);
-
-        // Window state properties
-        [ObservableProperty]
-        private double _windowWidth = 1280;
-
-        [ObservableProperty]
-        private double _windowHeight = 840;
-
-        [ObservableProperty]
-        private double _windowLeft = 100;
-
-        [ObservableProperty]
-        private double _windowTop = 100;
-
-        [ObservableProperty]
-        private WindowState _windowState = WindowState.Normal;
-
-        public IHistoryManager HistoryManager { get; }
-        public ISessionManager SessionManager { get; }
-        public IFaviconService FaviconService { get; }
 
         partial void OnSelectedTabChanged(TabViewModel? value)
         {
-            SelectedListTab = (value != null && Tabs.Contains(value)) ? value : null;
-
             if (value != null)
             {
                 foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == value);
                 IsPendingNewTab = false;
                 AddressBarText = value.AddressUrl;
+
+                if (PrimarySplitTab != null && SecondarySplitTab != null)
+                {
+                    if (value == PrimarySplitTab)
+                    {
+                        _focusedSplitPane = 0;
+                        OnPropertyChanged(nameof(FocusedSplitPane));
+                        IsSplitViewActive = true;
+                    }
+                    else if (value == SecondarySplitTab)
+                    {
+                        _focusedSplitPane = 1;
+                        OnPropertyChanged(nameof(FocusedSplitPane));
+                        IsSplitViewActive = true;
+                    }
+                    else
+                    {
+                        IsSplitViewActive = false;
+                    }
+                }
+                else if (IsSplitViewActive)
+                {
+                    IsSplitViewActive = false;
+                }
             }
             else
             {
                 foreach (var p in PinnedTabs) p.IsSelected = false;
             }
+
+            SelectedListTab = (value != null && Tabs.Contains(value))
+                ? (value == SecondarySplitTab ? PrimarySplitTab : value)
+                : null;
         }
 
         partial void OnSelectedListTabChanged(TabViewModel? value)
@@ -189,8 +183,25 @@ namespace MundoBrowser.ViewModels
             if (value != null) SelectedTab = value;
         }
 
+        private void CreateDefaultTab()
+        {
+            var startPage = _appSettingsService.Current.StartPage;
+            var newTab = new TabViewModel { Title = "New Tab", Url = startPage, AddressUrl = startPage, IsDiscarded = false };
+            Tabs.Add(newTab);
+            SelectedTab = newTab;
+        }
+
         [RelayCommand]
         public void ToggleSidebar() => IsSidebarVisible = !IsSidebarVisible;
+
+        [RelayCommand]
+        public void ToggleTopBar() => IsTopBarVisible = !IsTopBarVisible;
+
+        public void SetSidebarWidth(double width)
+        {
+            SidebarWidth = Math.Clamp(width, 200, 400);
+            _appSettingsService.Update(settings => settings.SidebarWidth = SidebarWidth);
+        }
 
         [RelayCommand]
         public void OpenSettings()
@@ -219,15 +230,6 @@ namespace MundoBrowser.ViewModels
                        StringComparison.OrdinalIgnoreCase);
         }
 
-        private readonly IWebViewService _webViewService;
-        public IWebViewService WebViewService => _webViewService;
-
-        [ObservableProperty]
-        private bool _hasActiveDownloads;
-
-        [ObservableProperty]
-        private int _activeDownloadCount;
-
         [RelayCommand]
         public void OpenDownloads() => _webViewService.OpenDownloadDialog();
 
@@ -240,111 +242,6 @@ namespace MundoBrowser.ViewModels
             });
         }
 
-        public MainViewModel(
-            IAppSettingsService appSettingsService,
-            IHistoryManager historyManager,
-            ISessionManager sessionManager,
-            IFaviconService faviconService,
-            IAdBlockerService adBlockerService,
-            IUpdateService updateService,
-            IWebViewService webViewService)
-        {
-            _appSettingsService = appSettingsService;
-            _adBlockerService = adBlockerService;
-            _updateService = updateService;
-            _webViewService = webViewService;
-            _webViewService.ActiveDownloadsChanged += OnActiveDownloadsChanged;
-            _updateService.UpdateStatusChanged += OnUpdateStatusChanged;
-            HistoryManager = historyManager;
-            SessionManager = sessionManager;
-            FaviconService = faviconService;
-
-            IsSidebarVisible = _appSettingsService.Current.IsSidebarVisible;
-            SidebarWidth = _appSettingsService.Current.SidebarWidth;
-            
-            for (int i = 0; i < 6; i++) PinnedTabs.Add(new PinnedTab(i));
-
-            var session = SessionManager.LoadSession();
-            if (session != null)
-            {
-                // Restore Window State
-                WindowWidth = session.WindowWidth;
-                WindowHeight = session.WindowHeight;
-                WindowLeft = session.WindowLeft;
-                WindowTop = session.WindowTop;
-                WindowState = (WindowState)session.WindowState;
-
-                if (session.Tabs.Count > 0 || session.PinnedTabs.Count > 0)
-                {
-                    foreach (var tabData in session.Tabs)
-                    {
-                        Tabs.Add(new TabViewModel { 
-                            Title = tabData.Title ?? "New Tab", 
-                            Url = tabData.Url ?? _appSettingsService.Current.StartPage,
-                            AddressUrl = tabData.Url ?? _appSettingsService.Current.StartPage,
-                            FaviconUrl = ResolveStoredFavicon(tabData),
-                            FaviconRelativePath = tabData.FaviconRelativePath,
-                            ZoomFactor = tabData.ZoomFactor > 0 ? tabData.ZoomFactor : 1.0
-                        });
-                    }
-
-                    foreach (var pinnedData in session.PinnedTabs)
-                    {
-                        if (pinnedData.SlotIndex >= 0 && pinnedData.SlotIndex < PinnedTabs.Count)
-                        {
-                            PinnedTabs[pinnedData.SlotIndex].Tab = new TabViewModel { 
-                                Title = pinnedData.Title ?? "New Tab", 
-                                Url = pinnedData.Url ?? _appSettingsService.Current.StartPage,
-                                AddressUrl = pinnedData.Url ?? _appSettingsService.Current.StartPage,
-                                FaviconUrl = ResolveStoredFavicon(pinnedData),
-                                FaviconRelativePath = pinnedData.FaviconRelativePath,
-                                ZoomFactor = pinnedData.ZoomFactor > 0 ? pinnedData.ZoomFactor : 1.0
-                            };
-                        }
-                    }
-
-                    if (session.IsSelectedTabPinned)
-                    {
-                        if (session.SelectedTabIndex >= 0 && session.SelectedTabIndex < PinnedTabs.Count)
-                            SelectedTab = PinnedTabs[session.SelectedTabIndex].Tab;
-                    }
-                    else
-                    {
-                        if (session.SelectedTabIndex >= 0 && session.SelectedTabIndex < Tabs.Count)
-                            SelectedTab = Tabs[session.SelectedTabIndex];
-                    }
-                }
-                else CreateDefaultTab();
-            }
-            else CreateDefaultTab();
-
-            if (SelectedTab == null) SelectedTab = Tabs.FirstOrDefault() ?? PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
-            if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
-        }
-
-        private void CreateDefaultTab()
-        {
-            var startPage = _appSettingsService.Current.StartPage;
-            var newTab = new TabViewModel { Title = "New Tab", Url = startPage, AddressUrl = startPage, IsDiscarded = false };
-            Tabs.Add(newTab);
-            SelectedTab = newTab;
-        }
-
-        private string? ResolveStoredFavicon(TabSessionData tabData)
-        {
-            return !string.IsNullOrWhiteSpace(tabData.FaviconRelativePath)
-                ? FaviconService.GetAbsoluteFaviconPath(tabData.FaviconRelativePath) ?? tabData.FaviconUrl
-                : tabData.FaviconUrl;
-        }
-
-        public async Task SaveCurrentSessionAsync()
-        {
-            await HistoryManager.FlushAsync();
-            await SessionManager.SaveSessionAsync(this);
-        }
-
-        public event EventHandler? NewTabRequested;
-
         [RelayCommand]
         public void AddNewTab()
         {
@@ -354,19 +251,13 @@ namespace MundoBrowser.ViewModels
             NewTabRequested?.Invoke(this, EventArgs.Empty);
         }
 
-        public void SetSidebarWidth(double width)
-        {
-            SidebarWidth = Math.Clamp(width, 200, 400);
-            _appSettingsService.Update(settings => settings.SidebarWidth = SidebarWidth);
-        }
-
         public TabViewModel AddTabWithUrl(string url, TabViewModel? openedByTab = null, bool isFromNewWindow = false)
         {
-            var newTab = new TabViewModel 
-            { 
-                Title = "Loading...", 
-                Url = url, 
-                AddressUrl = url, 
+            var newTab = new TabViewModel
+            {
+                Title = "Loading...",
+                Url = url,
+                AddressUrl = url,
                 IsDiscarded = false,
                 IsCreatedFromNewWindow = isFromNewWindow,
                 OpenedByTab = openedByTab
@@ -408,6 +299,12 @@ namespace MundoBrowser.ViewModels
         {
             if (tab == null) return;
             if (tab.IsClosing) return;
+
+            if ((tab == PrimarySplitTab || tab == SecondarySplitTab) && IsSplitViewActive)
+            {
+                await CloseSplitCombination(tab);
+                return;
+            }
 
             bool wasSelected = (SelectedTab == tab);
             bool removed = false;
@@ -482,7 +379,6 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public async Task CloseOtherTabs()
         {
-            // We only clean the "regular" tabs list. Pinned tabs (the grid) are kept.
             var toRemove = Tabs.Where(t => t != SelectedTab && !t.IsClosing).ToList();
             if (toRemove.Count == 0) return;
 
@@ -491,34 +387,6 @@ namespace MundoBrowser.ViewModels
             await Task.Delay(150);
 
             foreach (var tab in toRemove) Tabs.Remove(tab);
-        }
-
-        private void OnUpdateStatusChanged(object? sender, EventArgs e)
-        {
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                IsUpdateAvailable = _updateService.IsUpdateAvailable;
-                IsUpdateDownloading = _updateService.IsDownloading;
-                IsUpdateReady = _updateService.IsUpdateReady;
-                UpdateProgress = _updateService.DownloadProgress;
-                UpdateVersionText = _updateService.NewVersionText;
-
-                if (IsUpdateReady)
-                {
-                    UpdateToolTipText = $"Mise à jour v{UpdateVersionText} prête. Cliquez pour installer et redémarrer.";
-                    UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} prête";
-                }
-                else if (IsUpdateDownloading)
-                {
-                    UpdateToolTipText = $"Téléchargement de la mise à jour v{UpdateVersionText} ({UpdateProgress:F0}%)...";
-                    UpdateMenuHeader = $"Téléchargement v{UpdateVersionText} ({UpdateProgress:F0}%)";
-                }
-                else if (IsUpdateAvailable)
-                {
-                    UpdateToolTipText = $"Mise à jour v{UpdateVersionText} disponible";
-                    UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} disponible";
-                }
-            });
         }
     }
 }

@@ -17,5 +17,15 @@ namespace MundoBrowser.Interfaces
         /// Downloads and installs an extension from a Chrome Web Store ID.
         /// </summary>
         Task<ExtensionInfo> InstallExtensionAsync(string extensionId, CoreWebView2Profile profile);
+
+        /// <summary>
+        /// Uninstalls an extension and deletes its downloaded files.
+        /// </summary>
+        Task RemoveExtensionAsync(string extensionId, CoreWebView2Profile profile);
+
+        /// <summary>
+        /// Uninstalls an extension by ExtensionInfo and deletes its downloaded files.
+        /// </summary>
+        Task RemoveExtensionAsync(ExtensionInfo info, CoreWebView2Profile profile);
     }
 }

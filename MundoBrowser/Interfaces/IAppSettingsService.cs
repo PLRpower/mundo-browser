@@ -6,4 +6,5 @@ public interface IAppSettingsService
 {
     AppSettings Current { get; }
     void Update(Action<AppSettings> update);
+    event Action<AppSettings>? SettingsChanged;
 }

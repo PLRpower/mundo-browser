@@ -10,6 +10,7 @@ public sealed class AppSettings
     public int EcoModeMinutes { get; set; } = 10;
     public bool MinimizeToTrayOnClose { get; set; } = true;
     public bool IsSidebarVisible { get; set; } = true;
+    public bool IsTopBarVisible { get; set; } = true;
     public double SidebarWidth { get; set; } = 250;
     public bool IsAdBlockerEnabled { get; set; } = true;
     public bool IsCookieBlockerEnabled { get; set; } = true;

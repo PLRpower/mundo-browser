@@ -1081,6 +1081,9 @@
                     if (document.getElementById('beta-channel-enabled')) {
                         document.getElementById('beta-channel-enabled').checked = data.betaChannelEnabled;
                     }
+                    if (data.appVersion && document.getElementById('app-version')) {
+                        document.getElementById('app-version').innerText = data.appVersion;
+                    }
                 }
             });
         }

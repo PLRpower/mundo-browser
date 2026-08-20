@@ -2,7 +2,6 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
-using MundoBrowser.ViewModels;
 
 namespace MundoBrowser.Services;
 
@@ -10,14 +9,12 @@ public partial class WebViewService
 {
     private void ApplySettingChange(string? key, JsonElement value)
     {
-        var vm = System.Windows.Application.Current.MainWindow?.DataContext as MainViewModel;
-
         switch (key)
         {
             case "startPage":
                 _settingsService.Update(settings =>
                 {
-                    settings.StartPage = value.GetString() ?? "";
+                    settings.StartPage = value.GetString() ?? string.Empty;
                     if (settings.UseSearchEngineAsStartPage &&
                         !string.Equals(settings.StartPage, SearchEngineHelper.GetEngineHomeUrl(settings.SearchEngine, settings.CustomSearchUrl), StringComparison.OrdinalIgnoreCase))
                     {
@@ -41,7 +38,7 @@ public partial class WebViewService
                 break;
 
             case "customSearchUrl":
-                var customUrl = value.GetString() ?? "";
+                var customUrl = value.GetString() ?? string.Empty;
                 _settingsService.Update(settings =>
                 {
                     settings.CustomSearchUrl = customUrl;
@@ -82,32 +79,24 @@ public partial class WebViewService
                 break;
 
             case "sidebarVisible":
-                if (vm != null)
-                    vm.IsSidebarVisible = value.GetBoolean();
-                else
-                    _settingsService.Update(settings => settings.IsSidebarVisible = value.GetBoolean());
+                _settingsService.Update(settings => settings.IsSidebarVisible = value.GetBoolean());
+                break;
+
+            case "topbarVisible":
+                _settingsService.Update(settings => settings.IsTopBarVisible = value.GetBoolean());
                 break;
 
             case "sidebarWidth":
-                var width = ReadDouble(value, 250);
-                if (vm != null)
-                    vm.SetSidebarWidth(width);
-                else
-                    _settingsService.Update(settings => settings.SidebarWidth = width);
+                var width = Math.Clamp(ReadDouble(value, 250), 200, 400);
+                _settingsService.Update(settings => settings.SidebarWidth = width);
                 break;
 
             case "adBlockerEnabled":
-                if (vm != null)
-                    vm.IsAdBlockerEnabled = value.GetBoolean();
-                else
-                    _adBlockerService.IsAdBlockerEnabled = value.GetBoolean();
+                _adBlockerService.IsAdBlockerEnabled = value.GetBoolean();
                 break;
 
             case "cookieBlockerEnabled":
-                if (vm != null)
-                    vm.IsCookieBlockerEnabled = value.GetBoolean();
-                else
-                    _adBlockerService.IsCookieBlockerEnabled = value.GetBoolean();
+                _adBlockerService.IsCookieBlockerEnabled = value.GetBoolean();
                 break;
 
             case "trackingPreventionEnabled":
@@ -173,11 +162,45 @@ public partial class WebViewService
 
     private void BroadcastSettingsToPages()
     {
+        var message = CreateSettingsJsonMessage();
         foreach (var webView in _webViews.Values)
-            PostSettingsToPage(webView);
+        {
+            PostSettingsMessageToPage(webView, message);
+        }
+    }
+
+    private string CreateSettingsJsonMessage()
+    {
+        var settings = _settingsService.Current;
+        return JsonSerializer.Serialize(new
+        {
+            type = "initSettings",
+            startPage = settings.StartPage,
+            searchEngine = settings.SearchEngine,
+            customSearchUrl = settings.CustomSearchUrl,
+            useSearchEngineAsStartPage = settings.UseSearchEngineAsStartPage,
+            ecoModeEnabled = settings.EcoModeEnabled,
+            ecoModeDuration = settings.EcoModeMinutes,
+            minimizeToTrayOnClose = settings.MinimizeToTrayOnClose,
+            sidebarVisible = settings.IsSidebarVisible,
+            topbarVisible = settings.IsTopBarVisible,
+            sidebarWidth = settings.SidebarWidth,
+            adBlockerEnabled = settings.IsAdBlockerEnabled,
+            cookieBlockerEnabled = settings.IsCookieBlockerEnabled,
+            trackingPreventionEnabled = settings.IsTrackingPreventionEnabled,
+            passwordAutosaveEnabled = settings.IsPasswordAutosaveEnabled,
+            generalAutofillEnabled = settings.IsGeneralAutofillEnabled,
+            betaChannelEnabled = settings.IsBetaChannelEnabled,
+            appVersion = AppRuntime.VersionBadgeText
+        });
     }
 
     private void PostSettingsToPage(WebView2 webView)
+    {
+        PostSettingsMessageToPage(webView, CreateSettingsJsonMessage());
+    }
+
+    private static void PostSettingsMessageToPage(WebView2 webView, string jsonMessage)
     {
         try
         {
@@ -187,28 +210,7 @@ public partial class WebViewService
                     StringComparison.OrdinalIgnoreCase))
                 return;
 
-            var settings = _settingsService.Current;
-            var message = JsonSerializer.Serialize(new
-            {
-                type = "initSettings",
-                startPage = settings.StartPage,
-                searchEngine = settings.SearchEngine,
-                customSearchUrl = settings.CustomSearchUrl,
-                useSearchEngineAsStartPage = settings.UseSearchEngineAsStartPage,
-                ecoModeEnabled = settings.EcoModeEnabled,
-                ecoModeDuration = settings.EcoModeMinutes,
-                minimizeToTrayOnClose = settings.MinimizeToTrayOnClose,
-                sidebarVisible = settings.IsSidebarVisible,
-                sidebarWidth = settings.SidebarWidth,
-                adBlockerEnabled = settings.IsAdBlockerEnabled,
-                cookieBlockerEnabled = settings.IsCookieBlockerEnabled,
-                trackingPreventionEnabled = settings.IsTrackingPreventionEnabled,
-                passwordAutosaveEnabled = settings.IsPasswordAutosaveEnabled,
-                generalAutofillEnabled = settings.IsGeneralAutofillEnabled,
-                betaChannelEnabled = settings.IsBetaChannelEnabled
-            });
-
-            webView.CoreWebView2.PostWebMessageAsJson(message);
+            webView.CoreWebView2.PostWebMessageAsJson(jsonMessage);
         }
         catch (Exception ex)
         {

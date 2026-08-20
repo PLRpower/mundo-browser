@@ -1,7 +1,18 @@
 using System.Windows;
+using System.Windows.Input;
+using MundoBrowser.Models;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
+
+public enum FloatingTopBarZone
+{
+    None,
+    Left,
+    Center,
+    Right,
+    All
+}
 
 public partial class TopBarView : System.Windows.Controls.UserControl
 {
@@ -28,6 +39,116 @@ public partial class TopBarView : System.Windows.Controls.UserControl
     {
         get => (bool)GetValue(IsSuggestionsOpenProperty);
         set => SetValue(IsSuggestionsOpenProperty, value);
+    }
+
+    public static readonly DependencyProperty IsFloatingModeProperty =
+        DependencyProperty.Register(nameof(IsFloatingMode), typeof(bool), typeof(TopBarView), new PropertyMetadata(false));
+
+    public bool IsFloatingMode
+    {
+        get => (bool)GetValue(IsFloatingModeProperty);
+        set => SetValue(IsFloatingModeProperty, value);
+    }
+
+    private void AnimateElementVisibility(FrameworkElement? element, bool show, bool animated = true)
+    {
+        if (element == null) return;
+
+        if (element.RenderTransform is not System.Windows.Media.TranslateTransform tt)
+        {
+            tt = new System.Windows.Media.TranslateTransform(0, 0);
+            element.RenderTransform = tt;
+        }
+
+        if (!animated)
+        {
+            element.BeginAnimation(UIElement.OpacityProperty, null);
+            tt.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, null);
+            element.Opacity = show ? 1.0 : 0.0;
+            tt.Y = show ? 0.0 : -25.0;
+            element.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            element.IsHitTestVisible = show;
+            return;
+        }
+
+        if (show)
+        {
+            element.Visibility = Visibility.Visible;
+            element.IsHitTestVisible = true;
+
+            var fadeAnim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                To = 1.0,
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+            };
+
+            if (element.Opacity < 0.1 || tt.Y < -20)
+                tt.Y = -25;
+
+            var slideAnim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                To = 0.0,
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+            };
+
+            element.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
+            tt.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideAnim);
+        }
+        else
+        {
+            element.IsHitTestVisible = false;
+
+            var fadeAnim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                To = 0.0,
+                Duration = TimeSpan.FromMilliseconds(140),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
+            };
+
+            var slideAnim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                To = -25.0,
+                Duration = TimeSpan.FromMilliseconds(140),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
+            };
+
+            slideAnim.Completed += (s, e) =>
+            {
+                if (element.Opacity <= 0.05 && !element.IsHitTestVisible)
+                {
+                    element.Visibility = Visibility.Collapsed;
+                }
+            };
+
+            element.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
+            tt.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideAnim);
+        }
+    }
+
+    public void SetVisibleSection(FloatingTopBarZone zone, bool animate = true)
+    {
+        bool showLeft = zone == FloatingTopBarZone.Left || zone == FloatingTopBarZone.All;
+        bool showCenter = zone == FloatingTopBarZone.Center || zone == FloatingTopBarZone.All;
+        bool showRight = zone == FloatingTopBarZone.Right || zone == FloatingTopBarZone.All;
+
+        if (!IsFloatingMode)
+        {
+            AnimateElementVisibility(NavButtonsContainer, true, animated: false);
+            AnimateElementVisibility(UrlBarBorder, true, animated: false);
+            AnimateElementVisibility(ActionsContainer, true, animated: false);
+            return;
+        }
+
+        if (GetMainWindow() is MainWindow mw && mw.DataContext is MainViewModel vm && vm.IsSidebarVisible && !mw.IsFullscreen)
+        {
+            showLeft = false;
+        }
+
+        AnimateElementVisibility(NavButtonsContainer, showLeft, animated: animate);
+        AnimateElementVisibility(UrlBarBorder, showCenter, animated: animate);
+        AnimateElementVisibility(ActionsContainer, showRight, animated: animate);
     }
 
     public System.Windows.Controls.Primitives.Popup SuggestionsPopupControl => SuggestionsPopup;
@@ -145,23 +266,79 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         GetWebView()?.Reload();
     }
 
+    private int _openExtensionContextMenuCount;
+
+    private void ExtensionContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        _openExtensionContextMenuCount++;
+    }
+
+    private void ExtensionContextMenu_Closed(object sender, RoutedEventArgs e)
+    {
+        _openExtensionContextMenuCount = Math.Max(0, _openExtensionContextMenuCount - 1);
+    }
+
+    private void ExtensionButton_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.ContextMenu != null)
+        {
+            e.Handled = true;
+            btn.ContextMenu.PlacementTarget = btn;
+            btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            btn.ContextMenu.IsOpen = true;
+        }
+    }
+
+    public bool IsAnyMenuOrPopupOpen =>
+        IsSuggestionsOpen ||
+        _openExtensionContextMenuCount > 0 ||
+        (AdBlockerContextMenu != null && AdBlockerContextMenu.IsOpen) ||
+        (SiteDataContextMenu != null && SiteDataContextMenu.IsOpen) ||
+        (UpdateContextMenu != null && UpdateContextMenu.IsOpen);
+
+    private MainWindow? GetMainWindow()
+    {
+        return Window.GetWindow(this) as MainWindow ?? System.Windows.Application.Current.MainWindow as MainWindow;
+    }
+
     private Microsoft.Web.WebView2.Wpf.WebView2? GetWebView()
     {
-        var mw = Window.GetWindow(this) as MainWindow;
-        return mw?.GetActiveWebView();
+        return GetMainWindow()?.GetActiveWebView();
     }
 
     private void ExtensionIcon_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is System.Windows.Controls.Button btn && btn.Tag is string id && Window.GetWindow(this) is MainWindow mw)
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string id && GetMainWindow() is MainWindow mw)
             mw.ShowExtensionPopup(id, btn);
     }
 
-    private void RemoveExtension_Click(object sender, RoutedEventArgs e)
+    private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is System.Windows.Controls.MenuItem mi && mi.Tag is string id && DataContext is MainViewModel vm)
+        string? id = null;
+        if (sender is System.Windows.Controls.MenuItem mi)
         {
-            var ext = vm.InstalledExtensions.FirstOrDefault(x => x.Id == id);
+            if (mi.Tag is string tagId && !string.IsNullOrEmpty(tagId))
+                id = tagId;
+            else if (mi.DataContext is ExtensionInfo extInfo)
+                id = extInfo.Id;
+            else if (mi.Parent is System.Windows.Controls.ContextMenu cm && cm.PlacementTarget is System.Windows.Controls.Button btn)
+            {
+                if (btn.Tag is string btnTag && !string.IsNullOrEmpty(btnTag))
+                    id = btnTag;
+                else if (btn.DataContext is ExtensionInfo btnExtInfo)
+                    id = btnExtInfo.Id;
+            }
+        }
+
+        if (string.IsNullOrEmpty(id)) return;
+
+        if (GetMainWindow() is MainWindow mw)
+        {
+            await mw.UninstallExtensionAsync(id);
+        }
+        else if (DataContext is MainViewModel vm)
+        {
+            var ext = vm.InstalledExtensions.FirstOrDefault(x => x.Id == id || (!string.IsNullOrEmpty(x.StoreId) && x.StoreId == id));
             if (ext != null) vm.InstalledExtensions.Remove(ext);
         }
     }

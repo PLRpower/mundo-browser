@@ -11,17 +11,18 @@ public sealed class AppSettingsService : IAppSettingsService
     private const long MaxSettingsFileBytes = 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
     private readonly string _settingsFilePath;
     private readonly string _backupFilePath;
 
     public AppSettings Current { get; }
+    public event Action<AppSettings>? SettingsChanged;
 
     public AppSettingsService()
     {
         var appFolder = AppRuntime.LocalDataDirectory;
-
         Directory.CreateDirectory(appFolder);
+
         _settingsFilePath = Path.Combine(appFolder, "settings.json");
         _backupFilePath = Path.Combine(appFolder, "settings.json.bak");
         Current = LoadSettings();
@@ -36,6 +37,7 @@ public sealed class AppSettingsService : IAppSettingsService
             Normalize(Current);
             SaveSettings();
         }
+        SettingsChanged?.Invoke(Current);
     }
 
     private AppSettings LoadSettings()
@@ -49,9 +51,11 @@ public sealed class AppSettingsService : IAppSettingsService
     {
         try
         {
-            return File.Exists(path) && new FileInfo(path).Length <= MaxSettingsFileBytes
-                ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path))
-                : null;
+            if (!File.Exists(path) || new FileInfo(path).Length > MaxSettingsFileBytes)
+                return null;
+
+            string content = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<AppSettings>(content);
         }
         catch (Exception ex)
         {
@@ -62,37 +66,41 @@ public sealed class AppSettingsService : IAppSettingsService
 
     private void SaveSettings()
     {
-        var temporaryPath = _settingsFilePath + ".tmp";
-
         try
         {
-            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(Current, JsonOptions));
+            string json = JsonSerializer.Serialize(Current, JsonOptions);
+            string tempPath = _settingsFilePath + ".tmp";
+            File.WriteAllText(tempPath, json);
 
             if (File.Exists(_settingsFilePath))
-                File.Replace(temporaryPath, _settingsFilePath, _backupFilePath, ignoreMetadataErrors: true);
+            {
+                try
+                {
+                    File.Replace(tempPath, _settingsFilePath, _backupFilePath, ignoreMetadataErrors: true);
+                }
+                catch
+                {
+                    if (File.Exists(_backupFilePath))
+                        File.Delete(_backupFilePath);
+                    File.Move(_settingsFilePath, _backupFilePath);
+                    File.Move(tempPath, _settingsFilePath);
+                }
+            }
             else
-                File.Move(temporaryPath, _settingsFilePath);
+            {
+                File.Move(tempPath, _settingsFilePath);
+            }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
-
-            try
-            {
-                if (File.Exists(temporaryPath))
-                    File.Delete(temporaryPath);
-            }
-            catch
-            {
-                // Best effort cleanup only.
-            }
         }
     }
 
     private static void Normalize(AppSettings settings)
     {
         settings.SearchEngine = SearchEngineHelper.NormalizeSearchEngine(settings.SearchEngine);
-        settings.CustomSearchUrl = settings.CustomSearchUrl?.Trim() ?? "";
+        settings.CustomSearchUrl = settings.CustomSearchUrl?.Trim() ?? string.Empty;
 
         if (settings.UseSearchEngineAsStartPage)
         {
@@ -111,6 +119,7 @@ public sealed class AppSettingsService : IAppSettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(site => site, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
         settings.CookieBlockDisabledSites = (settings.CookieBlockDisabledSites ?? [])
             .Select(site => site.Trim().TrimEnd('.').ToLowerInvariant())
             .Where(site => !string.IsNullOrWhiteSpace(site))

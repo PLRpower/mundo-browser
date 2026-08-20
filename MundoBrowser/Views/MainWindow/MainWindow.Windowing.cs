@@ -3,10 +3,12 @@ using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 using InputMouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using InputMouseEventArgs = System.Windows.Input.MouseEventArgs;
+
 
 namespace MundoBrowser;
 
@@ -23,6 +25,8 @@ public partial class MainWindow
     private const int WmExitSizeMove = 0x0232;
     private const int HtClient = 1;
     private const int HtCaption = 2;
+    private const int HtMinButton = 8;
+    private const int HtMaxButton = 9;
     private const int HtLeft = 10;
     private const int HtRight = 11;
     private const int HtTop = 12;
@@ -31,6 +35,9 @@ public partial class MainWindow
     private const int HtBottom = 15;
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
+    private const int HtClose = 20;
+    private const int HtHelp = 21;
+
 
     private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -120,9 +127,13 @@ public partial class MainWindow
             WindowTitleBar.Visibility = Visibility.Collapsed;
 
         HideFloatingSidebar(animate: false);
+        HideFloatingTopBar(animate: false);
 
         if (DataContext is MainViewModel vm)
+        {
             UpdateSidebarWidth(hideUI ? false : vm.IsSidebarVisible);
+            UpdateTopBarHeight(hideUI ? false : vm.IsTopBarVisible, animate: false);
+        }
 
         ApplyFullscreenBounds();
         ReapplyFullscreenBoundsAfterMaximizeRestore();
@@ -130,7 +141,10 @@ public partial class MainWindow
         NativeMethods.SuppressAccentBorder(this);
         UpdateResizeOverlayState();
         Dispatcher.BeginInvoke(
-            new Action(() => UpdateEdgeTriggerState(forceReopen: true)),
+            new Action(() => {
+                UpdateEdgeTriggerState(forceReopen: true);
+                UpdateTopEdgeTriggerState(forceReopen: true);
+            }),
             System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
@@ -171,9 +185,13 @@ public partial class MainWindow
                 WindowTitleBar.Visibility = Visibility.Visible;
 
             HideFloatingSidebar(animate: false);
+            HideFloatingTopBar(animate: false);
 
             if (DataContext is MainViewModel vm)
+            {
                 UpdateSidebarWidth(vm.IsSidebarVisible);
+                UpdateTopBarHeight(vm.IsTopBarVisible, animate: false);
+            }
 
             OnWindowStateChanged();
         }
@@ -185,6 +203,7 @@ public partial class MainWindow
         UpdateResizeOverlayState(forceReopen: true);
         Dispatcher.BeginInvoke(new Action(UpdateWindowFrameVisuals), System.Windows.Threading.DispatcherPriority.ContextIdle);
         UpdateEdgeTriggerState(forceReopen: true);
+        UpdateTopEdgeTriggerState(forceReopen: true);
     }
 
     private void UpdateWindowFrameVisuals()
@@ -200,7 +219,9 @@ public partial class MainWindow
         _isInSizeMove = true;
         SetResizeOverlayOpen(false);
         HideFloatingSidebar(animate: false);
+        HideFloatingTopBar(animate: false);
         UpdateEdgeTriggerState();
+        UpdateTopEdgeTriggerState();
 
         _mediaTimerWasEnabledBeforeSizeMove = _globalMediaTimer.IsEnabled;
         _globalMediaTimer.Stop();
@@ -219,6 +240,7 @@ public partial class MainWindow
         SyncWindowPlacementToViewModel();
         UpdateResizeOverlayState(forceReopen: true);
         UpdateEdgeTriggerState(forceReopen: true);
+        UpdateTopEdgeTriggerState(forceReopen: true);
     }
 
     private void SyncWindowPlacementToViewModel()
@@ -464,8 +486,11 @@ public partial class MainWindow
 
         MainGrid.Margin = new Thickness(0);
 
-        if (WindowTitleBar != null)
-            WindowTitleBar.Height = 40;
+        if (DataContext is MainViewModel vm)
+        {
+            UpdateTopBarHeight(vm.IsTopBarVisible, animate: false);
+            UpdateSidebarWidth(vm.IsSidebarVisible, animate: false);
+        }
 
         UpdateWindowFrameVisuals();
         UpdateResizeOverlayState(forceResizeOverlayReopen);
@@ -514,6 +539,53 @@ public partial class MainWindow
         }
     }
 
+    private void TitleBar_PreviewMouseRightButtonUp(object sender, InputMouseButtonEventArgs e)
+    {
+        if (IsInteractiveTitleBarSource(e.OriginalSource as DependencyObject))
+            return;
+
+        e.Handled = true;
+        ShowSystemMenuSafe(e);
+    }
+
+    private void TitleBar_MouseRightButtonUp(object sender, InputMouseButtonEventArgs e)
+    {
+        if (IsInteractiveTitleBarSource(e.OriginalSource as DependencyObject))
+            return;
+
+        e.Handled = true;
+    }
+
+    private void ShowSystemMenuSafe(InputMouseButtonEventArgs e)
+    {
+        try
+        {
+            if (_isFullscreen)
+                return;
+
+            System.Windows.Point screenPoint;
+            if (PresentationSource.FromVisual(this) != null)
+            {
+                screenPoint = PointToScreen(e.GetPosition(this));
+            }
+            else if (e.Source is Visual visual && PresentationSource.FromVisual(visual) != null)
+            {
+                screenPoint = visual.PointToScreen(e.GetPosition((IInputElement)visual));
+            }
+            else
+            {
+                NativeMethods.GetCursorPos(out var pt);
+                screenPoint = new System.Windows.Point(pt.x, pt.y);
+            }
+
+            SystemCommands.ShowSystemMenu(this, screenPoint);
+        }
+        catch
+        {
+            // Ignore exceptions showing system menu
+        }
+    }
+
     private static bool IsInteractiveTitleBarSource(DependencyObject? source)
     {
         while (source != null)
@@ -522,14 +594,25 @@ public partial class MainWindow
                 or System.Windows.Controls.TextBox
                 or Popup
                 or System.Windows.Controls.ListBox
-                or System.Windows.Controls.ListBoxItem)
+                or System.Windows.Controls.ListBoxItem
+                or System.Windows.Controls.Menu
+                or System.Windows.Controls.MenuItem)
                 return true;
 
-            source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+            if (source is FrameworkElement fe && fe.Name == "UrlBarBorder")
+                return true;
+
+            if (source is Visual or System.Windows.Media.Media3D.Visual3D)
+                source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+            else if (source is FrameworkContentElement fce)
+                source = fce.Parent;
+            else
+                source = LogicalTreeHelper.GetParent(source);
         }
 
         return false;
     }
+
 
     private void KeepFullscreenBounds()
     {

@@ -1,4 +1,3 @@
-using MundoBrowser.ViewModels;
 using MundoBrowser.Models;
 
 namespace MundoBrowser.Interfaces
@@ -9,9 +8,9 @@ namespace MundoBrowser.Interfaces
     public interface ISessionManager
     {
         /// <summary>
-        /// Saves the current session state based on the provided MainViewModel.
+        /// Saves the current session state.
         /// </summary>
-        Task SaveSessionAsync(MainViewModel vm);
+        Task SaveSessionAsync(SessionData sessionData);
 
         /// <summary>
         /// Loads the previously saved session data.

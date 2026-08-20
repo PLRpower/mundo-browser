@@ -45,6 +45,17 @@ namespace MundoBrowser.Interfaces
         Task SwitchToTabAsync(TabViewModel tab, WebView2 webView);
 
         /// <summary>
+        /// Updates the layout of tab WebViews for Split-View or single view mode.
+        /// </summary>
+        Task UpdateSplitViewLayoutAsync(
+            bool isSplit,
+            TabViewModel? primaryTab,
+            TabViewModel? secondaryTab,
+            TabViewModel? activeTab,
+            System.Windows.Controls.Panel? primaryHost,
+            System.Windows.Controls.Panel? secondaryHost);
+
+        /// <summary>
         /// Removes and disposes the WebView2 instance for the specified tab.
         /// </summary>
         void RemoveTab(TabViewModel tab);
@@ -53,6 +64,16 @@ namespace MundoBrowser.Interfaces
         /// Gets the WebView2 instance for a tab if it exists.
         /// </summary>
         WebView2? GetWebViewForTab(TabViewModel tab);
+
+        /// <summary>
+        /// Gets the active WebView2 instance, or any available initialized WebView2 instance.
+        /// </summary>
+        WebView2? GetAnyActiveWebView();
+
+        /// <summary>
+        /// Gets all currently tracked WebView2 instances.
+        /// </summary>
+        IReadOnlyList<WebView2> GetAllWebViews();
 
         /// <summary>
         /// Registers an active download for a WebView2 instance to delay disposal until download finishes.
@@ -80,22 +101,12 @@ namespace MundoBrowser.Interfaces
         void OpenDownloadDialog();
 
         /// <summary>
-        /// Opens DevTools in a side panel to the right of the webview for the specified tab.
+        /// Opens DevTools for the specified tab.
         /// </summary>
         Task<WebView2?> OpenDevToolsForTabAsync(TabViewModel tab);
 
         /// <summary>
-        /// Closes the DevTools side panel for the specified tab.
-        /// </summary>
-        void CloseDevToolsForTab(TabViewModel tab);
-
-        /// <summary>
-        /// Returns true if the DevTools side panel is currently open for the tab.
-        /// </summary>
-        bool IsDevToolsOpenForTab(TabViewModel tab);
-
-        /// <summary>
-        /// Toggles the DevTools side panel state for the specified tab.
+        /// Toggles the DevTools state for the specified tab.
         /// </summary>
         Task ToggleDevToolsForTabAsync(TabViewModel tab);
     }

@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using Microsoft.Web.WebView2.Wpf;
+using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
@@ -19,6 +20,7 @@ public partial class MainWindow
         vm.NewTabRequested += MainViewModel_NewTabRequested;
         vm.MediaActionRequested += OnMediaActionRequested;
         vm.TabDragCompleted += MainViewModel_TabDragCompleted;
+        InitializeSplitViewEvents(vm);
     }
 
     private async Task SwitchToTabAsync(TabViewModel tab)
@@ -34,11 +36,19 @@ public partial class MainWindow
             || !_trackedTabs.Contains(tab))
             return;
 
-        await _webViewService.SwitchToTabAsync(tab, webView);
+        if (_viewModel?.IsSplitViewActive == true)
+        {
+            await UpdateSplitViewWebViewsAsync();
+        }
+        else
+        {
+            await _webViewService.SwitchToTabAsync(tab, webView);
+        }
 
         if (_viewModel is { } vm)
         {
             TopBarControl?.SetAddressBarText(tab.AddressUrl);
+            FloatingTopBarControl?.SetAddressBarText(tab.AddressUrl);
             vm.AddressBarText = tab.AddressUrl;
         }
     }
@@ -91,9 +101,14 @@ public partial class MainWindow
         {
             UpdateSidebarWidth(vm.IsSidebarVisible);
         }
+        else if (e.PropertyName == nameof(MainViewModel.IsTopBarVisible))
+        {
+            UpdateTopBarHeight(vm.IsTopBarVisible);
+        }
         else if (e.PropertyName == nameof(MainViewModel.SidebarWidth) && vm.IsSidebarVisible)
         {
-            UpdateSidebarWidth(visible: true);
+            UpdateSidebarWidth(visible: true, animate: false);
+            UpdateTopEdgeTriggerState();
         }
     }
 
@@ -133,8 +148,7 @@ public partial class MainWindow
 
     private void MainViewModel_NewTabRequested(object? sender, EventArgs e)
     {
-        TopBarControl.AddressBar.Focus();
-        TopBarControl.AddressBar.SelectAll();
+        FocusAddressBar();
     }
 
     private void MainWindow_Closed(object? sender, EventArgs e)
@@ -151,6 +165,7 @@ public partial class MainWindow
             _viewModel.NewTabRequested -= MainViewModel_NewTabRequested;
             _viewModel.MediaActionRequested -= OnMediaActionRequested;
             _viewModel.TabDragCompleted -= MainViewModel_TabDragCompleted;
+            _viewModel.SplitViewLayoutChanged -= MainViewModel_SplitViewLayoutChanged;
             foreach (var pinnedTab in _viewModel.PinnedTabs)
                 pinnedTab.PropertyChanged -= PinnedTab_PropertyChanged;
         }
@@ -165,6 +180,18 @@ public partial class MainWindow
 
     private void SetupWebViewEvents(WebView2 webView, TabViewModel tab)
     {
+        webView.WebMessageReceived += async (_, e) =>
+        {
+            try
+            {
+                await HandleExtensionWebMessageAsync(webView, tab, e.WebMessageAsJson);
+            }
+            catch
+            {
+                // Ignored
+            }
+        };
+
         webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
         {
             tab.IsPlayingAudio = webView.CoreWebView2.IsDocumentPlayingAudio;
@@ -172,6 +199,8 @@ public partial class MainWindow
             {
                 vm.ActiveMediaTab = tab;
                 vm.IsMediaBarVisible = true;
+                if (!_globalMediaTimer.IsEnabled)
+                    _globalMediaTimer.Start();
             }
         };
 
@@ -185,10 +214,9 @@ public partial class MainWindow
             {
                 if (source.Contains("settings.html"))
                 {
-                    string version = System.Reflection.Assembly.GetExecutingAssembly()
-                        .GetName().Version?.ToString(3) ?? "1.0.0";
+                    string versionBadge = AppRuntime.VersionBadgeText;
                     _ = webView.CoreWebView2.ExecuteScriptAsync(
-                        $"if(document.getElementById('app-version')) document.getElementById('app-version').innerText = 'Version {version} (Build stable)';");
+                        $"if(document.getElementById('app-version')) document.getElementById('app-version').innerText = '{versionBadge}';");
                 }
 
                 if (string.IsNullOrEmpty(tab.AddressUrl)
@@ -206,13 +234,15 @@ public partial class MainWindow
             UpdateTitle();
             vm.HistoryManager.AddEntry(tab.Url, webView.CoreWebView2.DocumentTitle);
 
-            if (TopBarControl?.AddressBar.IsFocused == false)
+            if (TopBarControl?.AddressBar.IsFocused == false && FloatingTopBarControl?.AddressBar.IsFocused == false)
             {
                 TopBarControl.SetAddressBarText(tab.AddressUrl);
+                FloatingTopBarControl.SetAddressBarText(tab.AddressUrl);
                 vm.AddressBarText = tab.AddressUrl;
             }
 
             CheckForExtensionStorePage(tab, tab.Url);
+            NotifyExtensionStatusToWebView(webView, tab.Url);
         };
 
         webView.CoreWebView2.DocumentTitleChanged += (_, _) =>
@@ -245,13 +275,15 @@ public partial class MainWindow
 
             if (_viewModel is { } vm && vm.SelectedTab == tab)
             {
-                if (TopBarControl?.AddressBar.IsFocused == false)
+                if (TopBarControl?.AddressBar.IsFocused == false && FloatingTopBarControl?.AddressBar.IsFocused == false)
                 {
                     TopBarControl.SetAddressBarText(tab.AddressUrl);
+                    FloatingTopBarControl?.SetAddressBarText(tab.AddressUrl);
                     vm.AddressBarText = tab.AddressUrl;
                 }
 
                 CheckForExtensionStorePage(tab, tab.AddressUrl);
+                NotifyExtensionStatusToWebView(webView, tab.AddressUrl);
             }
 
             if (_viewModel is { } mainVm)
@@ -383,13 +415,13 @@ public partial class MainWindow
                             }
                         }
 
-                        _viewModel.CloseTab(tab);
+                        _ = _viewModel.CloseTab(tab);
                     }
                 });
             }
         };
 
-        webView.CoreWebView2.WindowCloseRequested += (_, _) => _viewModel?.CloseTab(tab);
+        webView.CoreWebView2.WindowCloseRequested += (_, _) => _ = _viewModel?.CloseTab(tab);
     }
 
     private void UpdateTitle()

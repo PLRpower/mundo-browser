@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
              xmlns:local="clr-namespace:MundoBrowser"
              mc:Ignorable="d" 
              KeyboardNavigation.TabNavigation="None"
@@ -26,16 +27,39 @@
     <Border Background="Transparent" BorderThickness="0">
         <Grid>
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Top Navigation (Back, Forward, Reload) -->
                 <RowDefinition Height="Auto"/> <!-- Pinned Tabs Section -->
-                <RowDefinition Height="0"/>    <!-- Title Bar removed -->
                 <RowDefinition Height="Auto"/> <!-- Add Tab Button -->
                 <RowDefinition Height="*"/>    <!-- Tabs List -->
                 <RowDefinition Height="Auto"/> <!-- Media Control Bar -->
                 <RowDefinition Height="Auto"/> <!-- Bottom Actions -->
             </Grid.RowDefinitions>
 
-            <!-- Pinned Tabs Section (Row 0) -->
-            <ItemsControl Grid.Row="0" Margin="5,10,5,5" ItemsSource="{Binding PinnedTabs}">
+            <!-- Top Navigation Buttons (Row 0) -->
+            <Grid Grid.Row="0" Height="40" Background="Transparent" Margin="6,0,6,0"
+                  PreviewMouseLeftButtonDown="TopNavHeader_PreviewMouseLeftButtonDown"
+                  Visibility="{Binding ShowNavButtons, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                    <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Back_Click" ToolTip="Précédent (Alt+Flèche gauche)">
+                        <Viewbox Width="19" Height="19">
+                            <Path Data="{StaticResource IconLeft}" Fill="White" Width="20" Height="20"/>
+                        </Viewbox>
+                    </Button>
+                    <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Forward_Click" ToolTip="Suivant (Alt+Flèche droite)">
+                        <Viewbox Width="19" Height="19">
+                            <Path Data="{StaticResource IconRight}" Fill="White" Width="20" Height="20"/>
+                        </Viewbox>
+                    </Button>
+                    <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Reload_Click" ToolTip="Actualiser (F5 / Ctrl+R)">
+                        <Viewbox Width="19" Height="19">
+                            <Path Data="{StaticResource IconRefresh}" Fill="White" Width="20" Height="20"/>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Pinned Tabs Section (Row 1) -->
+            <ItemsControl Grid.Row="1" Margin="5,4,5,5" ItemsSource="{Binding PinnedTabs}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <UniformGrid Columns="3" />
@@ -211,7 +235,7 @@
                             Background="Transparent" BorderThickness="0" Cursor="Hand">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
-                                <TextBlock x:Name="text" Text="Nettoyer" FontSize="11" Foreground="#888888" VerticalAlignment="Center" FontWeight="Bold"/>
+                                <TextBlock x:Name="text" Text="Nettoyer" FontSize="11" Foreground="#888888" VerticalAlignment="Center" FontWeight="Normal"/>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter TargetName="text" Property="Foreground" Value="#CCCCCC"/>
@@ -224,7 +248,7 @@
             </StackPanel>
 
             <!-- Tabs List -->
-            <ListBox x:Name="TabsListBox" Grid.Row="3" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedListTab}" 
+            <ListBox x:Name="TabsListBox" Grid.Row="3" ItemsSource="{Binding SidebarTabs}" SelectedItem="{Binding SelectedListTab}" 
                      Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      AllowDrop="True" Drop="TabsList_Drop" DragOver="TabsList_DragOver" DragLeave="TabsList_DragLeave"
@@ -238,6 +262,18 @@
                         <EventSetter Event="PreviewMouseLeftButtonDown" Handler="TabItem_PreviewMouseLeftButtonDown"/>
                         <EventSetter Event="PreviewMouseMove" Handler="TabItem_PreviewMouseMove"/>
                         <EventSetter Event="MouseDown" Handler="TabItem_MouseDown"/>
+                        <Setter Property="ContextMenu">
+                            <Setter.Value>
+                                <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
+                                    <MenuItem Header="Diviser l'écran (Split-View)"
+                                              Command="{Binding DataContext.EnableSplitViewCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                              CommandParameter="{Binding}"/>
+                                    <MenuItem Header="Fermer l'onglet"
+                                              Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                              CommandParameter="{Binding}"/>
+                                </ContextMenu>
+                            </Setter.Value>
+                        </Setter>
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">
@@ -248,8 +284,8 @@
                                         <Grid.RenderTransform>
                                             <TranslateTransform x:Name="ItemTranslate" X="0"/>
                                         </Grid.RenderTransform>
-                                        <Border x:Name="TopIndicator" Height="2" Background="White" VerticalAlignment="Top" Margin="0,-1,0,0" Visibility="Collapsed" Panel.ZIndex="10"/>
-                                        <Border x:Name="BottomIndicator" Height="2" Background="White" VerticalAlignment="Bottom" Margin="0,0,0,-1" Visibility="Collapsed" Panel.ZIndex="10"/>
+                                        <Border x:Name="TopIndicator" Height="1" Background="#555555" VerticalAlignment="Top" Margin="12,-0.5,12,0" CornerRadius="0.5" Visibility="Collapsed" Panel.ZIndex="10"/>
+                                        <Border x:Name="BottomIndicator" Height="1" Background="#555555" VerticalAlignment="Bottom" Margin="12,0,12,-0.5" CornerRadius="0.5" Visibility="Collapsed" Panel.ZIndex="10"/>
                                         <Border Name="Border" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
                                             <ContentPresenter VerticalAlignment="Center" />
                                         </Border>
@@ -312,88 +348,245 @@
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Grid x:Name="TabContent">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid Grid.Column="0">
+                        <Grid>
+                            <!-- Standard Single Tab View -->
+                            <Grid x:Name="TabContent">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid Grid.Column="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center">
+                                        <!-- Fallback Icon if no favicon -->
+                                        <TextBlock Text="🌐" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <!-- Actual Favicon -->
+                                        <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                               SnapsToDevicePixels="True" UseLayoutRounding="True"
+                                               RenderOptions.BitmapScalingMode="HighQuality">
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                    </Grid>
+                                    
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}" 
+                                               Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}"
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="12.5" Margin="0,0,2,0"
+                                               FontWeight="SemiBold"/>
+                                </Grid>
+                                <Button Grid.Column="1" x:Name="CloseButton" Width="28" Height="28" Background="Transparent" BorderThickness="0" Cursor="Hand" ToolTip="Close Tab"
+                                        Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}"
+                                        Margin="2,0,0,0">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Visibility" Value="Hidden"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="closeBorder" Background="{TemplateBinding Background}" CornerRadius="6">
+                                                <Path Data="M0,0 L8,8 M0,8 L8,0" Stroke="#AAA" StrokeThickness="2" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="closeBorder" Property="Background" Value="#CC444444"/>
+                                                    <Setter Property="Cursor" Value="Hand"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </Grid>
+
+                            <!-- Split-View Dual Tab Slot -->
+                            <Grid x:Name="SplitSlotContent" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center">
-                                    <!-- Fallback Icon if no favicon -->
-                                    <TextBlock Text="🌐" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding FaviconUrl}" Value="">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                    <!-- Actual Favicon -->
-                                    <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
-                                           SnapsToDevicePixels="True" UseLayoutRounding="True"
-                                           RenderOptions.BitmapScalingMode="HighQuality">
-                                        <Image.Style>
-                                            <Style TargetType="Image">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+
+                                <!-- Left Half (Primary Split Tab) -->
+                                <Border Grid.Column="0" Background="Transparent" CornerRadius="6" Padding="0,0,4,0" Cursor="Hand" ToolTip="{Binding Title}">
+                                    <Border.InputBindings>
+                                        <MouseBinding MouseAction="LeftClick" Command="{Binding DataContext.SetFocusedPaneCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="0"/>
+                                    </Border.InputBindings>
+                                    <Grid VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- Favicon -->
+                                        <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center">
+                                            <!-- Fallback Emoji -->
+                                            <TextBlock Text="🌐" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <!-- Actual Favicon -->
+                                            <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                                   SnapsToDevicePixels="True" UseLayoutRounding="True"
+                                                   RenderOptions.BitmapScalingMode="HighQuality">
+                                                <Image.Style>
+                                                    <Style TargetType="Image">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Image.Style>
+                                            </Image>
+                                        </Grid>
+                                        <!-- Title -->
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" 
+                                                   Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}" 
+                                                   FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Divider Line -->
+                                <Rectangle Grid.Column="1" Width="1" Fill="#55555D" Margin="4,4"/>
+
+                                <!-- Right Half (Secondary Split Tab) -->
+                                <Border Grid.Column="2" Background="Transparent" CornerRadius="6" Padding="4,0,4,0" Cursor="Hand"
+                                        DataContext="{Binding DataContext.SecondarySplitTab, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTip="{Binding Title}">
+                                    <Border.InputBindings>
+                                        <MouseBinding MouseAction="LeftClick" Command="{Binding DataContext.SetFocusedPaneCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="1"/>
+                                    </Border.InputBindings>
+                                    <Grid VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- Favicon -->
+                                        <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center">
+                                            <!-- Fallback Emoji -->
+                                            <TextBlock Text="🌐" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Image.Style>
-                                    </Image>
-                                </Grid>
-                                
-                                <TextBlock Grid.Column="1" Text="{Binding Title}" 
-                                           Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}"
-                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="12.5" Margin="0,0,2,0"
-                                           FontWeight="SemiBold"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <!-- Actual Favicon -->
+                                            <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                                   SnapsToDevicePixels="True" UseLayoutRounding="True"
+                                                   RenderOptions.BitmapScalingMode="HighQuality">
+                                                <Image.Style>
+                                                    <Style TargetType="Image">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Image.Style>
+                                            </Image>
+                                        </Grid>
+                                        <!-- Title -->
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" 
+                                                   Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}" 
+                                                   FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Combined Split Close Button -->
+                                <Button Grid.Column="3" x:Name="CloseSplitButton" Width="28" Height="28" Background="Transparent" BorderThickness="0" Cursor="Hand" ToolTip="Fermer la vue divisée"
+                                        Command="{Binding DataContext.CloseSplitCombinationCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}"
+                                        Margin="2,0,0,0">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Visibility" Value="Hidden"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="closeBorder" Background="{TemplateBinding Background}" CornerRadius="6">
+                                                <Path Data="M0,0 L8,8 M0,8 L8,0" Stroke="#AAA" StrokeThickness="2" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="closeBorder" Property="Background" Value="#CC444444"/>
+                                                    <Setter Property="Cursor" Value="Hand"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
                             </Grid>
-                            <Button Grid.Column="1" x:Name="CloseButton" Width="28" Height="28" Background="Transparent" BorderThickness="0" Cursor="Hand" ToolTip="Close Tab"
-                                    Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}"
-                                    Margin="2,0,0,0">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Visibility" Value="Hidden"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <Button.Template>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border x:Name="closeBorder" Background="{TemplateBinding Background}" CornerRadius="6">
-                                            <Path Data="M0,0 L8,8 M0,8 L8,0" Stroke="#AAA" StrokeThickness="2" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="closeBorder" Property="Background" Value="#CC444444"/>
-                                                <Setter Property="Cursor" Value="Hand"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Button.Template>
-                            </Button>
                         </Grid>
+
                         <DataTemplate.Triggers>
                             <DataTrigger Binding="{Binding IsDiscarded}" Value="True">
                                 <Setter TargetName="TabContent" Property="Opacity" Value="0.4"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsPrimarySplitTab}" Value="True">
+                                <Setter TargetName="TabContent" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="SplitSlotContent" Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                         </DataTemplate.Triggers>
                     </DataTemplate>
@@ -412,7 +605,7 @@
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="8">
                                 <Viewbox Width="18" Height="18">
-                                    <Path Data="{StaticResource IconSettings}" Fill="{TemplateBinding Foreground}"/>
+                                    <Path Data="{StaticResource IconSettings}" Fill="{TemplateBinding Foreground}" Width="20" Height="20"/>
                                 </Viewbox>
                             </Border>
                             <ControlTemplate.Triggers>
@@ -435,6 +628,7 @@
                                 <Grid>
                                     <Viewbox Width="18" Height="18">
                                         <Path Fill="{TemplateBinding Foreground}"
+                                              Width="24" Height="24"
                                               Data="M12 2.25a.75.75 0 0 1 .75.75v11.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 1 1 1.06-1.06l3.72 3.72V3a.75.75 0 0 1 .75-.75ZM3.75 18a.75.75 0 0 0 0 1.5h16.5a.75.75 0 0 0 0-1.5H3.75Z"/>
                                     </Viewbox>
                                     <!-- Active Download Indicator Badge -->

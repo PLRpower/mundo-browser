@@ -12,6 +12,12 @@ namespace MundoBrowser.Models
         private string _id = string.Empty;
 
         [ObservableProperty]
+        private string? _storeId;
+
+        [ObservableProperty]
+        private string? _folderPath;
+
+        [ObservableProperty]
         private string _name = string.Empty;
 
         [ObservableProperty]
@@ -26,11 +32,13 @@ namespace MundoBrowser.Models
         [ObservableProperty]
         private string? _popupUrl;
 
-        public ExtensionInfo(string id, string name, bool isEnabled)
+        public ExtensionInfo(string id, string name, bool isEnabled, string? storeId = null, string? folderPath = null)
         {
             Id = id;
             Name = name;
             IsEnabled = isEnabled;
+            StoreId = storeId;
+            FolderPath = folderPath;
         }
     }
 }

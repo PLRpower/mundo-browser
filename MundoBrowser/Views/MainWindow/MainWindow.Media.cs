@@ -7,7 +7,11 @@ public partial class MainWindow
 {
     private async void UpdateActiveMediaInfo(object? sender, EventArgs e)
     {
-        if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null || !vm.IsMediaBarVisible) return;
+        if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null || !vm.IsMediaBarVisible)
+        {
+            _globalMediaTimer.Stop();
+            return;
+        }
 
         if (vm.SelectedTab != vm.ActiveMediaTab)
         {

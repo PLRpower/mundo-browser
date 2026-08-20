@@ -1,8 +1,20 @@
+using System.Collections.Frozen;
+using MundoBrowser.Interfaces;
+
 namespace MundoBrowser.Services;
 
-public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
+public class AdBlockerService : IAdBlockerService
 {
-    private readonly MundoBrowser.Interfaces.IAppSettingsService _settingsService;
+    private static readonly FrozenSet<string> BlockedDomainSet = new[]
+    {
+        "doubleclick.net", "googleadservices.com", "googlesyndication.com",
+        "adsystem.com", "adservice.google.com", "criteo.com", "taboola.com",
+        "outbrain.com", "ads.yahoo.com", "adnxs.com", "amazon-adsystem.com",
+        "analytics.twitter.com", "pixel.facebook.com", "connect.facebook.net",
+        "google-analytics.com", "googletagmanager.com", "mc.yandex.ru"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private readonly IAppSettingsService _settingsService;
     private bool _isAdBlockerEnabled;
     private bool _isCookieBlockerEnabled;
 
@@ -28,23 +40,14 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
         }
     }
 
-    public AdBlockerService(MundoBrowser.Interfaces.IAppSettingsService settingsService)
+    public AdBlockerService(IAppSettingsService settingsService)
     {
         _settingsService = settingsService;
         _isAdBlockerEnabled = settingsService.Current.IsAdBlockerEnabled;
         _isCookieBlockerEnabled = settingsService.Current.IsCookieBlockerEnabled;
     }
 
-    private static readonly string[] BlockedDomainList =
-    [
-        "doubleclick.net", "googleadservices.com", "googlesyndication.com",
-        "adsystem.com", "adservice.google.com", "criteo.com", "taboola.com",
-        "outbrain.com", "ads.yahoo.com", "adnxs.com", "amazon-adsystem.com",
-        "analytics.twitter.com", "pixel.facebook.com", "connect.facebook.net",
-        "google-analytics.com", "googletagmanager.com", "mc.yandex.ru"
-    ];
-
-    public IReadOnlyCollection<string> BlockedDomains => BlockedDomainList;
+    public IReadOnlyCollection<string> BlockedDomains => BlockedDomainSet;
 
     public string? GetSiteHost(string? url)
     {
@@ -132,45 +135,41 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
 
     public string GetCosmeticCss()
     {
-        if (!IsAdBlockerEnabled) return "";
+        if (!IsAdBlockerEnabled) return string.Empty;
 
-        // Universal cosmetic hiding selectors for common ad containers
-        return @"
+        return """
             .ad-container, .ad-banner, .advertisement, 
             [id^='div-gpt-ad'], .adsbygoogle,
             .sponsor-post, .sponsored-content, 
             [data-ad-slot], [id^='google_ads_iframe'],
             .outbrain-tm, .taboola-tm
             { display: none !important; }
-        ";
+            """;
     }
 
     public string GetCookieCosmeticCss()
     {
-        if (!IsCookieBlockerEnabled) return "";
+        if (!IsCookieBlockerEnabled) return string.Empty;
 
-        // Selectors to hide cookie banners and consent popups
-        return @"
+        return """
             #cookie-notice, #cookie-banner, .cookie-banner, .cookie-consent,
             #qc-cmp2-container, #onetrust-consent-sdk, .cc-window,
             #didomi-host, #sp_message_container, .fc-consent-root,
             [id^='cookie-law'], .cookie-law,
             [id^='tarteaucitron'], #usercentrics-root
             { display: none !important; }
-        ";
+            """;
     }
 
     public string GetCookieRemovalScript()
     {
-        if (!IsCookieBlockerEnabled) return "";
+        if (!IsCookieBlockerEnabled) return string.Empty;
 
-        // Advanced: Sometimes hiding the banner leaves a backdrop that blocks clicks.
-        // This script aggressively removes known cookie backdrops from the DOM.
-        return @"
+        return """
             (function() {
                 const removeCookieModals = () => {
                     const selector = '#qc-cmp2-container, #onetrust-consent-sdk, #didomi-host, ' +
-                                     '.fc-consent-root, #usercentrics-root, [id^=""tarteaucitron""]';
+                                     '.fc-consent-root, #usercentrics-root, [id^="tarteaucitron"]';
                     document.querySelectorAll(selector).forEach(el => el.remove());
                     
                     // Force body scroll unlock
@@ -189,6 +188,6 @@ public class AdBlockerService : MundoBrowser.Interfaces.IAdBlockerService
                     setTimeout(retry, 1000);
                 }
             })();
-        ";
+            """;
     }
 }

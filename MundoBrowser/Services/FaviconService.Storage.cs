@@ -249,12 +249,23 @@ public partial class FaviconService
         if (_domainQuality.ContainsKey(domain))
             return;
 
-        while (_domainQuality.Count >= MaxCachedDomains)
+        if (_domainQuality.Count >= MaxCachedDomains)
         {
-            var domainToRemove = _domainQuality.Keys.First();
-            _domainQuality.Remove(domainToRemove);
-            _domainToRelativePath.Remove(domainToRemove);
-            _domainToAbsoluteUrl.Remove(domainToRemove);
+            // Evict oldest entries quickly
+            var toRemove = new List<string>(16);
+            foreach (var key in _domainQuality.Keys)
+            {
+                toRemove.Add(key);
+                if (_domainQuality.Count - toRemove.Count < MaxCachedDomains)
+                    break;
+            }
+
+            foreach (var key in toRemove)
+            {
+                _domainQuality.Remove(key);
+                _domainToRelativePath.Remove(key);
+                _domainToAbsoluteUrl.Remove(key);
+            }
         }
     }
 }

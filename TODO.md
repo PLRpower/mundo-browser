@@ -6,4 +6,3 @@
     - **Performances** : Évaluer puis optimiser le rendu, la fluidité, la consommation mémoire et la suspension des onglets avec CEF.
     - **Indépendance** : Ne plus dépendre du runtime Microsoft Edge WebView2 et maîtriser directement la version de Chromium distribuée avec Mundo Browser.
     - **Compatibilité fonctionnelle** : Porter les onglets, sessions, paramètres, extensions, bloqueurs, raccourcis, pages internes, téléchargements et comportements plein écran avant de retirer WebView2.
-- [ ] **Split-View (Multitâche natif)** : Permettre de diviser l'écran en deux (ou plus) pour afficher plusieurs onglets simultanément dans la même fenêtre. Implémenter un système de glisser-déposer pour organiser les vues.

@@ -14,6 +14,9 @@ namespace MundoBrowser.ViewModels
         private bool _isClosing;
 
         [ObservableProperty]
+        private bool _isPrimarySplitTab;
+
+        [ObservableProperty]
         private bool _isDiscarded = true;
 
         // The active URL of the WebView
@@ -82,13 +85,16 @@ namespace MundoBrowser.ViewModels
         public string MediaPositionText => FormatTime(MediaPosition);
         public string MediaDurationText => FormatTime(MediaDuration);
 
-        private string FormatTime(double seconds)
+        private static string FormatTime(double seconds)
         {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds)) return "0:00";
-            var time = TimeSpan.FromSeconds(seconds);
-            return time.TotalHours >= 1 
-                ? time.ToString(@"h\:mm\:ss") 
-                : time.ToString(@"m\:ss");
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0) return "0:00";
+            int totalSeconds = (int)seconds;
+            int hours = totalSeconds / 3600;
+            int minutes = (totalSeconds % 3600) / 60;
+            int secs = totalSeconds % 60;
+            return hours > 0
+                ? $"{hours}:{minutes:D2}:{secs:D2}"
+                : $"{minutes}:{secs:D2}";
         }
 
         [ObservableProperty]

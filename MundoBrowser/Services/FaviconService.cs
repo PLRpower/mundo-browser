@@ -1,11 +1,10 @@
 using System.IO;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
-using MundoBrowser.ViewModels;
 using MundoBrowser.Interfaces;
+using MundoBrowser.ViewModels;
 
 namespace MundoBrowser.Services;
 
@@ -20,7 +19,7 @@ public partial class FaviconService : IFaviconService, IDisposable
     private readonly Dictionary<string, string> _domainToRelativePath = [];
     private readonly Dictionary<string, string> _domainToAbsoluteUrl = [];
     private readonly Dictionary<string, int> _domainQuality = [];
-    private readonly object _cacheLock = new();
+    private readonly Lock _cacheLock = new();
 
     private const int QualityFallback = 0;
     private const int QualityStandard = 1;
@@ -126,8 +125,7 @@ public partial class FaviconService : IFaviconService, IDisposable
         Task<string?>? resolutionTask;
         lock (_activeResolutions)
         {
-            if (_activeResolutions.TryGetValue(domain, out resolutionTask)) { }
-            else
+            if (!_activeResolutions.TryGetValue(domain, out resolutionTask))
             {
                 resolutionTask = PerformResolveFaviconAsync(wv, domain);
                 _activeResolutions[domain] = resolutionTask;
@@ -227,10 +225,10 @@ public partial class FaviconService : IFaviconService, IDisposable
 
     private async Task<string?> FetchHighResIconAsync(WebView2 wv, string domain)
     {
-        string script = @"
+        const string script = """
             (function() {
                 try {
-                    let links = Array.from(document.querySelectorAll('link[rel~=""icon""], link[rel~=""apple-touch-icon""], link[rel=""shortcut icon""]'));
+                    let links = Array.from(document.querySelectorAll('link[rel~="icon"], link[rel~="apple-touch-icon"], link[rel="shortcut icon"]'));
                     let best = null;
                     let maxScore = -1;
                     
@@ -271,14 +269,15 @@ public partial class FaviconService : IFaviconService, IDisposable
                 } catch (e) {
                     return window.location.origin + '/favicon.ico';
                 }
-            })()";
+            })()
+            """;
 
         var iconUrl = await wv.CoreWebView2.ExecuteScriptAsync(script);
         iconUrl = iconUrl?.Trim('\"');
 
         if (string.IsNullOrEmpty(iconUrl) || iconUrl == "null") return null;
 
-        if (iconUrl.StartsWith("data:"))
+        if (iconUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
@@ -308,17 +307,15 @@ public partial class FaviconService : IFaviconService, IDisposable
 
         try
         {
-            // Set up a request with basic browser headers to avoid 403 Forbidden on some sites
             using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
             request.Headers.Add("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
             
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode) return null;
             
-            var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
             var ext = GetExtensionFromContentType(contentType);
             
-            // Re-detect extension from URL if contentType is generic
             if (ext == "png" && contentType == "application/octet-stream" && iconUrl.Contains(".ico")) ext = "ico";
             if (ext == "png" && iconUrl.Contains(".svg")) ext = "svg";
             

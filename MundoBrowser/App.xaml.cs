@@ -7,7 +7,6 @@ using MundoBrowser.Helpers;
 using MundoBrowser.Interfaces;
 using MundoBrowser.Services;
 using MundoBrowser.ViewModels;
-using Velopack;
 
 namespace MundoBrowser;
 
@@ -19,8 +18,41 @@ public partial class App : System.Windows.Application
 
     public App()
     {
+        DispatcherUnhandledException += App_DispatcherUnhandledException;
         NativeMethods.SetCurrentProcessExplicitAppUserModelID(NativeMethods.AppUserModelId);
+        ConfigurePerformanceSettings();
         _serviceProvider = ConfigureServices();
+    }
+
+    private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        if (e.Exception is ArgumentNullException { ParamName: "window" })
+        {
+            e.Handled = true;
+            return;
+        }
+    }
+
+    private static void ConfigurePerformanceSettings()
+    {
+        try
+        {
+            // Force hardware acceleration for WPF rendering pipeline
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
+
+            // Dynamically adapt WPF animation framerate to match the monitor's native refresh rate (e.g. 144Hz, 165Hz, 240Hz, etc.)
+            int maxRefreshRate = NativeMethods.GetMaxDisplayRefreshRate();
+            System.Windows.Media.Animation.Timeline.DesiredFrameRateProperty.OverrideMetadata(
+                typeof(System.Windows.Media.Animation.Timeline),
+                new FrameworkPropertyMetadata(maxRefreshRate));
+
+            // Set process priority above normal for low input/render latency
+            System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.AboveNormal;
+        }
+        catch
+        {
+            // Fallback gracefully if priority setting fails
+        }
     }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -132,16 +164,12 @@ public partial class App : System.Windows.Application
         if (Current is not App app)
             throw new InvalidOperationException("The application service provider is unavailable.");
 
-        var mainWindow = new MainWindow(
-            app._serviceProvider.GetRequiredService<MainViewModel>(),
-            app._serviceProvider.GetRequiredService<IWebViewService>(),
-            app._serviceProvider.GetRequiredService<IExtensionService>(),
-            app._serviceProvider.GetRequiredService<IAppSettingsService>(),
-            app._serviceProvider.GetRequiredService<IUpdateService>(),
-            args);
+        var mainWindow = app._serviceProvider.GetRequiredService<MainWindow>();
+        if (args != null && args.Length > 0)
+        {
+            mainWindow.SetStartupArgs(args);
+        }
         Current.MainWindow = mainWindow;
-        // var server = app._serviceProvider.GetRequiredService<MundoExtensionServer>();
-        // server.Start();
         mainWindow.Show();
         StartArgsListener(mainWindow);
         startupWindow?.Close();
@@ -158,9 +186,9 @@ public partial class App : System.Windows.Application
         services.AddSingleton<ExtensionDownloader>();
         services.AddSingleton<IExtensionService, ExtensionService>();
         services.AddSingleton<IAdBlockerService, AdBlockerService>();
-        services.AddSingleton<MundoExtensionServer>();
         services.AddSingleton<IUpdateService, UpdateService>();
         services.AddTransient<MainViewModel>();
+        services.AddTransient<MainWindow>();
         return services.BuildServiceProvider();
     }
 }

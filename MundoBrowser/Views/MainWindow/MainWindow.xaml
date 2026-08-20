@@ -17,11 +17,12 @@
         AllowsTransparency="False"
         PreviewKeyDown="Window_PreviewKeyDown"
         KeyboardNavigation.TabNavigation="None"
-        Background="Transparent"
+        Background="{DynamicResource OverlaySurfaceBrush}"
         Foreground="White">
 
     <ui:FluentWindow.Resources>
         <SolidColorBrush x:Key="ChromeSurfaceBrush" Color="#99000000"/>
+        <SolidColorBrush x:Key="OverlaySurfaceBrush" Color="#FF18181A"/>
 
         <!-- Scrollbar Style - Ultra Minimalist & Rounded -->
         <Style TargetType="ScrollBar">
@@ -118,13 +119,14 @@
         </Grid.ColumnDefinitions>
 
         <!-- ═══════════════════════════════════════════════════════ -->
-        <!-- TOP BAR — pleine largeur sur toute la fenêtre (Row 0) -->
+        <!-- TOP BAR (Row 0, Col 0..2) -->
         <!-- ═══════════════════════════════════════════════════════ -->
         <ui:TitleBar Grid.Row="0"
                      Grid.Column="0"
                      Grid.ColumnSpan="3"
                      x:Name="WindowTitleBar"
                      Height="40"
+                     ClipToBounds="True"
                      HorizontalContentAlignment="Stretch"
                      Background="{DynamicResource ChromeSurfaceBrush}"
                      ButtonsForeground="White"
@@ -133,6 +135,11 @@
                 <Style TargetType="{x:Type ui:TitleBarButton}"
                        BasedOn="{StaticResource {x:Type ui:TitleBarButton}}">
                     <Setter Property="Height" Value="40"/>
+                    <Style.Triggers>
+                        <Trigger Property="ButtonType" Value="Help">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                    </Style.Triggers>
                 </Style>
             </ui:TitleBar.Resources>
             <ui:TitleBar.CenterContent>
@@ -141,41 +148,80 @@
         </ui:TitleBar>
         <!-- Fin TopBar -->
 
-        <!-- Normal Sidebar Area (Row 1) -->
-        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" Background="{DynamicResource ChromeSurfaceBrush}">
-            <local:SidebarView.Style>
-                <Style TargetType="local:SidebarView">
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsSidebarVisible}" Value="False">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </local:SidebarView.Style>
-        </local:SidebarView>
+        <!-- Floating TopBar Popup (to bypass WebView2 Airspace issue) -->
+        <Popup x:Name="FloatingTopBarPopup" 
+               AllowsTransparency="True" 
+               PopupAnimation="None" 
+               Placement="Relative" 
+               HorizontalOffset="0" 
+               VerticalOffset="0" 
+               StaysOpen="True" 
+               Width="{Binding ActualWidth, ElementName=MainGrid}">
+            <Grid Height="40" ClipToBounds="True" Background="Transparent"
+                  MouseLeave="FloatingTopBarContent_MouseLeave"
+                  MouseMove="FloatingTopBarContent_MouseMove">
+                <Border x:Name="FloatingTopBarContent" Background="Transparent" BorderThickness="0">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="FloatingTopBarTransform" Y="0" />
+                    </Border.RenderTransform>
+                    <ui:TitleBar x:Name="FloatingTitleBar"
+                                 Height="40"
+                                 HorizontalContentAlignment="Stretch"
+                                 Background="Transparent"
+                                 ButtonsForeground="White"
+                                 ShowHelp="False"
+                                 ShowMinimize="False"
+                                 ShowMaximize="False"
+                                 ShowClose="False">
+                        <ui:TitleBar.Resources>
+                            <Style TargetType="{x:Type ui:TitleBarButton}"
+                                   BasedOn="{StaticResource {x:Type ui:TitleBarButton}}">
+                                <Setter Property="Height" Value="40"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="MouseOverBackground" Value="#3D3D3D"/>
+                                <Style.Triggers>
+                                    <Trigger Property="ButtonType" Value="Help">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </Trigger>
+                                    <Trigger Property="ButtonType" Value="Close">
+                                        <Setter Property="MouseOverBackground" Value="#C42B1C"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:TitleBar.Resources>
+                        <ui:TitleBar.CenterContent>
+                            <local:TopBarView x:Name="FloatingTopBarControl" IsFloatingMode="True"/>
+                        </ui:TitleBar.CenterContent>
+                    </ui:TitleBar>
+                </Border>
+            </Grid>
+        </Popup>
+
+        <!-- Normal Sidebar Area (Row 1, Col 0) -->
+        <local:SidebarView Grid.Row="1" Grid.Column="0" x:Name="SidebarGrid" ClipToBounds="True" Background="{DynamicResource ChromeSurfaceBrush}" HorizontalAlignment="Left" Width="{Binding SidebarWidth}"/>
 
         <!-- Floating Sidebar Popup (to bypass WebView2 Airspace issue) -->
         <Popup x:Name="FloatingSidebarPopup" 
                AllowsTransparency="True" 
                PopupAnimation="None" 
-               Placement="Relative"
-               HorizontalOffset="0"
-               VerticalOffset="40"
-               StaysOpen="True"
-               Width="250">
-            <!-- La hauteur du popup est réduite par rapport au contenu principal -->
-            <Grid Width="250" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
-                <Border x:Name="FloatingSidebarContent" Background="#252525" 
-                        CornerRadius="0,15,15,0" Margin="0,20,0,20">
+               Placement="Relative" 
+               HorizontalOffset="0" 
+               VerticalOffset="0" 
+               StaysOpen="True" 
+               Width="{Binding SidebarWidth}">
+            <!-- La hauteur du popup est ajustée par rapport au contenu principal -->
+            <Grid Width="{Binding SidebarWidth}" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
+                <Border x:Name="FloatingSidebarContent" Background="{DynamicResource OverlaySurfaceBrush}" 
+                        CornerRadius="0,15,15,0" BorderBrush="#38FFFFFF" BorderThickness="0,1,1,1" Margin="0,44,0,20">
                     <Border.RenderTransform>
                         <TranslateTransform x:Name="FloatingSidebarTransform" X="0" />
                     </Border.RenderTransform>
-                    <local:SidebarView />
+                    <local:SidebarView x:Name="FloatingSidebarControl" />
                 </Border>
             </Grid>
         </Popup>
 
-        <!-- GridSplitter for resizing sidebar (Row 1) -->
+        <!-- GridSplitter for resizing sidebar (Row 1, Col 1) -->
         <GridSplitter Grid.Row="1" Grid.Column="1" Width="5" x:Name="SidebarSplitter"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
                       Cursor="SizeWE"
@@ -190,48 +236,256 @@
         <!-- ════════════════════════════════════════════════ -->
         <!-- CONTENU PRINCIPAL — WebView (Row 1, Col 2) -->
         <!-- ════════════════════════════════════════════════ -->
-        <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="#CC121212">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="Transparent">
+            <!-- Container for single WebView2 instance (Normal mode) -->
+            <Grid x:Name="WebViewsContainer">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSplitViewActive}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+            </Grid>
 
-            <!-- Extension Installation Bar -->
-            <Border x:Name="ExtensionInstallBar" Grid.Row="0" Background="#2D2D30" BorderBrush="#3E3E42" BorderThickness="0,0,0,1"
-                    Visibility="{Binding SelectedTab.IsExtensionStorePage, Converter={StaticResource BoolToVis}}">
-                <Grid Margin="15,8">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="🧩" FontSize="18" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <TextBlock Text="Cette extension est compatible avec MundoBrowser." Foreground="White" VerticalAlignment="Center" FontSize="13"/>
-                        <Button x:Name="InstallExtensionBtn" Content="Installer l'extension" Click="InstallExtensionFromBar_Click" 
-                                Margin="15,0" Padding="15,5" Cursor="Hand" Style="{StaticResource NavButtonStyle}" 
-                                Background="#007ACC" FontWeight="SemiBold"/>
-                        <ProgressBar x:Name="InstallProgressBar" Width="100" Height="4" VerticalAlignment="Center" Visibility="Collapsed" IsIndeterminate="True" Margin="10,0"/>
-                        <TextBlock x:Name="InstallStatusText" Foreground="#888" VerticalAlignment="Center" FontSize="12" Visibility="Collapsed"/>
-                    </StackPanel>
-                    <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" 
-                            Foreground="#888" Click="CloseInstallBar_Click" Width="30" FontSize="16" Cursor="Hand"
-                            Style="{StaticResource GrayHoverButtonStyle}"/>
+            <!-- Split-View Layout Container (Multitâche natif) -->
+            <Grid x:Name="SplitViewGrid" Background="#121212">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSplitViewActive}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="PrimaryCol" Width="*"/>
+                    <ColumnDefinition x:Name="SplitterCol" Width="3"/>
+                    <ColumnDefinition x:Name="SecondaryCol" Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="PrimaryRow" Height="*"/>
+                    <RowDefinition x:Name="SplitterRow" Height="Auto"/>
+                    <RowDefinition x:Name="SecondaryRow" Height="0"/>
+                </Grid.RowDefinitions>
+
+                <!-- Primary Pane Container (Pane 0) -->
+                <Border x:Name="PrimaryPaneBorder" Grid.Row="0" Grid.Column="0" Margin="0" CornerRadius="0" Background="#121212"
+                        BorderThickness="0" MouseDown="PrimaryPane_MouseDown" ClipToBounds="True">
+                    <!-- Primary WebView Host -->
+                    <Grid x:Name="PrimaryPaneHost"/>
+                </Border>
+
+                <!-- GridSplitter between panes -->
+                <GridSplitter x:Name="PanesSplitter" Grid.Row="0" Grid.Column="1" Grid.RowSpan="1" Width="3" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                              Background="#2A2A30" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
+
+                <!-- Secondary Pane Container (Pane 1) -->
+                <Border x:Name="SecondaryPaneBorder" Grid.Row="0" Grid.Column="2" Margin="0" CornerRadius="0" Background="#121212"
+                        BorderThickness="0" MouseDown="SecondaryPane_MouseDown" ClipToBounds="True">
+                    <!-- Secondary WebView Host -->
+                    <Grid x:Name="SecondaryPaneHost"/>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Split-View Drag & Drop Overlay Popup -->
+        <Popup x:Name="SplitViewDragPopup"
+               AllowsTransparency="True"
+               PlacementTarget="{Binding ElementName=ContentRow}"
+               Placement="Center"
+               StaysOpen="True"
+               IsOpen="{Binding IsDraggingTab}">
+            <Border Width="{Binding ActualWidth, ElementName=ContentRow}"
+                    Height="{Binding ActualHeight, ElementName=ContentRow}"
+                    Background="#AA0A0A0C" CornerRadius="0"
+                    MouseDown="SplitViewDragOverlay_MouseDown">
+                <Grid Margin="30">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left Drop Zone (Horizontal Split Left) -->
+                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3" Margin="8" CornerRadius="14"
+                            Background="#33007ACC" BorderBrush="#007ACC" BorderThickness="2"
+                            AllowDrop="True" DragOver="DropZone_DragOver" DragLeave="DropZone_DragLeave" Drop="DropZoneLeft_Drop">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock Text="⇇" FontSize="36" Foreground="White" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Diviser à gauche" FontSize="15" FontWeight="Bold" Foreground="White" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Right Drop Zone (Horizontal Split Right) -->
+                    <Border Grid.Row="0" Grid.Column="2" Grid.RowSpan="3" Margin="8" CornerRadius="14"
+                            Background="#33007ACC" BorderBrush="#007ACC" BorderThickness="2"
+                            AllowDrop="True" DragOver="DropZone_DragOver" DragLeave="DropZone_DragLeave" Drop="DropZoneRight_Drop">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock Text="⇉" FontSize="36" Foreground="White" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Diviser à droite" FontSize="15" FontWeight="Bold" Foreground="White" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Top Drop Zone (Vertical Split Top) -->
+                    <Border Grid.Row="0" Grid.Column="1" Margin="8" CornerRadius="14"
+                            Background="#3322C55E" BorderBrush="#22C55E" BorderThickness="2"
+                            AllowDrop="True" DragOver="DropZone_DragOver" DragLeave="DropZone_DragLeave" Drop="DropZoneTop_Drop">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock Text="⇡" FontSize="28" Foreground="White" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Diviser en haut" FontSize="14" FontWeight="Bold" Foreground="White" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Bottom Drop Zone (Vertical Split Bottom) -->
+                    <Border Grid.Row="2" Grid.Column="1" Margin="8" CornerRadius="14"
+                            Background="#3322C55E" BorderBrush="#22C55E" BorderThickness="2"
+                            AllowDrop="True" DragOver="DropZone_DragOver" DragLeave="DropZone_DragLeave" Drop="DropZoneBottom_Drop">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock Text="⇣" FontSize="28" Foreground="White" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Diviser en bas" FontSize="14" FontWeight="Bold" Foreground="White" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Center Drop Zone (Single View Fullscreen) -->
+                    <Border Grid.Row="1" Grid.Column="1" Margin="16" CornerRadius="14"
+                            Background="#44333339" BorderBrush="#666" BorderThickness="1.5"
+                            AllowDrop="True" DragOver="DropZone_DragOver" DragLeave="DropZone_DragLeave" Drop="DropZoneCenter_Drop">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock Text="🗔" FontSize="32" Foreground="White" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Afficher en plein écran" FontSize="14" FontWeight="SemiBold" Foreground="#DDD" Margin="0,6,0,0" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
+        </Popup>
 
-            <!-- Container for multiple WebView2 instances (one per tab) -->
-            <Grid x:Name="WebViewsContainer" Grid.Row="1"/>
-        </Grid>
+        <!-- Split-View Pane 0 (Primary) Hover Toolbar Popup -->
+        <Popup x:Name="PrimaryPaneToolbarPopup"
+               AllowsTransparency="True"
+               PlacementTarget="{Binding ElementName=PrimaryPaneHost}"
+               Placement="Top"
+               StaysOpen="True"
+               IsOpen="False">
+            <Border x:Name="PrimaryPaneToolbarContent" Background="#F01C1C20" BorderBrush="#55FFFFFF" BorderThickness="1" CornerRadius="16" Padding="6,3" Margin="0,8,0,0">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.6" Color="#000000"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <!-- Button 1: Fermer l'onglet de la split view -->
+                    <Button Width="28" Height="28" Margin="2,0" Style="{StaticResource GrayHoverButtonStyle}"
+                            ToolTip="Fermer cet onglet (garder l'autre en plein écran)"
+                            Command="{Binding DataContext.CloseSingleSplitPaneTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding DataContext.PrimarySplitTab, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Cursor="Hand">
+                        <TextBlock Text="✕" FontSize="13" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    
+                    <!-- Button 2: Agrandir / passer en plein écran avec cet onglet -->
+                    <Button Width="28" Height="28" Margin="2,0" Style="{StaticResource GrayHoverButtonStyle}"
+                            ToolTip="Agrandir en onglet unique (séparer l'autre onglet)"
+                            Command="{Binding DataContext.MaximizeSplitPaneTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding DataContext.PrimarySplitTab, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Cursor="Hand">
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Data="M3 3h18v18H3V3zm2 2v14h14V5H5z" Fill="White"/>
+                        </Viewbox>
+                    </Button>
+
+                    <!-- Button 3: Déplacer la vue / Drag & Drop -->
+                    <Button x:Name="PrimaryPaneMoveButton" Width="28" Height="28" Margin="2,0" Style="{StaticResource GrayHoverButtonStyle}"
+                            ToolTip="Glisser-déposer pour déplacer ou réorganiser"
+                            PreviewMouseLeftButtonDown="SplitPaneMoveButton_PreviewMouseLeftButtonDown"
+                            PreviewMouseMove="SplitPaneMoveButton_PreviewMouseMove"
+                            Cursor="SizeAll">
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Data="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z" Fill="White"/>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- Split-View Pane 1 (Secondary) Hover Toolbar Popup -->
+        <Popup x:Name="SecondaryPaneToolbarPopup"
+               AllowsTransparency="True"
+               PlacementTarget="{Binding ElementName=SecondaryPaneHost}"
+               Placement="Top"
+               StaysOpen="True"
+               IsOpen="False">
+            <Border x:Name="SecondaryPaneToolbarContent" Background="#F01C1C20" BorderBrush="#55FFFFFF" BorderThickness="1" CornerRadius="16" Padding="6,3" Margin="0,8,0,0">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.6" Color="#000000"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <!-- Button 1: Fermer l'onglet de la split view -->
+                    <Button Width="28" Height="28" Margin="2,0" Style="{StaticResource GrayHoverButtonStyle}"
+                            ToolTip="Fermer cet onglet (garder l'autre en plein écran)"
+                            Command="{Binding DataContext.CloseSingleSplitPaneTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding DataContext.SecondarySplitTab, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Cursor="Hand">
+                        <TextBlock Text="✕" FontSize="13" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    
+                    <!-- Button 2: Agrandir / passer en plein écran avec cet onglet -->
+                    <Button Width="28" Height="28" Margin="2,0" Style="{StaticResource GrayHoverButtonStyle}"
+                            ToolTip="Agrandir en onglet unique (séparer l'autre onglet)"
+                            Command="{Binding DataContext.MaximizeSplitPaneTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding DataContext.SecondarySplitTab, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Cursor="Hand">
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Data="M3 3h18v18H3V3zm2 2v14h14V5H5z" Fill="White"/>
+                        </Viewbox>
+                    </Button>
+
+                    <!-- Button 3: Déplacer la vue / Drag & Drop -->
+                    <Button x:Name="SecondaryPaneMoveButton" Width="28" Height="28" Margin="2,0" Style="{StaticResource GrayHoverButtonStyle}"
+                            ToolTip="Glisser-déposer pour déplacer ou réorganiser"
+                            PreviewMouseLeftButtonDown="SplitPaneMoveButton_PreviewMouseLeftButtonDown"
+                            PreviewMouseMove="SplitPaneMoveButton_PreviewMouseMove"
+                            Cursor="SizeAll">
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Data="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z" Fill="White"/>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Popup>
              
-        <!-- Resize Edge Triggers - Moved to root for better hit testing over WebView2 -->
         <!-- Resize Edge Triggers -->
         <!-- Left edge for sidebar toggle (using Popup to catch mouse over WebView2) -->
         <Popup x:Name="EdgeTriggerPopup"
                AllowsTransparency="True"
                Placement="Relative"
                HorizontalOffset="0"
-               VerticalOffset="0"
+               VerticalOffset="44"
                Width="1"
-               IsOpen="False"
-               Height="{Binding ActualHeight, ElementName=MainGrid}">
+               IsOpen="False">
             <!-- #01000000 is almost completely transparent but still hit-testable -->
             <Border Background="#01000000" MouseEnter="Edge_MouseEnter" MouseMove="Edge_MouseEnter" />
+        </Popup>
+
+        <!-- Top edge for topbar toggle (using Popup to catch mouse over WebView2) -->
+        <Popup x:Name="TopEdgeTriggerPopup"
+               AllowsTransparency="True"
+               Placement="Relative"
+               HorizontalOffset="0"
+               VerticalOffset="0"
+               Height="3"
+               IsOpen="False"
+               Width="{Binding ActualWidth, ElementName=MainGrid}">
+            <Border Background="#01000000" MouseEnter="TopEdge_MouseEnter" MouseMove="TopEdge_MouseEnter" />
         </Popup>
 
         <!-- Native resize overlays. Popups stay above WebView2 child HWNDs, unlike WPF borders. -->

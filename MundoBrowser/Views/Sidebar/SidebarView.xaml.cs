@@ -10,10 +10,71 @@ public partial class SidebarView : System.Windows.Controls.UserControl
 {
     private TabReorderHelper? _tabReorderHelper;
 
+    public static readonly DependencyProperty ShowNavButtonsProperty =
+        DependencyProperty.Register(
+            nameof(ShowNavButtons),
+            typeof(bool),
+            typeof(SidebarView),
+            new PropertyMetadata(true));
+
+    public bool ShowNavButtons
+    {
+        get => (bool)GetValue(ShowNavButtonsProperty);
+        set => SetValue(ShowNavButtonsProperty, value);
+    }
+
     public SidebarView()
     {
         InitializeComponent();
         this.DataContextChanged += SidebarView_DataContextChanged;
+    }
+
+    private MainWindow? GetMainWindow()
+    {
+        return Window.GetWindow(this) as MainWindow ?? System.Windows.Application.Current.MainWindow as MainWindow;
+    }
+
+    private Microsoft.Web.WebView2.Wpf.WebView2? GetWebView()
+    {
+        return GetMainWindow()?.GetActiveWebView();
+    }
+
+    private void Back_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoBack();
+    private void Forward_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoForward();
+    private void Reload_Click(object sender, RoutedEventArgs e) => GetWebView()?.Reload();
+
+    private void TopNavHeader_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject d)
+        {
+            while (d != null && d != sender)
+            {
+                if (d is System.Windows.Controls.Primitives.ButtonBase)
+                    return;
+                d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+            }
+        }
+
+        if (e.ClickCount == 2)
+        {
+            var win = GetMainWindow();
+            if (win != null && win.ResizeMode != ResizeMode.NoResize)
+            {
+                win.WindowState = win.WindowState == WindowState.Maximized
+                    ? WindowState.Normal
+                    : WindowState.Maximized;
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (GetMainWindow() is MainWindow mw)
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(mw).Handle;
+            NativeMethods.ReleaseCapture();
+            NativeMethods.SendMessage(handle, NativeMethods.WM_NCLBUTTONDOWN, new IntPtr(2), IntPtr.Zero);
+            e.Handled = true;
+        }
     }
 
     private void SidebarView_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -40,7 +101,7 @@ public partial class SidebarView : System.Windows.Controls.UserControl
 
     private void TabsList_DragOver(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.HandleDragOver(e);
     private void TabsList_Drop(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.HandleDrop(e);
-    private void TabsList_DragLeave(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.ClearIndicators();
+    private void TabsList_DragLeave(object s, System.Windows.DragEventArgs e) => _tabReorderHelper?.HandleDragLeave(e);
 
     private void PinnedSlot_DragOver(object sender, System.Windows.DragEventArgs e)
     {

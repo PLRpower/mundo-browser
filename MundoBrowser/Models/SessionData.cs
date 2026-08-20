@@ -21,5 +21,13 @@ namespace MundoBrowser.Models
         public List<TabSessionData> PinnedTabs { get; set; } = new();
         public int SelectedTabIndex { get; set; }
         public bool IsSelectedTabPinned { get; set; }
+
+        public bool IsSplitViewActive { get; set; }
+        public int SplitOrientation { get; set; }
+        public int PrimarySplitTabIndex { get; set; } = -1;
+        public bool IsPrimarySplitTabPinned { get; set; }
+        public int SecondarySplitTabIndex { get; set; } = -1;
+        public bool IsSecondarySplitTabPinned { get; set; }
+        public int FocusedSplitPane { get; set; }
     }
 }

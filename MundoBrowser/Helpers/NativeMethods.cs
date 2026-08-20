@@ -10,6 +10,7 @@ public static class NativeMethods
 
     public enum DWMWINDOWATTRIBUTE
     {
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20,
         DWMWA_WINDOW_CORNER_PREFERENCE = 33,
         DWMWA_BORDER_COLOR = 34,
         DWMWA_CAPTION_COLOR = 35
@@ -106,7 +107,7 @@ public static class NativeMethods
     private static extern IntPtr MonitorFromWindow(IntPtr handle, int flags);
 
     [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     public static bool IsCurrentProcessForeground()
     {
@@ -142,7 +143,7 @@ public static class NativeMethods
         SetWindowFrameColors(window, showSubtleBorder: false);
     }
 
-        public static void SetWindowFrameColors(Window window, bool showSubtleBorder)
+    public static void SetWindowFrameColors(Window window, bool showSubtleBorder)
     {
         try
         {
@@ -164,7 +165,7 @@ public static class NativeMethods
             Action apply = () =>
             {
                 int trueValue = 1;
-                DwmSetWindowAttribute(helper.Handle, (DWMWINDOWATTRIBUTE)20, ref trueValue, sizeof(int));
+                DwmSetWindowAttribute(helper.Handle, DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref trueValue, sizeof(int));
             };
 
             if (helper.Handle == IntPtr.Zero)
@@ -275,6 +276,9 @@ public static class NativeMethods
     }
 
     [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
@@ -299,13 +303,93 @@ public static class NativeMethods
     public static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
-
-    [DllImport("user32.dll")]
     public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetFocus(IntPtr hWnd);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+    public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+    public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_NOACTIVATE = 0x08000000;
+
+    public static void RemoveNoActivate(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            IntPtr exStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
+            long newStyle = exStyle.ToInt64() & ~WS_EX_NOACTIVATE;
+            SetWindowLongPtr(hWnd, GWL_EXSTYLE, new IntPtr(newStyle));
+        }
+        catch { }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    public struct DEVMODE
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string dmDeviceName;
+        public short dmSpecVersion;
+        public short dmDriverVersion;
+        public short dmSize;
+        public short dmDriverExtra;
+        public int dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public int dmDisplayOrientation;
+        public int dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string dmFormName;
+        public short dmLogPixels;
+        public short dmBitsPerPel;
+        public int dmPelsWidth;
+        public int dmPelsHeight;
+        public int dmDisplayFlags;
+        public int dmDisplayFrequency;
+        public int dmICMMethod;
+        public int dmICMIntent;
+        public int dmMediaType;
+        public int dmDitherType;
+        public int dmReserved1;
+        public int dmReserved2;
+        public int dmPanningWidth;
+        public int dmPanningHeight;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool EnumDisplaySettings(string? lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);
+
+    private const int ENUM_CURRENT_SETTINGS = -1;
+
+    public static int GetMaxDisplayRefreshRate()
+    {
+        try
+        {
+            var devMode = new DEVMODE();
+            devMode.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+            if (EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref devMode))
+            {
+                if (devMode.dmDisplayFrequency > 0)
+                    return devMode.dmDisplayFrequency;
+            }
+        }
+        catch { }
+
+        return 60;
+    }
 
     public const int SW_RESTORE = 9;
     public const int ASW_ANY = -1;
@@ -321,3 +405,4 @@ public static class NativeMethods
     public const uint SWP_SHOWWINDOW = 0x0040;
     public const uint SWP_NOOWNERZORDER = 0x0200;
 }
+

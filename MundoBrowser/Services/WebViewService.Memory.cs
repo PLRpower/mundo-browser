@@ -85,7 +85,23 @@ public partial class WebViewService
 
     private void DiscardTab(TabViewModel tab)
     {
-        if (_webViews.TryGetValue(tab, out var webView))
+        if (_tabContainers.TryGetValue(tab, out var container))
+        {
+            if (container.ContainerGrid.Parent is System.Windows.Controls.Panel parent)
+            {
+                parent.Children.Remove(container.ContainerGrid);
+            }
+            else
+            {
+                _container?.Children.Remove(container.ContainerGrid);
+            }
+
+            container.MainWebView.Dispose();
+            _tabContainers.Remove(tab);
+            _webViews.Remove(tab);
+            tab.IsDiscarded = true;
+        }
+        else if (_webViews.TryGetValue(tab, out var webView))
         {
             _container?.Children.Remove(webView);
             webView.Dispose();

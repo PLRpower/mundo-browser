@@ -127,6 +127,11 @@ public partial class TopBarView
         
         _suppressInlineCompletionUntilInsertion = true;
             
+        if (PresentationSource.FromVisual(AddressTextBox) is System.Windows.Interop.HwndSource source && source.Handle != IntPtr.Zero)
+        {
+            NativeMethods.SetFocus(source.Handle);
+        }
+
         Dispatcher.BeginInvoke(new Action(() =>
         {
             AddressTextBox.SelectAll();
@@ -136,6 +141,14 @@ public partial class TopBarView
             else
                 AddressTextBox.ScrollToHome();
         }), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void AddressTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (PresentationSource.FromVisual(AddressTextBox) is System.Windows.Interop.HwndSource source && source.Handle != IntPtr.Zero)
+        {
+            NativeMethods.SetFocus(source.Handle);
+        }
     }
 
     private static T? GetDescendantByType<T>(System.Windows.DependencyObject depObj) where T : System.Windows.DependencyObject
@@ -171,10 +184,13 @@ public partial class TopBarView
                 if (vm.SelectedTab != null)
                     vm.AddressBarText = vm.SelectedTab.AddressUrl;
             }
+
+            GetMainWindow()?.OnFloatingTopBarFocusLost();
         }
 
         UpdateAddressDisplay();
     }
+
 
     private void UpdateAddressDisplay()
     {
@@ -230,12 +246,18 @@ public partial class TopBarView
 
     private void UrlBarBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (PresentationSource.FromVisual(AddressTextBox) is System.Windows.Interop.HwndSource source && source.Handle != IntPtr.Zero)
+        {
+            NativeMethods.SetFocus(source.Handle);
+        }
+
         if (!AddressTextBox.IsKeyboardFocused)
         {
             AddressTextBox.Focus();
             e.Handled = true;
         }
     }
+
 
     private void TryApplyInlineCompletion(
         string input,
