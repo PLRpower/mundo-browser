@@ -40,10 +40,15 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     public WebView2? ActiveWebView => _activeWebView;
     public CoreWebView2Environment? WebViewEnvironment => _environment;
+    public event Action? BrowserProcessExited;
 
     public WebView2? GetWebViewForTab(TabViewModel tab) => _webViews.TryGetValue(tab, out var wv) ? wv : null;
 
-    public WebView2? GetAnyActiveWebView() => _activeWebView ?? _webViews.Values.FirstOrDefault(w => w.CoreWebView2 != null);
+    public WebView2? GetAnyActiveWebView() => _activeWebView ?? _webViews.Values.FirstOrDefault(w =>
+    {
+        try { return w.CoreWebView2 != null; }
+        catch { return false; }
+    });
 
     public IReadOnlyList<WebView2> GetAllWebViews()
     {
@@ -105,7 +110,22 @@ public partial class WebViewService : IWebViewService, IDisposable
             _removedTabs.Remove(tab);
 
             if (_webViews.TryGetValue(tab, out var existing))
-                return existing;
+            {
+                bool isAlive = false;
+                try
+                {
+                    isAlive = existing.CoreWebView2 != null;
+                }
+                catch
+                {
+                    isAlive = false;
+                }
+
+                if (isAlive)
+                    return existing;
+
+                DiscardTab(tab);
+            }
 
             if (_initializationTasks.TryGetValue(tab, out var existingTask))
             {
@@ -128,7 +148,7 @@ public partial class WebViewService : IWebViewService, IDisposable
                     wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
                 }
             }
-            catch (ObjectDisposedException) { }
+            catch { }
             return wv;
         }
         finally
@@ -291,12 +311,7 @@ public partial class WebViewService : IWebViewService, IDisposable
 
             webView.CoreWebView2.ProcessFailed += (sender, args) =>
             {
-                if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited || 
-                    args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited ||
-                    args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
-                {
-                    try { webView.Reload(); } catch { }
-                }
+                HandleProcessFailed(webView, tab, args);
             };
 
             webView.WebMessageReceived += (s, e) =>
@@ -414,6 +429,46 @@ public partial class WebViewService : IWebViewService, IDisposable
         ";
     }
 
+    private void HandleProcessFailed(WebView2 webView, TabViewModel tab, CoreWebView2ProcessFailedEventArgs args)
+    {
+        System.Diagnostics.Debug.WriteLine($"WebView ProcessFailed: Kind={args.ProcessFailedKind}, Reason={args.Reason}, ExitCode={args.ExitCode}");
+
+        if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted) return;
+
+            dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    var deadTabs = _webViews.Keys.ToList();
+                    foreach (var deadTab in deadTabs)
+                    {
+                        DiscardTab(deadTab);
+                    }
+                    _activeWebView = null;
+                    _activeTabContainer = null;
+
+                    BrowserProcessExited?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error recovering from browser process exit: {ex.Message}");
+                }
+            });
+        }
+        else if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited ||
+                 args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+        {
+            try
+            {
+                webView.Reload();
+            }
+            catch { }
+        }
+    }
+
     public Task SwitchToTabAsync(TabViewModel tab, WebView2 webView)
     {
         if (_activeTabContainer != null && _activeTabContainer.MainWebView != webView)
@@ -427,7 +482,14 @@ public partial class WebViewService : IWebViewService, IDisposable
             _activeTabContainer = currentContainer;
             _activeTabContainer.ContainerGrid.Visibility = Visibility.Visible;
             _activeWebView = webView;
-            _activeWebView.ZoomFactor = tab.ZoomFactor;
+            try
+            {
+                _activeWebView.ZoomFactor = tab.ZoomFactor;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to set ZoomFactor: {ex.Message}");
+            }
             tab.LastAccessed = DateTime.Now;
             tab.IsDiscarded = false;
             
@@ -548,10 +610,17 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     public Task<WebView2?> OpenDevToolsForTabAsync(TabViewModel tab)
     {
-        if (_webViews.TryGetValue(tab, out var webView) && webView.CoreWebView2 != null)
+        if (_webViews.TryGetValue(tab, out var webView))
         {
-            webView.CoreWebView2.OpenDevToolsWindow();
-            return Task.FromResult<WebView2?>(webView);
+            try
+            {
+                if (webView.CoreWebView2 != null)
+                {
+                    webView.CoreWebView2.OpenDevToolsWindow();
+                    return Task.FromResult<WebView2?>(webView);
+                }
+            }
+            catch { }
         }
         return Task.FromResult<WebView2?>(null);
     }

@@ -1,3 +1,6 @@
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Threading;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using MundoBrowser.Models;
@@ -10,6 +13,8 @@ namespace MundoBrowser.ViewModels
         // ════════════════════════════════════════════════════════════════
         // Session & Window State Persistence
         // ════════════════════════════════════════════════════════════════
+
+        private CancellationTokenSource? _sessionSaveDebounceCts;
 
         [ObservableProperty]
         private double _windowWidth = 1280;
@@ -25,6 +30,109 @@ namespace MundoBrowser.ViewModels
 
         [ObservableProperty]
         private WindowState _windowState = WindowState.Normal;
+
+        public void InitializeSessionTracking()
+        {
+            Tabs.CollectionChanged += OnTabsCollectionChangedForSession;
+            foreach (var tab in Tabs)
+            {
+                tab.PropertyChanged += OnTabPropertyChangedForSession;
+            }
+
+            foreach (var pinned in PinnedTabs)
+            {
+                pinned.PropertyChanged += OnPinnedTabPropertyChangedForSession;
+                if (pinned.Tab != null)
+                {
+                    pinned.Tab.PropertyChanged += OnTabPropertyChangedForSession;
+                }
+            }
+        }
+
+        private void OnTabsCollectionChangedForSession(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+            {
+                foreach (TabViewModel tab in e.OldItems)
+                {
+                    tab.PropertyChanged -= OnTabPropertyChangedForSession;
+                }
+            }
+            if (e.NewItems != null)
+            {
+                foreach (TabViewModel tab in e.NewItems)
+                {
+                    tab.PropertyChanged += OnTabPropertyChangedForSession;
+                }
+            }
+            RequestSessionSave();
+        }
+
+        private void OnPinnedTabPropertyChangedForSession(object? sender, PropertyChangedEventArgs e)
+        {
+            if (sender is PinnedTab pinned && pinned.Tab != null)
+            {
+                pinned.Tab.PropertyChanged -= OnTabPropertyChangedForSession;
+                pinned.Tab.PropertyChanged += OnTabPropertyChangedForSession;
+            }
+            RequestSessionSave();
+        }
+
+        private void OnTabPropertyChangedForSession(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(TabViewModel.Url)
+                or nameof(TabViewModel.Title)
+                or nameof(TabViewModel.FaviconUrl)
+                or nameof(TabViewModel.FaviconRelativePath)
+                or nameof(TabViewModel.ZoomFactor))
+            {
+                RequestSessionSave();
+            }
+        }
+
+        public void RequestSessionSave()
+        {
+            var cts = new CancellationTokenSource();
+            var previousCts = Interlocked.Exchange(ref _sessionSaveDebounceCts, cts);
+            try
+            {
+                previousCts?.Cancel();
+                previousCts?.Dispose();
+            }
+            catch { }
+            _ = DebouncedSaveSessionAsync(cts);
+        }
+
+        private async Task DebouncedSaveSessionAsync(CancellationTokenSource cts)
+        {
+            try
+            {
+                await Task.Delay(1000, cts.Token).ConfigureAwait(false);
+
+                var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                if (dispatcher == null || dispatcher.HasShutdownStarted)
+                    return;
+
+                var snapshot = await dispatcher.InvokeAsync(CreateSessionDataSnapshot);
+                if (cts.IsCancellationRequested)
+                    return;
+
+                await SessionManager.SaveSessionAsync(snapshot).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by newer change
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error auto-saving session: {ex.Message}");
+            }
+            finally
+            {
+                Interlocked.CompareExchange(ref _sessionSaveDebounceCts, null, cts);
+                cts.Dispose();
+            }
+        }
 
         public SessionData CreateSessionDataSnapshot()
         {
@@ -143,6 +251,14 @@ namespace MundoBrowser.ViewModels
 
         public async Task SaveCurrentSessionAsync()
         {
+            var pendingSave = Interlocked.Exchange(ref _sessionSaveDebounceCts, null);
+            try
+            {
+                pendingSave?.Cancel();
+                pendingSave?.Dispose();
+            }
+            catch { }
+
             await HistoryManager.FlushAsync();
             var snapshot = CreateSessionDataSnapshot();
             await SessionManager.SaveSessionAsync(snapshot);

@@ -261,6 +261,7 @@ public partial class MainWindow
         }
 
         vm.WindowState = WindowState;
+        vm.RequestSessionSave();
     }
 
     private void ApplyFullscreenBounds()

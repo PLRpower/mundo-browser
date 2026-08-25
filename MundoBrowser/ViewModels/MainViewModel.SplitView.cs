@@ -61,6 +61,7 @@ namespace MundoBrowser.ViewModels
         {
             UpdateSplitTabFlags();
             SplitViewLayoutChanged?.Invoke(this, EventArgs.Empty);
+            RequestSessionSave();
         }
 
         partial void OnIsSplitViewActiveChanged(bool value)

@@ -19,6 +19,8 @@ public partial class App : System.Windows.Application
     public App()
     {
         DispatcherUnhandledException += App_DispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
         NativeMethods.SetCurrentProcessExplicitAppUserModelID(NativeMethods.AppUserModelId);
         ConfigurePerformanceSettings();
         _serviceProvider = ConfigureServices();
@@ -31,6 +33,38 @@ public partial class App : System.Windows.Application
             e.Handled = true;
             return;
         }
+
+        if (e.Exception is InvalidOperationException ex && ex.Message.Contains("WebView", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Handled = true;
+            LogException("DispatcherUnhandledException (WebView2 Recovered)", e.Exception);
+            return;
+        }
+
+        LogException("DispatcherUnhandledException", e.Exception);
+    }
+
+    private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        LogException("AppDomainUnhandledException", e.ExceptionObject as Exception);
+    }
+
+    private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        LogException("TaskSchedulerUnobservedException", e.Exception);
+        e.SetObserved();
+    }
+
+    private static void LogException(string context, Exception? ex)
+    {
+        if (ex == null) return;
+        try
+        {
+            var logPath = Path.Combine(AppRuntime.LocalDataDirectory, "crash.log");
+            var text = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{context}] {ex}\n\n";
+            File.AppendAllText(logPath, text);
+        }
+        catch { }
     }
 
     private static void ConfigurePerformanceSettings()

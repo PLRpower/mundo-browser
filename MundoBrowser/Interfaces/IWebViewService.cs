@@ -96,6 +96,11 @@ namespace MundoBrowser.Interfaces
         event Action? ActiveDownloadsChanged;
 
         /// <summary>
+        /// Event fired when the underlying WebView2 browser process exits/crashes.
+        /// </summary>
+        event Action? BrowserProcessExited;
+
+        /// <summary>
         /// Opens the default download dialog if available.
         /// </summary>
         void OpenDownloadDialog();

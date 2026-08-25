@@ -13,7 +13,9 @@ public partial class TopBarView
             vm.SelectedTab.ZoomFactor = 1.0;
             var webView = GetWebView();
             if (webView != null)
-                webView.ZoomFactor = 1.0;
+            {
+                try { webView.ZoomFactor = 1.0; } catch { }
+            }
         }
     }
 

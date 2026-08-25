@@ -764,7 +764,7 @@ public partial class MainWindow
         {
             double newZoom = Math.Clamp(vm.SelectedTab.ZoomFactor + delta, 0.25, 5.0);
             vm.SelectedTab.ZoomFactor = newZoom;
-            _webViewService.ActiveWebView.ZoomFactor = newZoom;
+            try { _webViewService.ActiveWebView.ZoomFactor = newZoom; } catch { }
         }
     }
 
@@ -773,7 +773,7 @@ public partial class MainWindow
         if (DataContext is MainViewModel vm && vm.SelectedTab != null && _webViewService.ActiveWebView != null)
         {
             vm.SelectedTab.ZoomFactor = 1.0;
-            _webViewService.ActiveWebView.ZoomFactor = 1.0;
+            try { _webViewService.ActiveWebView.ZoomFactor = 1.0; } catch { }
         }
     }
 

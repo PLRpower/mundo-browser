@@ -121,6 +121,8 @@ namespace MundoBrowser.ViewModels
 
             if (SelectedTab == null) SelectedTab = Tabs.FirstOrDefault() ?? PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
             if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
+
+            InitializeSessionTracking();
         }
 
         private void OnAppSettingsChanged(AppSettings settings)
@@ -176,6 +178,8 @@ namespace MundoBrowser.ViewModels
             SelectedListTab = (value != null && Tabs.Contains(value))
                 ? (value == SecondarySplitTab ? PrimarySplitTab : value)
                 : null;
+
+            RequestSessionSave();
         }
 
         partial void OnSelectedListTabChanged(TabViewModel? value)

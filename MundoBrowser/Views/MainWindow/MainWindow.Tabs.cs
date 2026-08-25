@@ -15,12 +15,28 @@ public partial class MainWindow
         foreach (var pinnedTab in vm.PinnedTabs)
             pinnedTab.PropertyChanged += PinnedTab_PropertyChanged;
 
+        _webViewService.BrowserProcessExited += OnBrowserProcessExited;
+
         SynchronizeTrackedTabs();
 
         vm.NewTabRequested += MainViewModel_NewTabRequested;
         vm.MediaActionRequested += OnMediaActionRequested;
         vm.TabDragCompleted += MainViewModel_TabDragCompleted;
         InitializeSplitViewEvents(vm);
+    }
+
+    private void OnBrowserProcessExited()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(OnBrowserProcessExited);
+            return;
+        }
+
+        if (_viewModel?.SelectedTab is { } currentTab)
+        {
+            _ = SwitchToTabAsync(currentTab);
+        }
     }
 
     private async Task SwitchToTabAsync(TabViewModel tab)
@@ -30,26 +46,33 @@ public partial class MainWindow
 
         int switchVersion = Interlocked.Increment(ref _tabSwitchVersion);
 
-        var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-        if (switchVersion != Volatile.Read(ref _tabSwitchVersion)
-            || _viewModel?.SelectedTab != tab
-            || !_trackedTabs.Contains(tab))
-            return;
+        try
+        {
+            var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
+            if (switchVersion != Volatile.Read(ref _tabSwitchVersion)
+                || _viewModel?.SelectedTab != tab
+                || !_trackedTabs.Contains(tab))
+                return;
 
-        if (_viewModel?.IsSplitViewActive == true)
-        {
-            await UpdateSplitViewWebViewsAsync();
-        }
-        else
-        {
-            await _webViewService.SwitchToTabAsync(tab, webView);
-        }
+            if (_viewModel?.IsSplitViewActive == true)
+            {
+                await UpdateSplitViewWebViewsAsync();
+            }
+            else
+            {
+                await _webViewService.SwitchToTabAsync(tab, webView);
+            }
 
-        if (_viewModel is { } vm)
+            if (_viewModel is { } vm)
+            {
+                TopBarControl?.SetAddressBarText(tab.AddressUrl);
+                FloatingTopBarControl?.SetAddressBarText(tab.AddressUrl);
+                vm.AddressBarText = tab.AddressUrl;
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
         {
-            TopBarControl?.SetAddressBarText(tab.AddressUrl);
-            FloatingTopBarControl?.SetAddressBarText(tab.AddressUrl);
-            vm.AddressBarText = tab.AddressUrl;
+            // Tab switch cancelled or WebView recovering from crash
         }
     }
 
@@ -70,12 +93,19 @@ public partial class MainWindow
         try
         {
             var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-            if (_trackedTabs.Contains(tab) && webView.CoreWebView2.Source != tab.Url)
-                webView.CoreWebView2.Navigate(tab.Url);
+            if (_trackedTabs.Contains(tab))
+            {
+                try
+                {
+                    if (webView.CoreWebView2 != null && webView.CoreWebView2.Source != tab.Url)
+                        webView.CoreWebView2.Navigate(tab.Url);
+                }
+                catch { }
+            }
         }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
         {
-            // The tab was closed while its WebView was being initialized.
+            // The tab was closed or webview crashed while its WebView was being initialized.
         }
     }
 
@@ -92,9 +122,9 @@ public partial class MainWindow
             {
                 await SwitchToTabAsync(vm.SelectedTab);
             }
-            catch (ObjectDisposedException)
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
             {
-                // The selected tab changed again while its WebView was initializing.
+                // The selected tab changed again or crashed while initializing.
             }
         }
         else if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
