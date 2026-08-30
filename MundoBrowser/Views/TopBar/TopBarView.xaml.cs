@@ -50,23 +50,17 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         set => SetValue(IsFloatingModeProperty, value);
     }
 
-    private void AnimateElementVisibility(FrameworkElement? element, bool show, bool animated = true)
+    internal static void AnimateElementVisibility(FrameworkElement? element, bool show, bool animated = true, bool useHidden = false)
     {
         if (element == null) return;
 
-        if (element.RenderTransform is not System.Windows.Media.TranslateTransform tt)
-        {
-            tt = new System.Windows.Media.TranslateTransform(0, 0);
-            element.RenderTransform = tt;
-        }
+        var invisibleState = useHidden ? Visibility.Hidden : Visibility.Collapsed;
 
         if (!animated)
         {
             element.BeginAnimation(UIElement.OpacityProperty, null);
-            tt.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, null);
             element.Opacity = show ? 1.0 : 0.0;
-            tt.Y = show ? 0.0 : -25.0;
-            element.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            element.Visibility = show ? Visibility.Visible : invisibleState;
             element.IsHitTestVisible = show;
             return;
         }
@@ -79,22 +73,11 @@ public partial class TopBarView : System.Windows.Controls.UserControl
             var fadeAnim = new System.Windows.Media.Animation.DoubleAnimation
             {
                 To = 1.0,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
-            };
-
-            if (element.Opacity < 0.1 || tt.Y < -20)
-                tt.Y = -25;
-
-            var slideAnim = new System.Windows.Media.Animation.DoubleAnimation
-            {
-                To = 0.0,
-                Duration = TimeSpan.FromMilliseconds(180),
+                Duration = TimeSpan.FromMilliseconds(160),
                 EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
             };
 
             element.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
-            tt.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideAnim);
         }
         else
         {
@@ -103,27 +86,19 @@ public partial class TopBarView : System.Windows.Controls.UserControl
             var fadeAnim = new System.Windows.Media.Animation.DoubleAnimation
             {
                 To = 0.0,
-                Duration = TimeSpan.FromMilliseconds(140),
+                Duration = TimeSpan.FromMilliseconds(120),
                 EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
             };
 
-            var slideAnim = new System.Windows.Media.Animation.DoubleAnimation
-            {
-                To = -25.0,
-                Duration = TimeSpan.FromMilliseconds(140),
-                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
-            };
-
-            slideAnim.Completed += (s, e) =>
+            fadeAnim.Completed += (s, e) =>
             {
                 if (element.Opacity <= 0.05 && !element.IsHitTestVisible)
                 {
-                    element.Visibility = Visibility.Collapsed;
+                    element.Visibility = invisibleState;
                 }
             };
 
             element.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
-            tt.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideAnim);
         }
     }
 

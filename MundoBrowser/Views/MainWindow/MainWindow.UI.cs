@@ -184,21 +184,24 @@ public partial class MainWindow
             FloatingSidebarControl.ShowNavButtons = false;
         }
 
-        double sidebarWidth = (DataContext is MainViewModel vm2) ? vm2.SidebarWidth : 250;
         _isSidebarFloating = true;
         FloatingSidebarContent.DataContext = DataContext;
-        FloatingSidebarPopup.IsOpen = true;
-        var slideIn = new DoubleAnimation 
+
+        if (!FloatingSidebarPopup.IsOpen)
+        {
+            FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
+            FloatingSidebarContent.Opacity = 0.0;
+            FloatingSidebarPopup.IsOpen = true;
+        }
+
+        var fadeIn = new DoubleAnimation 
         { 
-            From = -sidebarWidth, 
-            To = 0, 
-            Duration = TimeSpan.FromMilliseconds(220), 
+            To = 1.0, 
+            Duration = TimeSpan.FromMilliseconds(160), 
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } 
         };
-        if (FloatingSidebarContent.RenderTransform is not TranslateTransform)
-            FloatingSidebarContent.RenderTransform = new TranslateTransform(-sidebarWidth, 0);
 
-        FloatingSidebarContent.RenderTransform.BeginAnimation(TranslateTransform.XProperty, slideIn);
+        FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, fadeIn);
 
         // Let the current edge mouse event complete before closing its source popup.
         Dispatcher.BeginInvoke(
@@ -212,6 +215,7 @@ public partial class MainWindow
 
         if (!_isSidebarFloating)
         {
+            FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
             if (FloatingSidebarPopup.IsOpen)
                 FloatingSidebarPopup.IsOpen = false;
             UpdateEdgeTriggerState();
@@ -222,31 +226,30 @@ public partial class MainWindow
 
         if (!animate)
         {
-            FloatingSidebarContent.RenderTransform.BeginAnimation(
-                TranslateTransform.XProperty,
-                null);
+            FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
+            FloatingSidebarContent.Opacity = 0.0;
             FloatingSidebarPopup.IsOpen = false;
             UpdateEdgeTriggerState();
             return;
         }
 
-        double sidebarWidth = (DataContext is MainViewModel vm) ? vm.SidebarWidth : 250;
-        var slideOut = new DoubleAnimation 
+        var fadeOut = new DoubleAnimation 
         { 
-            From = 0, 
-            To = -sidebarWidth, 
-            Duration = TimeSpan.FromMilliseconds(200), 
+            To = 0.0, 
+            Duration = TimeSpan.FromMilliseconds(140), 
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } 
         };
-        slideOut.Completed += (_, _) =>
+        fadeOut.Completed += (_, _) =>
         {
             if (!_isSidebarFloating)
+            {
                 FloatingSidebarPopup.IsOpen = false;
+                FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
+                FloatingSidebarContent.Opacity = 0.0;
+            }
             UpdateEdgeTriggerState();
         };
-        if (FloatingSidebarContent.RenderTransform is not TranslateTransform) 
-            FloatingSidebarContent.RenderTransform = new TranslateTransform(0, 0);
-        FloatingSidebarContent.RenderTransform.BeginAnimation(TranslateTransform.XProperty, slideOut);
+        FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, fadeOut);
     }
 
     private void FloatingSidebarContent_MouseLeave(object sender, MouseEventArgs e)
@@ -295,31 +298,52 @@ public partial class MainWindow
         }
     }
 
+    private FrameworkElement? GetFloatingCaptionButtonsContainer()
+    {
+        if (FloatingTitleBar == null) return null;
+
+        var btn = FindVisualChildren<Wpf.Ui.Controls.TitleBarButton>(FloatingTitleBar)
+            .FirstOrDefault(b => b.ButtonType != Wpf.Ui.Controls.TitleBarButtonType.Help);
+
+        if (btn != null)
+        {
+            var parent = VisualTreeHelper.GetParent(btn);
+            while (parent != null && parent != FloatingTitleBar)
+            {
+                if (parent is FrameworkElement fe && fe.Name != "PART_MainGrid")
+                {
+                    if (parent is System.Windows.Controls.Panel || parent is System.Windows.Controls.Border)
+                    {
+                        return fe;
+                    }
+                }
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return btn;
+        }
+        return null;
+    }
+
     private void SetFloatingCaptionButtonsVisible(bool visible, bool animate = true)
     {
         if (FloatingTitleBar == null) return;
 
-        FloatingTitleBar.ShowMinimize = visible;
-        FloatingTitleBar.ShowMaximize = visible;
-        FloatingTitleBar.ShowClose = visible;
-        FloatingTitleBar.ShowHelp = false;
+        UpdateFloatingTitleBarButtonsBackground();
 
-        foreach (var btn in FindVisualChildren<Wpf.Ui.Controls.TitleBarButton>(FloatingTitleBar))
+        var container = GetFloatingCaptionButtonsContainer();
+        if (container != null)
         {
-            if (btn.ButtonType == Wpf.Ui.Controls.TitleBarButtonType.Help)
-            {
-                btn.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                btn.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-                btn.Background = System.Windows.Media.Brushes.Transparent;
-            }
+            TopBarView.AnimateElementVisibility(container, visible, animated: animate, useHidden: true);
         }
-
-        if (visible)
+        else
         {
-            UpdateFloatingTitleBarButtonsBackground();
+            foreach (var btn in FindVisualChildren<Wpf.Ui.Controls.TitleBarButton>(FloatingTitleBar))
+            {
+                if (btn.ButtonType != Wpf.Ui.Controls.TitleBarButtonType.Help)
+                {
+                    TopBarView.AnimateElementVisibility(btn, visible, animated: animate, useHidden: true);
+                }
+            }
         }
     }
 
@@ -395,6 +419,9 @@ public partial class MainWindow
         if (zone == FloatingTopBarZone.None) return;
         if (!_isFullscreen && WindowState != WindowState.Maximized) return;
 
+        if (TopEdgeTriggerPopup != null && TopEdgeTriggerPopup.IsOpen)
+            TopEdgeTriggerPopup.IsOpen = false;
+
         double width = MainGrid?.ActualWidth ?? ActualWidth;
 
         FloatingTopBarPopup.HorizontalOffset = 0;
@@ -409,18 +436,22 @@ public partial class MainWindow
         {
             _isTopBarFloating = true;
             FloatingTopBarContent.DataContext = DataContext;
-            FloatingTopBarPopup.IsOpen = true;
 
-            var slideDown = new DoubleAnimation 
+            if (!FloatingTopBarPopup.IsOpen)
+            {
+                FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
+                FloatingTopBarContent.Opacity = 0.0;
+                FloatingTopBarPopup.IsOpen = true;
+            }
+
+            var fadeIn = new DoubleAnimation 
             { 
-                From = -40, 
-                To = 0, 
-                Duration = TimeSpan.FromMilliseconds(220), 
+                To = 1.0, 
+                Duration = TimeSpan.FromMilliseconds(160), 
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } 
             };
 
-            FloatingTopBarTransform.Y = -40;
-            FloatingTopBarTransform.BeginAnimation(TranslateTransform.YProperty, slideDown);
+            FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, fadeIn);
 
             Dispatcher.BeginInvoke(
                 new Action(() =>
@@ -442,6 +473,7 @@ public partial class MainWindow
 
         if (!_isTopBarFloating)
         {
+            FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
             if (FloatingTopBarPopup.IsOpen)
                 FloatingTopBarPopup.IsOpen = false;
             _currentFloatingZone = FloatingTopBarZone.None;
@@ -454,28 +486,32 @@ public partial class MainWindow
 
         if (!animate)
         {
-            FloatingTopBarTransform.BeginAnimation(TranslateTransform.YProperty, null);
+            FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
+            FloatingTopBarContent.Opacity = 0.0;
             FloatingTopBarPopup.IsOpen = false;
             UpdateTopEdgeTriggerState();
             return;
         }
 
-        var slideUp = new DoubleAnimation 
+        var fadeOut = new DoubleAnimation 
         { 
-            From = 0, 
-            To = -40, 
-            Duration = TimeSpan.FromMilliseconds(180), 
+            To = 0.0, 
+            Duration = TimeSpan.FromMilliseconds(140), 
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } 
         };
 
-        slideUp.Completed += (_, _) =>
+        fadeOut.Completed += (_, _) =>
         {
             if (!_isTopBarFloating)
+            {
                 FloatingTopBarPopup.IsOpen = false;
+                FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
+                FloatingTopBarContent.Opacity = 0.0;
+            }
             UpdateTopEdgeTriggerState();
         };
 
-        FloatingTopBarTransform.BeginAnimation(TranslateTransform.YProperty, slideUp);
+        FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, fadeOut);
     }
 
     private void FloatingTopBarContent_MouseMove(object sender, MouseEventArgs e)

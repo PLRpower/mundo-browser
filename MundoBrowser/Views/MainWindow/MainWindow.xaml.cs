@@ -160,10 +160,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 };
                 if (FloatingTitleBar != null)
                 {
-                    FloatingTitleBar.PreviewMouseLeftButtonDown += TitleBar_PreviewMouseLeftButtonDown;
-                    FloatingTitleBar.PreviewMouseMove += BlockFullscreenTitleBarDrag;
-                    FloatingTitleBar.PreviewMouseRightButtonUp += TitleBar_PreviewMouseRightButtonUp;
-                    FloatingTitleBar.MouseRightButtonUp += TitleBar_MouseRightButtonUp;
                     FloatingTitleBar.Loaded += (s, e) =>
                     {
                         UpdateFloatingTitleBarButtonsBackground();
@@ -371,49 +367,19 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
             };
 
-            // Also hook FloatingTopBarPopup's HwndSource for Windows 11 Snap Layouts & NC messages
-            if (FloatingTopBarPopup != null && methodHwndHook != null)
+            EventHandler popupOpened = (s, e) =>
             {
-                var hookDelegate = (System.Windows.Interop.HwndSourceHook)Delegate.CreateDelegate(typeof(System.Windows.Interop.HwndSourceHook), FloatingTitleBar, methodHwndHook);
-                System.Windows.Interop.HwndSourceHook floatingTopBarHook = (IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                if (PresentationSource.FromVisual(FloatingTopBarContent) is System.Windows.Interop.HwndSource popupHwndSource)
                 {
-                    var result = hookDelegate(hwnd, msg, wParam, lParam, ref handled);
-                    if (msg == WmNcHitTest && handled)
-                    {
-                        if (_currentFloatingZone != FloatingTopBarZone.Right && _currentFloatingZone != FloatingTopBarZone.All)
-                        {
-                            result = new IntPtr(HtClient);
-                        }
-                        else
-                        {
-                            int hit = result.ToInt32();
-                            if (hit != HtMaxButton && hit != HtMinButton && hit != HtClose && hit != HtHelp)
-                            {
-                                result = new IntPtr(HtClient);
-                            }
-                        }
-                    }
-                    return result;
-                };
+                    NativeMethods.RemoveNoActivate(popupHwndSource.Handle);
+                }
+                UpdateFloatingTitleBarButtonsBackground();
+                SetFloatingCaptionButtonsVisible(_currentFloatingZone == FloatingTopBarZone.Right || _currentFloatingZone == FloatingTopBarZone.All, animate: false);
+            };
 
-                EventHandler popupOpened = null!;
-                popupOpened = (s, e) =>
-                {
-                    if (PresentationSource.FromVisual(FloatingTopBarContent) is System.Windows.Interop.HwndSource popupHwndSource)
-                    {
-                        popupHwndSource.RemoveHook(floatingTopBarHook);
-                        popupHwndSource.AddHook(floatingTopBarHook);
-                        NativeMethods.RemoveNoActivate(popupHwndSource.Handle);
-                    }
-                    UpdateFloatingTitleBarButtonsBackground();
-                    SetFloatingCaptionButtonsVisible(_currentFloatingZone == FloatingTopBarZone.Right || _currentFloatingZone == FloatingTopBarZone.All);
-                };
-
-                FloatingTopBarPopup.Opened += popupOpened;
-                if (FloatingTopBarPopup.IsOpen)
-                    popupOpened(FloatingTopBarPopup, EventArgs.Empty);
-
-            }
+            FloatingTopBarPopup.Opened += popupOpened;
+            if (FloatingTopBarPopup.IsOpen)
+                popupOpened(FloatingTopBarPopup, EventArgs.Empty);
         }
         catch (Exception ex)
         {

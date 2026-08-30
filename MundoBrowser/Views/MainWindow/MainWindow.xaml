@@ -161,32 +161,29 @@
                   MouseLeave="FloatingTopBarContent_MouseLeave"
                   MouseMove="FloatingTopBarContent_MouseMove">
                 <Border x:Name="FloatingTopBarContent" Background="Transparent" BorderThickness="0">
-                    <Border.RenderTransform>
-                        <TranslateTransform x:Name="FloatingTopBarTransform" Y="0" />
-                    </Border.RenderTransform>
                     <ui:TitleBar x:Name="FloatingTitleBar"
                                  Height="40"
                                  HorizontalContentAlignment="Stretch"
                                  Background="Transparent"
                                  ButtonsForeground="White"
                                  ShowHelp="False"
-                                 ShowMinimize="False"
-                                 ShowMaximize="False"
-                                 ShowClose="False">
+                                 ShowMinimize="True"
+                                 ShowMaximize="True"
+                                 ShowClose="True">
                         <ui:TitleBar.Resources>
                             <Style TargetType="{x:Type ui:TitleBarButton}"
                                    BasedOn="{StaticResource {x:Type ui:TitleBarButton}}">
-                                <Setter Property="Height" Value="40"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="MouseOverBackground" Value="#3D3D3D"/>
-                                <Style.Triggers>
-                                    <Trigger Property="ButtonType" Value="Help">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </Trigger>
-                                    <Trigger Property="ButtonType" Value="Close">
-                                        <Setter Property="MouseOverBackground" Value="#C42B1C"/>
-                                    </Trigger>
-                                </Style.Triggers>
+                                 <Setter Property="Height" Value="40"/>
+                                 <Setter Property="Background" Value="Transparent"/>
+                                 <Setter Property="MouseOverBackground" Value="#3D3D3D"/>
+                                 <Style.Triggers>
+                                     <Trigger Property="ButtonType" Value="Help">
+                                         <Setter Property="Visibility" Value="Collapsed"/>
+                                     </Trigger>
+                                     <Trigger Property="ButtonType" Value="Close">
+                                         <Setter Property="MouseOverBackground" Value="#C42B1C"/>
+                                     </Trigger>
+                                 </Style.Triggers>
                             </Style>
                         </ui:TitleBar.Resources>
                         <ui:TitleBar.CenterContent>
@@ -213,9 +210,6 @@
             <Grid Width="{Binding SidebarWidth}" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
                 <Border x:Name="FloatingSidebarContent" Background="{DynamicResource OverlaySurfaceBrush}" 
                         CornerRadius="0,15,15,0" BorderBrush="#38FFFFFF" BorderThickness="0,1,1,1" Margin="0,44,0,20">
-                    <Border.RenderTransform>
-                        <TranslateTransform x:Name="FloatingSidebarTransform" X="0" />
-                    </Border.RenderTransform>
                     <local:SidebarView x:Name="FloatingSidebarControl" />
                 </Border>
             </Grid>

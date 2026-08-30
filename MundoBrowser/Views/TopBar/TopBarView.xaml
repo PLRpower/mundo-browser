@@ -20,33 +20,81 @@
             </Grid.ColumnDefinitions>
 
             <!-- Nav Buttons (Col 0) -->
-            <Border x:Name="NavButtonsContainer" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="4,0,8,0">
+            <Border x:Name="NavButtonsContainer" Grid.Column="0" HorizontalAlignment="Left">
                 <Border.Style>
                     <Style TargetType="Border">
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                        <Setter Property="Margin" Value="4,0,8,0"/>
                         <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderThickness" Value="0"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                <Setter Property="VerticalAlignment" Value="Top"/>
+                                <Setter Property="Height" Value="36"/>
+                                <Setter Property="Margin" Value="0,0,8,0"/>
                                 <Setter Property="Background" Value="#F21E1E20"/>
-                                <Setter Property="CornerRadius" Value="17"/>
+                                <Setter Property="CornerRadius" Value="0,0,17,0"/>
                                 <Setter Property="BorderBrush" Value="#38FFFFFF"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Padding" Value="2,1"/>
+                                <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                <Setter Property="Padding" Value="0,0,2,0"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
                 <StackPanel x:Name="NavButtonsPanel" Orientation="Horizontal">
-                    <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Back_Click" ToolTip="Précédent (Alt+Flèche gauche)">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                    <Setter Property="VerticalAlignment" Value="Stretch"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <Button Click="Back_Click" ToolTip="Précédent (Alt+Flèche gauche)">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButtonStyle}">
+                                <Setter Property="Width" Value="32"/>
+                                <Setter Property="Height" Value="32"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Width" Value="36"/>
+                                        <Setter Property="Height" Value="36"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Viewbox Width="19" Height="19">
                             <Path Data="{StaticResource IconLeft}" Fill="White" Width="20" Height="20"/>
                         </Viewbox>
                     </Button>
-                    <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Forward_Click" ToolTip="Suivant (Alt+Flèche droite)">
+                    <Button Width="32" Click="Forward_Click" ToolTip="Suivant (Alt+Flèche droite)">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButtonStyle}">
+                                <Setter Property="Height" Value="32"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Height" Value="36"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Viewbox Width="19" Height="19">
                             <Path Data="{StaticResource IconRight}" Fill="White" Width="20" Height="20"/>
                         </Viewbox>
                     </Button>
-                    <Button Width="32" Height="32" Style="{StaticResource NavButtonStyle}" Click="Reload_Click" ToolTip="Actualiser (F5 / Ctrl+R)">
+                    <Button Width="32" Click="Reload_Click" ToolTip="Actualiser (F5 / Ctrl+R)">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource NavButtonStyle}">
+                                <Setter Property="Height" Value="32"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Height" Value="36"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Viewbox Width="19" Height="19">
                             <Path Data="{StaticResource IconRefresh}" Fill="White" Width="20" Height="20"/>
                         </Viewbox>
@@ -55,11 +103,14 @@
             </Border>
 
             <!-- URL Box (Col 1) -->
-            <Border x:Name="UrlBarBorder" Grid.Column="1" Background="#1E1E1E" Height="34"
-                    VerticalAlignment="Center" HorizontalAlignment="Stretch" MaxWidth="720" Margin="8,2"
+            <Border x:Name="UrlBarBorder" Grid.Column="1" Background="#1E1E1E"
+                    HorizontalAlignment="Stretch" MaxWidth="720"
                     PreviewMouseLeftButtonDown="UrlBarBorder_PreviewMouseLeftButtonDown">
                 <Border.Style>
                     <Style TargetType="Border">
+                        <Setter Property="Height" Value="34"/>
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                        <Setter Property="Margin" Value="8,2"/>
                         <Setter Property="CornerRadius" Value="17"/>
                         <Setter Property="BorderBrush" Value="#333333"/>
                         <Setter Property="BorderThickness" Value="1"/>
@@ -67,11 +118,29 @@
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter Property="BorderBrush" Value="#007ACC"/>
                             </Trigger>
-                            <!-- Changement de l'arrondi quand les suggestions sont ouvertes pour faire un bloc unifié -->
+                            <!-- Changement de l'arrondi quand les suggestions sont ouvertes en mode standard -->
                             <DataTrigger Binding="{Binding IsSuggestionsOpen, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
                                 <Setter Property="CornerRadius" Value="17,17,0,0"/>
                                 <Setter Property="BorderBrush" Value="#007ACC"/>
                             </DataTrigger>
+                            <!-- Mode flottant (Overlay) : collé en haut, bords supérieurs droits -->
+                            <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                <Setter Property="Height" Value="36"/>
+                                <Setter Property="VerticalAlignment" Value="Top"/>
+                                <Setter Property="Margin" Value="8,0"/>
+                                <Setter Property="CornerRadius" Value="0,0,17,17"/>
+                                <Setter Property="BorderBrush" Value="#38FFFFFF"/>
+                                <Setter Property="BorderThickness" Value="1,0,1,1"/>
+                            </DataTrigger>
+                            <!-- Mode flottant avec suggestions ouvertes -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True"/>
+                                    <Condition Binding="{Binding IsSuggestionsOpen, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="CornerRadius" Value="0"/>
+                                <Setter Property="BorderBrush" Value="#007ACC"/>
+                            </MultiDataTrigger>
                             <DataTrigger Binding="{Binding IsPendingNewTab}" Value="True">
                                 <Setter Property="BorderBrush" Value="#22C55E"/>
                                 <Setter Property="Effect">
@@ -275,27 +344,54 @@
             </Border>
 
             <!-- Right Section: Tools, Extensions, Update (Col 2) -->
-            <Border x:Name="ActionsContainer" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0">
+            <Border x:Name="ActionsContainer" Grid.Column="2" HorizontalAlignment="Right">
                 <Border.Style>
                     <Style TargetType="Border">
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                        <Setter Property="Margin" Value="0,0,8,0"/>
                         <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderThickness" Value="0"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                <Setter Property="VerticalAlignment" Value="Top"/>
+                                <Setter Property="Height" Value="36"/>
+                                <Setter Property="Margin" Value="0,0,8,0"/>
                                 <Setter Property="Background" Value="#F21E1E20"/>
-                                <Setter Property="CornerRadius" Value="17"/>
+                                <Setter Property="CornerRadius" Value="0,0,17,17"/>
                                 <Setter Property="BorderBrush" Value="#38FFFFFF"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Padding" Value="4,1"/>
+                                <Setter Property="BorderThickness" Value="1,0,1,1"/>
+                                <Setter Property="Padding" Value="4,0,4,0"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
                 <StackPanel x:Name="ActionsPanel" Orientation="Horizontal">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                    <Setter Property="VerticalAlignment" Value="Stretch"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <!-- Zoom Indicator -->
-                    <Button x:Name="ZoomIndicatorButton" Height="28" Margin="4,0,0,0" Padding="6,4"
-                            Style="{StaticResource IconHoverButtonStyle}" Cursor="Hand"
+                    <Button x:Name="ZoomIndicatorButton" Margin="4,0,0,0"
+                            Padding="6,0"
+                            Cursor="Hand"
                             Visibility="Collapsed"
                             Click="ResetZoom_Click" ToolTip="Réinitialiser le zoom (Ctrl+0)">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconHoverButtonStyle}">
+                                <Setter Property="Height" Value="28"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Height" Value="36"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding SelectedTab.ZoomPercentage}"
                                        FontSize="11"
@@ -319,9 +415,19 @@
                     </Button>
 
                     <!-- Site Data -->
-                    <Button x:Name="SiteDataButton" Width="28" Height="28" Margin="4,0,0,0"
-                            Style="{StaticResource IconHoverButtonStyle}" Padding="0" Cursor="Hand"
+                    <Button x:Name="SiteDataButton" Width="28" Margin="4,0,0,0"
+                            Padding="0" Cursor="Hand"
                             ToolTip="Cookies et données du site" Click="SiteDataButton_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconHoverButtonStyle}">
+                                <Setter Property="Height" Value="28"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Height" Value="36"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Button.ContextMenu>
                             <ContextMenu x:Name="SiteDataContextMenu"
                                          Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42"
@@ -341,9 +447,19 @@
                     </Button>
 
                     <!-- AdBlocker -->
-                    <Button x:Name="AdBlockerButton" Width="28" Height="28" Margin="4,0,0,0"
-                            Style="{StaticResource IconHoverButtonStyle}" Padding="0" Cursor="Hand"
+                    <Button x:Name="AdBlockerButton" Width="28" Margin="4,0,0,0"
+                            Padding="0" Cursor="Hand"
                             ToolTip="Boucliers Mundo Browser" Click="AdBlockerButton_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconHoverButtonStyle}">
+                                <Setter Property="Height" Value="28"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Height" Value="36"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Button.ContextMenu>
                             <ContextMenu x:Name="AdBlockerContextMenu"
                                          Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42"
@@ -387,17 +503,36 @@
                 </Button>
 
                 <!-- Extensions Icons -->
-                <ItemsControl ItemsSource="{Binding InstalledExtensions}" VerticalAlignment="Center" Margin="0">
+                <ItemsControl ItemsSource="{Binding InstalledExtensions}" Margin="0">
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                    <Setter Property="VerticalAlignment" Value="Stretch"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Width="28" Height="28" Margin="4,0,0,0" Padding="0"
-                                    Style="{StaticResource IconHoverButtonStyle}"
+                            <Button Width="28" Margin="4,0,0,0" Padding="0"
                                     ToolTip="{Binding Name}" Cursor="Hand" Click="ExtensionIcon_Click"
                                     PreviewMouseRightButtonUp="ExtensionButton_PreviewMouseRightButtonUp"
                                     Tag="{Binding Id}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconHoverButtonStyle}">
+                                        <Setter Property="Height" Value="28"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                <Setter Property="Height" Value="36"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
                                 <Button.ContextMenu>
                                     <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42"
                                                  Opened="ExtensionContextMenu_Opened"
@@ -441,14 +576,18 @@
                 </ItemsControl>
 
                 <!-- Update Button -->
-                <Button x:Name="UpdateButton" Width="28" Height="28" Margin="4,0,0,0"
+                <Button x:Name="UpdateButton" Width="28" Margin="4,0,0,0"
                         Padding="0" Cursor="Hand" Click="UpdateButton_Click" ToolTip="{Binding UpdateToolTipText}">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource IconHoverButtonStyle}">
                             <Setter Property="Visibility" Value="Collapsed"/>
+                            <Setter Property="Height" Value="28"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsUpdateAvailable}" Value="True">
                                     <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsFloatingMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                    <Setter Property="Height" Value="36"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
