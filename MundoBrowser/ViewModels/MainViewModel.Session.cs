@@ -31,50 +31,48 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private WindowState _windowState = WindowState.Normal;
 
+        private readonly HashSet<TabViewModel> _sessionObservedTabs = [];
+
         public void InitializeSessionTracking()
         {
             Tabs.CollectionChanged += OnTabsCollectionChangedForSession;
-            foreach (var tab in Tabs)
-            {
-                tab.PropertyChanged += OnTabPropertyChangedForSession;
-            }
+            SynchronizeSessionObservedTabs();
 
             foreach (var pinned in PinnedTabs)
             {
                 pinned.PropertyChanged += OnPinnedTabPropertyChangedForSession;
-                if (pinned.Tab != null)
-                {
-                    pinned.Tab.PropertyChanged += OnTabPropertyChangedForSession;
-                }
+            }
+        }
+
+        private void SynchronizeSessionObservedTabs()
+        {
+            var currentTabs = Tabs
+                .Concat(PinnedTabs.Where(p => p.Tab != null).Select(p => p.Tab!))
+                .ToHashSet();
+
+            foreach (var tab in _sessionObservedTabs.Except(currentTabs).ToList())
+            {
+                tab.PropertyChanged -= OnTabPropertyChangedForSession;
+                _sessionObservedTabs.Remove(tab);
+            }
+
+            foreach (var tab in currentTabs.Except(_sessionObservedTabs).ToList())
+            {
+                tab.PropertyChanged += OnTabPropertyChangedForSession;
+                _sessionObservedTabs.Add(tab);
             }
         }
 
         private void OnTabsCollectionChangedForSession(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (e.OldItems != null)
-            {
-                foreach (TabViewModel tab in e.OldItems)
-                {
-                    tab.PropertyChanged -= OnTabPropertyChangedForSession;
-                }
-            }
-            if (e.NewItems != null)
-            {
-                foreach (TabViewModel tab in e.NewItems)
-                {
-                    tab.PropertyChanged += OnTabPropertyChangedForSession;
-                }
-            }
+            SynchronizeSessionObservedTabs();
             RequestSessionSave();
         }
 
         private void OnPinnedTabPropertyChangedForSession(object? sender, PropertyChangedEventArgs e)
         {
-            if (sender is PinnedTab pinned && pinned.Tab != null)
-            {
-                pinned.Tab.PropertyChanged -= OnTabPropertyChangedForSession;
-                pinned.Tab.PropertyChanged += OnTabPropertyChangedForSession;
-            }
+            if (e.PropertyName == nameof(PinnedTab.Tab))
+                SynchronizeSessionObservedTabs();
             RequestSessionSave();
         }
 
@@ -364,9 +362,12 @@ namespace MundoBrowser.ViewModels
 
         private string? ResolveStoredFavicon(TabSessionData tabData)
         {
+            if (!string.IsNullOrWhiteSpace(tabData.FaviconUrl))
+                return tabData.FaviconUrl;
+
             return !string.IsNullOrWhiteSpace(tabData.FaviconRelativePath)
-                ? FaviconService.GetAbsoluteFaviconPath(tabData.FaviconRelativePath) ?? tabData.FaviconUrl
-                : tabData.FaviconUrl;
+                ? FaviconService.GetAbsoluteFaviconPath(tabData.FaviconRelativePath)
+                : null;
         }
     }
 }

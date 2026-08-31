@@ -274,7 +274,7 @@ public static class WindowsDefaultBrowserRegistration
         {
             NativeMethods.SHChangeNotify(
                 NativeMethods.SHCNE_ASSOCCHANGED,
-                NativeMethods.SHCNF_IDLIST | NativeMethods.SHCNF_FLUSH,
+                NativeMethods.SHCNF_IDLIST,
                 IntPtr.Zero,
                 IntPtr.Zero);
         }

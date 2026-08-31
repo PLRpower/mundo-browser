@@ -39,7 +39,10 @@ namespace MundoBrowser.ViewModels
 
         private void OnUpdateStatusChanged(object? sender, EventArgs e)
         {
-            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted) return;
+
+            void UpdateState()
             {
                 IsUpdateAvailable = _updateService.IsUpdateAvailable;
                 IsUpdateDownloading = _updateService.IsDownloading;
@@ -62,7 +65,12 @@ namespace MundoBrowser.ViewModels
                     UpdateToolTipText = $"Mise à jour v{UpdateVersionText} disponible";
                     UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} disponible";
                 }
-            });
+            }
+
+            if (dispatcher.CheckAccess())
+                UpdateState();
+            else
+                dispatcher.BeginInvoke(UpdateState);
         }
     }
 }

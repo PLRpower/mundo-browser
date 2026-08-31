@@ -375,7 +375,7 @@ public static partial class ChromeWebStoreHelper
             onUrlChange();
         }
 
-        // Periodic light sweep (every 1s) as safety
+        // Periodic light sweep (every 3s) as safety
         setInterval(() => {
             const extId = getExtensionId();
             if (extId) {
@@ -385,7 +385,7 @@ public static partial class ChromeWebStoreHelper
                     scheduleUpdate(0);
                 }
             }
-        }, 1000);
+        }, 3000);
 
         onUrlChange();
     } catch (globalErr) {

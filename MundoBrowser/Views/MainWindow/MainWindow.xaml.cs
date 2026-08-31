@@ -97,24 +97,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void InitializeWindow()
     {
         StateChanged += (_, _) => {
-            OnWindowStateChanged(forceResizeOverlayReopen: true);
-            UpdateEdgeTriggerState(forceReopen: true);
-            UpdateTopEdgeTriggerState(forceReopen: true);
+            OnWindowStateChanged();
+            UpdateEdgeTriggerState();
+            UpdateTopEdgeTriggerState();
         };
         LocationChanged += (_, _) => {
             KeepFullscreenBounds();
-            RepositionEdgeTriggerPopup();
-            RepositionTopEdgeTriggerPopup();
         };
         SizeChanged += (_, _) => {
             KeepFullscreenBounds();
             UpdateResizeOverlayState();
-            UpdateEdgeTriggerState(forceReopen: true);
-            UpdateTopEdgeTriggerState(forceReopen: true);
+            UpdateEdgeTriggerState();
+            UpdateTopEdgeTriggerState();
         };
         Activated += (_, _) => {
-            UpdateEdgeTriggerState(forceReopen: true);
-            UpdateTopEdgeTriggerState(forceReopen: true);
+            UpdateEdgeTriggerState();
+            UpdateTopEdgeTriggerState();
         };
         Deactivated += (_, _) => {
             if (!NativeMethods.IsCurrentProcessForeground())
@@ -166,9 +164,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     };
                     AttachFloatingTitleBarToWindow();
                 }
-                UpdateResizeOverlayState(forceReopen: true);
-                UpdateEdgeTriggerState(forceReopen: true);
-                UpdateTopEdgeTriggerState(forceReopen: true);
+                UpdateResizeOverlayState();
+                UpdateEdgeTriggerState();
+                UpdateTopEdgeTriggerState();
 
                 await _webViewService.InitializeAsync(WebViewsContainer);
 
@@ -203,38 +201,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 System.Diagnostics.Debug.WriteLine($"Failed to initialize main window: {ex}");
             }
         };
-    }
-
-    private void RepositionEdgeTriggerPopup()
-    {
-        if (EdgeTriggerPopup != null && EdgeTriggerPopup.IsOpen)
-        {
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (EdgeTriggerPopup != null && EdgeTriggerPopup.IsOpen)
-                {
-                    var offset = EdgeTriggerPopup.HorizontalOffset;
-                    EdgeTriggerPopup.HorizontalOffset = offset + 0.1;
-                    EdgeTriggerPopup.HorizontalOffset = offset;
-                }
-            }), System.Windows.Threading.DispatcherPriority.Background);
-        }
-    }
-
-    private void RepositionTopEdgeTriggerPopup()
-    {
-        if (TopEdgeTriggerPopup != null && TopEdgeTriggerPopup.IsOpen)
-        {
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (TopEdgeTriggerPopup != null && TopEdgeTriggerPopup.IsOpen)
-                {
-                    var offset = TopEdgeTriggerPopup.HorizontalOffset;
-                    TopEdgeTriggerPopup.HorizontalOffset = offset + 0.1;
-                    TopEdgeTriggerPopup.HorizontalOffset = offset;
-                }
-            }), System.Windows.Threading.DispatcherPriority.Background);
-        }
     }
 
     public Microsoft.Web.WebView2.Wpf.WebView2? GetActiveWebView() => _webViewService.ActiveWebView;

@@ -648,7 +648,7 @@ public partial class MainWindow
         }
     }
 
-    private void UpdateEdgeTriggerState(bool forceReopen = false)
+    private void UpdateEdgeTriggerState()
     {
         if (EdgeTriggerPopup == null) return;
 
@@ -672,16 +672,11 @@ public partial class MainWindow
         if (triggerHeight > 0)
             EdgeTriggerPopup.Height = triggerHeight;
 
-        if (shouldOpen && forceReopen && EdgeTriggerPopup.IsOpen)
-            EdgeTriggerPopup.IsOpen = false;
-
-        EdgeTriggerPopup.IsOpen = shouldOpen;
-
-        if (shouldOpen)
-            RepositionEdgeTriggerPopup();
+        if (EdgeTriggerPopup.IsOpen != shouldOpen)
+            EdgeTriggerPopup.IsOpen = shouldOpen;
     }
 
-    private void UpdateTopEdgeTriggerState(bool forceReopen = false)
+    private void UpdateTopEdgeTriggerState()
     {
         if (TopEdgeTriggerPopup == null) return;
 
@@ -705,13 +700,8 @@ public partial class MainWindow
             TopEdgeTriggerPopup.Width = width;
         TopEdgeTriggerPopup.VerticalOffset = 0;
 
-        if (shouldOpen && forceReopen && TopEdgeTriggerPopup.IsOpen)
-            TopEdgeTriggerPopup.IsOpen = false;
-
-        TopEdgeTriggerPopup.IsOpen = shouldOpen;
-
-        if (shouldOpen)
-            RepositionTopEdgeTriggerPopup();
+        if (TopEdgeTriggerPopup.IsOpen != shouldOpen)
+            TopEdgeTriggerPopup.IsOpen = shouldOpen;
     }
 
     private void ToggleSidebar()

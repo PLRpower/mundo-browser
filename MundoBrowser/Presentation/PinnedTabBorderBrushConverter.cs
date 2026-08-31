@@ -67,31 +67,34 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
         try
         {
             using var stream = File.Open(uri.LocalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var decoder = BitmapDecoder.Create(
-                stream,
-                BitmapCreateOptions.PreservePixelFormat,
-                BitmapCacheOption.OnLoad);
-            var bitmap = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+            var bitmapImage = new BitmapImage();
+            bitmapImage.BeginInit();
+            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+            bitmapImage.StreamSource = stream;
+            bitmapImage.DecodePixelWidth = 32;
+            bitmapImage.DecodePixelHeight = 32;
+            bitmapImage.EndInit();
+            bitmapImage.Freeze();
+
+            var bitmap = new FormatConvertedBitmap(bitmapImage, PixelFormats.Bgra32, null, 0);
             int width = bitmap.PixelWidth;
             int height = bitmap.PixelHeight;
-            if (width <= 0
-                || height <= 0
-                || width > MaxAnalyzedImageDimension
-                || height > MaxAnalyzedImageDimension)
+            if (width <= 0 || height <= 0)
                 return [];
 
-            int stride = checked(width * 4);
-            var pixels = new byte[checked(stride * height)];
+            int stride = width * 4;
+            var pixels = new byte[stride * height];
             bitmap.CopyPixels(pixels, stride, 0);
 
-            int sampleStep = Math.Max(1, Math.Min(width, height) / 32);
             var buckets = new Dictionary<int, ColorBucket>();
 
-            for (int y = 0; y < height; y += sampleStep)
+            for (int y = 0; y < height; y++)
             {
-                for (int x = 0; x < width; x += sampleStep)
+                int rowOffset = y * stride;
+                double normY = y / (double)Math.Max(1, height - 1);
+                for (int x = 0; x < width; x++)
                 {
-                    int offset = y * stride + x * 4;
+                    int offset = rowOffset + x * 4;
                     byte b = pixels[offset];
                     byte g = pixels[offset + 1];
                     byte r = pixels[offset + 2];
@@ -109,7 +112,7 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
                         buckets[key] = bucket;
                     }
 
-                    bucket.Add(r, g, b, x / (double)Math.Max(1, width - 1), y / (double)Math.Max(1, height - 1));
+                    bucket.Add(r, g, b, x / (double)Math.Max(1, width - 1), normY);
                 }
             }
 

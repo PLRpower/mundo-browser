@@ -40,28 +40,19 @@ public class HistoryManager : IHistoryManager
     {
         try
         {
-            if (!IsReadableHistoryFile(path))
+            if (!File.Exists(path))
                 return null;
 
-            string content = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<List<HistoryEntry>>(content);
+            using var stream = File.OpenRead(path);
+            if (stream.Length > MaxHistoryFileBytes)
+                return null;
+
+            return JsonSerializer.Deserialize<List<HistoryEntry>>(stream);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error loading history from {path}: {ex.Message}");
             return null;
-        }
-    }
-
-    private static bool IsReadableHistoryFile(string path)
-    {
-        try
-        {
-            return File.Exists(path) && new FileInfo(path).Length <= MaxHistoryFileBytes;
-        }
-        catch
-        {
-            return false;
         }
     }
 

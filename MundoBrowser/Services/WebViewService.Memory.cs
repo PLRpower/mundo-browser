@@ -23,28 +23,37 @@ public partial class WebViewService
                 try
                 {
                     var now = DateTime.Now;
-                    var tabsToDiscard = new Queue<TabViewModel>(
-                        _webViews
-                            .Where(entry =>
-                            {
-                                if (entry.Value == _activeWebView) return false;
-                                if ((now - entry.Key.LastAccessed).TotalMinutes <= EcoModeMinutes) return false;
+                    var tabsToDiscard = new Queue<TabViewModel>();
 
-                                bool isPlayingAudio = false;
-                                try { isPlayingAudio = entry.Value.CoreWebView2?.IsDocumentPlayingAudio ?? false; } catch { }
-                                if (isPlayingAudio) return false;
+                    foreach (var entry in _webViews)
+                    {
+                        var tab = entry.Key;
+                        var webView = entry.Value;
 
-                                bool hasActiveDownloads = false;
-                                lock (_activeDownloads)
-                                {
-                                    if (_activeDownloads.TryGetValue(entry.Value, out var downloads) && downloads.Count > 0)
-                                        hasActiveDownloads = true;
-                                }
-                                if (hasActiveDownloads) return false;
+                        if (webView == _activeWebView) continue;
 
-                                return true;
-                            })
-                            .Select(entry => entry.Key));
+                        bool isPlayingAudio = false;
+                        try { isPlayingAudio = webView.CoreWebView2?.IsDocumentPlayingAudio ?? false; } catch { }
+                        if (isPlayingAudio) continue;
+
+                        bool hasActiveDownloads = false;
+                        lock (_activeDownloads)
+                        {
+                            if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
+                                hasActiveDownloads = true;
+                        }
+                        if (hasActiveDownloads) continue;
+
+                        if ((now - tab.LastAccessed).TotalMinutes > EcoModeMinutes)
+                        {
+                            tabsToDiscard.Enqueue(tab);
+                        }
+                        else
+                        {
+                            // Throttle memory and suspend inactive background tab
+                            _ = TrySuspendWebView(webView);
+                        }
+                    }
 
                     DiscardTabsAtIdle(tabsToDiscard);
                 }
@@ -78,7 +87,7 @@ public partial class WebViewService
             return;
         }
 
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(
             new Action(() => DiscardTabsAtIdle(tabs)),
             System.Windows.Threading.DispatcherPriority.SystemIdle);
     }
@@ -96,7 +105,7 @@ public partial class WebViewService
                 _container?.Children.Remove(container.ContainerGrid);
             }
 
-            container.MainWebView.Dispose();
+            try { container.MainWebView.Dispose(); } catch { }
             _tabContainers.Remove(tab);
             _webViews.Remove(tab);
             tab.IsDiscarded = true;
@@ -104,7 +113,7 @@ public partial class WebViewService
         else if (_webViews.TryGetValue(tab, out var webView))
         {
             _container?.Children.Remove(webView);
-            webView.Dispose();
+            try { webView.Dispose(); } catch { }
             _webViews.Remove(tab);
             tab.IsDiscarded = true;
         }

@@ -142,8 +142,8 @@ public partial class MainWindow
         UpdateResizeOverlayState();
         Dispatcher.BeginInvoke(
             new Action(() => {
-                UpdateEdgeTriggerState(forceReopen: true);
-                UpdateTopEdgeTriggerState(forceReopen: true);
+                UpdateEdgeTriggerState();
+                UpdateTopEdgeTriggerState();
             }),
             System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
@@ -200,10 +200,10 @@ public partial class MainWindow
             _isRestoringFromFullscreen = false;
         }
 
-        UpdateResizeOverlayState(forceReopen: true);
+        UpdateResizeOverlayState();
         Dispatcher.BeginInvoke(new Action(UpdateWindowFrameVisuals), System.Windows.Threading.DispatcherPriority.ContextIdle);
-        UpdateEdgeTriggerState(forceReopen: true);
-        UpdateTopEdgeTriggerState(forceReopen: true);
+        UpdateEdgeTriggerState();
+        UpdateTopEdgeTriggerState();
     }
 
     private void UpdateWindowFrameVisuals()
@@ -238,9 +238,9 @@ public partial class MainWindow
             _globalMediaTimer.Start();
 
         SyncWindowPlacementToViewModel();
-        UpdateResizeOverlayState(forceReopen: true);
-        UpdateEdgeTriggerState(forceReopen: true);
-        UpdateTopEdgeTriggerState(forceReopen: true);
+        UpdateResizeOverlayState();
+        UpdateEdgeTriggerState();
+        UpdateTopEdgeTriggerState();
     }
 
     private void SyncWindowPlacementToViewModel()
@@ -398,7 +398,7 @@ public partial class MainWindow
         yield return ResizeBottomRightPopup;
     }
 
-    private void UpdateResizeOverlayState(bool forceReopen = false)
+    private void UpdateResizeOverlayState()
     {
         if (_isRestoringFromFullscreen || _isInSizeMove)
             return;
@@ -412,32 +412,21 @@ public partial class MainWindow
         }
 
         SetResizeOverlayOffsets();
-
-        if (forceReopen || !_resizeOverlaysOpen)
-        {
-            SetResizeOverlayOpen(false);
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (_isFullscreen || WindowState != WindowState.Normal || ResizeMode == ResizeMode.NoResize)
-                    return;
-
-                InitializeResizeOverlays();
-                SetResizeOverlayOffsets();
-                SetResizeOverlayOpen(true);
-            }), System.Windows.Threading.DispatcherPriority.ContextIdle);
-        }
-        else
-        {
-            SetResizeOverlayOpen(true);
-        }
+        SetResizeOverlayOpen(true);
     }
 
     private void SetResizeOverlayOpen(bool isOpen)
     {
-        foreach (var popup in GetResizeOverlayPopups())
-            popup.IsOpen = isOpen;
+        if (_resizeOverlaysOpen == isOpen)
+            return;
 
         _resizeOverlaysOpen = isOpen;
+
+        foreach (var popup in GetResizeOverlayPopups())
+        {
+            if (popup.IsOpen != isOpen)
+                popup.IsOpen = isOpen;
+        }
     }
 
     private void SetResizeOverlayOffsets()
@@ -480,7 +469,7 @@ public partial class MainWindow
         e.Handled = true;
     }
 
-    private void OnWindowStateChanged(bool forceResizeOverlayReopen = false)
+    private void OnWindowStateChanged()
     {
         if (_isRestoringFromFullscreen)
             return;
@@ -494,7 +483,7 @@ public partial class MainWindow
         }
 
         UpdateWindowFrameVisuals();
-        UpdateResizeOverlayState(forceResizeOverlayReopen);
+        UpdateResizeOverlayState();
     }
 
     private void BlockFullscreenTitleBarDrag(object sender, InputMouseButtonEventArgs e) => BlockFullscreenTitleBarDragCore(e);

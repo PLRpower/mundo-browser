@@ -9,36 +9,57 @@ public partial class FaviconService
     private void PreloadCache()
     {
         if (!Directory.Exists(_faviconsPath)) return;
-        foreach (var file in Directory.EnumerateFiles(_faviconsPath, "*.*"))
+        try
         {
-            var ext = Path.GetExtension(file).ToLowerInvariant();
-            if (ext is not (".png" or ".ico" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".svg")) continue;
+            var relDict = new Dictionary<string, string>();
+            var absDict = new Dictionary<string, string>();
+            var qualDict = new Dictionary<string, int>();
 
-            var fileName = Path.GetFileNameWithoutExtension(file);
-            int quality = QualityStandard;
-
-            if (fileName.Contains(".q"))
+            foreach (var file in Directory.EnumerateFiles(_faviconsPath, "*.*"))
             {
-                var parts = fileName.Split(".q");
-                if (parts.Length > 1 && int.TryParse(parts[1], out var parsedQuality))
+                var ext = Path.GetExtension(file).ToLowerInvariant();
+                if (ext is not (".png" or ".ico" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".svg")) continue;
+
+                var fileName = Path.GetFileNameWithoutExtension(file);
+                int quality = QualityStandard;
+
+                if (fileName.Contains(".q"))
                 {
-                    quality = parsedQuality;
-                    fileName = parts[0];
+                    var parts = fileName.Split(".q");
+                    if (parts.Length > 1 && int.TryParse(parts[1], out var parsedQuality))
+                    {
+                        quality = parsedQuality;
+                        fileName = parts[0];
+                    }
+                }
+
+                var domain = Uri.UnescapeDataString(fileName).Replace('_', '.');
+                var relativePath = $"Favicons/{Path.GetFileName(file)}";
+
+                if (!qualDict.TryGetValue(domain, out var existingQuality) || quality > existingQuality)
+                {
+                    if (!qualDict.ContainsKey(domain) && qualDict.Count >= MaxCachedDomains)
+                        continue;
+
+                    relDict[domain] = relativePath;
+                    absDict[domain] = new Uri(file).AbsoluteUri;
+                    qualDict[domain] = quality;
                 }
             }
 
-            var domain = Uri.UnescapeDataString(fileName).Replace('_', '.');
-            var relativePath = $"Favicons/{Path.GetFileName(file)}";
-
-            if (!_domainQuality.TryGetValue(domain, out var existingQuality) || quality > existingQuality)
+            lock (_cacheLock)
             {
-                if (!_domainQuality.ContainsKey(domain) && _domainQuality.Count >= MaxCachedDomains)
-                    continue;
-
-                _domainToRelativePath[domain] = relativePath;
-                _domainToAbsoluteUrl[domain] = new Uri(file).AbsoluteUri;
-                _domainQuality[domain] = quality;
+                foreach (var (k, v) in relDict)
+                    if (!_domainToRelativePath.ContainsKey(k)) _domainToRelativePath[k] = v;
+                foreach (var (k, v) in absDict)
+                    if (!_domainToAbsoluteUrl.ContainsKey(k)) _domainToAbsoluteUrl[k] = v;
+                foreach (var (k, v) in qualDict)
+                    if (!_domainQuality.ContainsKey(k)) _domainQuality[k] = v;
             }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error preloading favicon cache: {ex.Message}");
         }
     }
 

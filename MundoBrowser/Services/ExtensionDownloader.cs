@@ -10,15 +10,16 @@ public class ExtensionDownloader
     private const int MaxExtensionDownloadBytes = 256 * 1024 * 1024;
     private const long MaxExtractedBytes = 1024L * 1024 * 1024;
     private const int MaxArchiveEntries = 100_000;
-    private static readonly HttpClient HttpClient = new();
-    private readonly string _extensionsPath;
-
-    static ExtensionDownloader()
+    private static readonly Lazy<HttpClient> LazyHttpClient = new(() =>
     {
-        HttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-        HttpClient.DefaultRequestHeaders.Add("Referer", "https://chromewebstore.google.com/");
-        HttpClient.Timeout = TimeSpan.FromSeconds(30);
-    }
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.Add("Referer", "https://chromewebstore.google.com/");
+        client.Timeout = TimeSpan.FromSeconds(30);
+        return client;
+    });
+    private static HttpClient HttpClient => LazyHttpClient.Value;
+    private readonly string _extensionsPath;
 
     public ExtensionDownloader()
     {

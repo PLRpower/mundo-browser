@@ -79,13 +79,10 @@ public partial class App : System.Windows.Application
             System.Windows.Media.Animation.Timeline.DesiredFrameRateProperty.OverrideMetadata(
                 typeof(System.Windows.Media.Animation.Timeline),
                 new FrameworkPropertyMetadata(maxRefreshRate));
-
-            // Set process priority above normal for low input/render latency
-            System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.AboveNormal;
         }
         catch
         {
-            // Fallback gracefully if priority setting fails
+            // Fallback gracefully if display configuration fails
         }
     }
 
@@ -99,7 +96,7 @@ public partial class App : System.Windows.Application
         }
 
 #if !DEBUG
-        WindowsDefaultBrowserRegistration.Register();
+        Task.Run(WindowsDefaultBrowserRegistration.Register);
 #endif
 
         // Check for single instance

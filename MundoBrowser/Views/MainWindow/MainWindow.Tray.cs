@@ -18,10 +18,6 @@ public partial class MainWindow
 
         try
         {
-            _trayIconImage = Environment.ProcessPath is { } processPath
-                ? System.Drawing.Icon.ExtractAssociatedIcon(processPath)
-                : null;
-
             menu = new System.Windows.Forms.ContextMenuStrip();
             var openItem = new System.Windows.Forms.ToolStripMenuItem("Ouvrir MundoBrowser");
             openItem.Click += (_, _) => Dispatcher.BeginInvoke(RestoreFromTray);
@@ -34,12 +30,40 @@ public partial class MainWindow
 
             _trayIcon = new System.Windows.Forms.NotifyIcon
             {
-                Icon = _trayIconImage ?? System.Drawing.SystemIcons.Application,
+                Icon = System.Drawing.SystemIcons.Application,
                 Text = AppRuntime.DisplayName,
                 ContextMenuStrip = menu,
                 Visible = true
             };
             _trayIcon.MouseClick += TrayIcon_MouseClick;
+
+            // Load associated icon in background to avoid blocking UI thread
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (Environment.ProcessPath is { } processPath)
+                    {
+                        var icon = System.Drawing.Icon.ExtractAssociatedIcon(processPath);
+                        if (icon != null)
+                        {
+                            Dispatcher.BeginInvoke(() =>
+                            {
+                                if (_trayIcon != null)
+                                {
+                                    _trayIconImage = icon;
+                                    _trayIcon.Icon = icon;
+                                }
+                                else
+                                {
+                                    icon.Dispose();
+                                }
+                            });
+                        }
+                    }
+                }
+                catch { }
+            });
         }
         catch (Exception ex)
         {

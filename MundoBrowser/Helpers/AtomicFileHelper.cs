@@ -65,8 +65,46 @@ public static class AtomicFileHelper
     /// </summary>
     public static async Task WriteJsonAtomicAsync<T>(string destinationPath, T data, JsonSerializerOptions? options = null, CancellationToken cancellationToken = default)
     {
-        string json = JsonSerializer.Serialize(data, options);
-        await WriteAllTextAtomicAsync(destinationPath, json, cancellationToken);
+        string? directory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        string tempPath = destinationPath + $".tmp.{Guid.NewGuid():N}";
+
+        try
+        {
+            await using (var stream = new FileStream(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                useAsync: true))
+            {
+                await JsonSerializer.SerializeAsync(stream, data, options, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    File.Move(tempPath, destinationPath, overwrite: true);
+                    return;
+                }
+                catch (IOException) when (attempt < 3)
+                {
+                    await Task.Delay(50 * attempt, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* best effort */ }
+            }
+        }
     }
 
     /// <summary>

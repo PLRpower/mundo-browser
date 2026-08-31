@@ -51,11 +51,14 @@ public sealed class AppSettingsService : IAppSettingsService
     {
         try
         {
-            if (!File.Exists(path) || new FileInfo(path).Length > MaxSettingsFileBytes)
+            if (!File.Exists(path))
                 return null;
 
-            string content = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<AppSettings>(content);
+            using var stream = File.OpenRead(path);
+            if (stream.Length > MaxSettingsFileBytes)
+                return null;
+
+            return JsonSerializer.Deserialize<AppSettings>(stream);
         }
         catch (Exception ex)
         {

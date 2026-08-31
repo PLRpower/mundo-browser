@@ -241,22 +241,17 @@ public partial class WebViewService : IWebViewService, IDisposable
             {
                 string currentPageUrl = tab.Url;
 
-                // Only cross into managed code for known blocked domains.
-                foreach (var domain in adBlocker.BlockedDomains)
-                {
-                    webView.CoreWebView2.AddWebResourceRequestedFilter(
-                        $"*://{domain}/*",
-                        CoreWebView2WebResourceContext.All,
-                        CoreWebView2WebResourceRequestSourceKinds.Document);
-                    webView.CoreWebView2.AddWebResourceRequestedFilter(
-                        $"*://*.{domain}/*",
-                        CoreWebView2WebResourceContext.All,
-                        CoreWebView2WebResourceRequestSourceKinds.Document);
-                }
+                // Inject adblock, cosmetic CSS, YouTube skipper and cookie modal scripts on document creation
+                await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(adBlocker.GetInjectionScript());
+
+                // Single wildcard filter to avoid blocking the UI thread with thousands of COM calls.
+                webView.CoreWebView2.AddWebResourceRequestedFilter(
+                    "*",
+                    CoreWebView2WebResourceContext.All);
 
                 webView.CoreWebView2.WebResourceRequested += (s, e) =>
                 {
-                    if (adBlocker.IsAdBlockerEnabledForSite(currentPageUrl))
+                    if (adBlocker.IsAdBlockerEnabledForSite(currentPageUrl) && adBlocker.ShouldBlockUrl(e.Request.Uri))
                     {
                         var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
                             null, 204, "No Content", ""
@@ -779,7 +774,7 @@ public partial class WebViewService : IWebViewService, IDisposable
             _webViews.Remove(tab);
             if (_activeWebView == webView) _activeWebView = null;
             _container?.Children.Remove(webView);
-            webView.Dispose();
+            try { webView.Dispose(); } catch { }
         }
     }
 

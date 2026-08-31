@@ -57,11 +57,14 @@ public class SessionManager : ISessionManager
     {
         try
         {
-            if (File.Exists(path) && new FileInfo(path).Length <= MaxSessionFileBytes)
-            {
-                string content = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<SessionData>(content);
-            }
+            if (!File.Exists(path))
+                return null;
+
+            using var stream = File.OpenRead(path);
+            if (stream.Length > MaxSessionFileBytes)
+                return null;
+
+            return JsonSerializer.Deserialize<SessionData>(stream);
         }
         catch (Exception ex)
         {
