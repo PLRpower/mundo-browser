@@ -184,6 +184,15 @@ public partial class MainWindow
             FloatingSidebarControl.ShowNavButtons = false;
         }
 
+        double contentHeight = (ContentRow != null && ContentRow.ActualHeight > 0)
+            ? ContentRow.ActualHeight
+            : ((MainGrid != null ? MainGrid.ActualHeight : ActualHeight) - (isTopBarPinned ? 40 : 0));
+        FloatingSidebarPopup.Height = contentHeight;
+        if (FloatingSidebarRootGrid != null)
+        {
+            FloatingSidebarRootGrid.Height = contentHeight;
+        }
+
         _isSidebarFloating = true;
         FloatingSidebarContent.DataContext = DataContext;
 

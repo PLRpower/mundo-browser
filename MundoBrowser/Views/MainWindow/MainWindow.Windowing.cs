@@ -25,18 +25,6 @@ public partial class MainWindow
     private const int WmExitSizeMove = 0x0232;
     private const int HtClient = 1;
     private const int HtCaption = 2;
-    private const int HtMinButton = 8;
-    private const int HtMaxButton = 9;
-    private const int HtLeft = 10;
-    private const int HtRight = 11;
-    private const int HtTop = 12;
-    private const int HtTopLeft = 13;
-    private const int HtTopRight = 14;
-    private const int HtBottom = 15;
-    private const int HtBottomLeft = 16;
-    private const int HtBottomRight = 17;
-    private const int HtClose = 20;
-    private const int HtHelp = 21;
 
 
     private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -47,13 +35,6 @@ public partial class MainWindow
             {
                 handled = true;
                 return new IntPtr(HtClient);
-            }
-
-            var resizeHit = HitTestResizeBorder(hwnd, lParam);
-            if (resizeHit != 0)
-            {
-                handled = true;
-                return new IntPtr(resizeHit);
             }
         }
 
@@ -139,7 +120,6 @@ public partial class MainWindow
         ReapplyFullscreenBoundsAfterMaximizeRestore();
 
         NativeMethods.SuppressAccentBorder(this);
-        UpdateResizeOverlayState();
         Dispatcher.BeginInvoke(
             new Action(() => {
                 UpdateEdgeTriggerState();
@@ -200,7 +180,6 @@ public partial class MainWindow
             _isRestoringFromFullscreen = false;
         }
 
-        UpdateResizeOverlayState();
         Dispatcher.BeginInvoke(new Action(UpdateWindowFrameVisuals), System.Windows.Threading.DispatcherPriority.ContextIdle);
         UpdateEdgeTriggerState();
         UpdateTopEdgeTriggerState();
@@ -217,7 +196,6 @@ public partial class MainWindow
             return;
 
         _isInSizeMove = true;
-        SetResizeOverlayOpen(false);
         HideFloatingSidebar(animate: false);
         HideFloatingTopBar(animate: false);
         UpdateEdgeTriggerState();
@@ -238,7 +216,6 @@ public partial class MainWindow
             _globalMediaTimer.Start();
 
         SyncWindowPlacementToViewModel();
-        UpdateResizeOverlayState();
         UpdateEdgeTriggerState();
         UpdateTopEdgeTriggerState();
     }
@@ -340,135 +317,6 @@ public partial class MainWindow
         Marshal.StructureToPtr(monitorRect, lParam, false);
     }
 
-    private int HitTestResizeBorder(IntPtr hwnd, IntPtr lParam)
-    {
-        if (ResizeMode == ResizeMode.NoResize || WindowState == WindowState.Maximized)
-            return 0;
-
-        if (!NativeMethods.GetWindowRect(hwnd, out var rect))
-            return 0;
-
-        int x = unchecked((short)(lParam.ToInt64() & 0xFFFF));
-        int y = unchecked((short)((lParam.ToInt64() >> 16) & 0xFFFF));
-        int border = GetResizeBorderThicknessInPixels();
-
-        bool left = x >= rect.left && x < rect.left + border;
-        bool right = x < rect.right && x >= rect.right - border;
-        bool top = y >= rect.top && y < rect.top + border;
-        bool bottom = y < rect.bottom && y >= rect.bottom - border;
-
-        if (top && left) return HtTopLeft;
-        if (top && right) return HtTopRight;
-        if (bottom && left) return HtBottomLeft;
-        if (bottom && right) return HtBottomRight;
-        if (left) return HtLeft;
-        if (right) return HtRight;
-        if (top) return HtTop;
-        if (bottom) return HtBottom;
-
-        return 0;
-    }
-
-    private int GetResizeBorderThicknessInPixels()
-    {
-        var source = PresentationSource.FromVisual(this);
-        double dpiScale = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-        return Math.Max(6, (int)Math.Ceiling(8 * dpiScale));
-    }
-
-    private void InitializeResizeOverlays()
-    {
-        foreach (var popup in GetResizeOverlayPopups())
-        {
-            popup.PlacementTarget = MainGrid;
-            popup.StaysOpen = true;
-            popup.PopupAnimation = PopupAnimation.None;
-        }
-    }
-
-    private IEnumerable<Popup> GetResizeOverlayPopups()
-    {
-        yield return ResizeLeftPopup;
-        yield return ResizeRightPopup;
-        yield return ResizeTopPopup;
-        yield return ResizeBottomPopup;
-        yield return ResizeTopLeftPopup;
-        yield return ResizeTopRightPopup;
-        yield return ResizeBottomLeftPopup;
-        yield return ResizeBottomRightPopup;
-    }
-
-    private void UpdateResizeOverlayState()
-    {
-        if (_isRestoringFromFullscreen || _isInSizeMove)
-            return;
-
-        bool isOpen = !_isFullscreen && WindowState == WindowState.Normal && ResizeMode != ResizeMode.NoResize;
-
-        if (!isOpen)
-        {
-            SetResizeOverlayOpen(false);
-            return;
-        }
-
-        SetResizeOverlayOffsets();
-        SetResizeOverlayOpen(true);
-    }
-
-    private void SetResizeOverlayOpen(bool isOpen)
-    {
-        if (_resizeOverlaysOpen == isOpen)
-            return;
-
-        _resizeOverlaysOpen = isOpen;
-
-        foreach (var popup in GetResizeOverlayPopups())
-        {
-            if (popup.IsOpen != isOpen)
-                popup.IsOpen = isOpen;
-        }
-    }
-
-    private void SetResizeOverlayOffsets()
-    {
-        const double edge = 6;
-        const double corner = 12;
-        double width = Math.Max(0, MainGrid.ActualWidth);
-        double height = Math.Max(0, MainGrid.ActualHeight);
-
-        ResizeLeftPopup.HorizontalOffset = 0;
-        ResizeLeftPopup.VerticalOffset = 0;
-        ResizeRightPopup.HorizontalOffset = Math.Max(0, width - edge);
-        ResizeRightPopup.VerticalOffset = 0;
-        ResizeTopPopup.HorizontalOffset = 0;
-        ResizeTopPopup.VerticalOffset = 0;
-        ResizeBottomPopup.HorizontalOffset = 0;
-        ResizeBottomPopup.VerticalOffset = Math.Max(0, height - edge);
-
-        ResizeTopLeftPopup.HorizontalOffset = 0;
-        ResizeTopLeftPopup.VerticalOffset = 0;
-        ResizeTopRightPopup.HorizontalOffset = Math.Max(0, width - corner);
-        ResizeTopRightPopup.VerticalOffset = 0;
-        ResizeBottomLeftPopup.HorizontalOffset = 0;
-        ResizeBottomLeftPopup.VerticalOffset = Math.Max(0, height - corner);
-        ResizeBottomRightPopup.HorizontalOffset = Math.Max(0, width - corner);
-        ResizeBottomRightPopup.VerticalOffset = Math.Max(0, height - corner);
-    }
-
-    private void ResizeOverlay_MouseLeftButtonDown(object sender, InputMouseButtonEventArgs e)
-    {
-        if (_isFullscreen || WindowState != WindowState.Normal || sender is not FrameworkElement { Tag: string hitTestText })
-            return;
-
-        if (!int.TryParse(hitTestText, out int hitTest))
-            return;
-
-        var handle = new WindowInteropHelper(this).Handle;
-        NativeMethods.ReleaseCapture();
-        NativeMethods.SendMessage(handle, NativeMethods.WM_NCLBUTTONDOWN, new IntPtr(hitTest), IntPtr.Zero);
-        e.Handled = true;
-    }
-
     private void OnWindowStateChanged()
     {
         if (_isRestoringFromFullscreen)
@@ -483,7 +331,6 @@ public partial class MainWindow
         }
 
         UpdateWindowFrameVisuals();
-        UpdateResizeOverlayState();
     }
 
     private void BlockFullscreenTitleBarDrag(object sender, InputMouseButtonEventArgs e) => BlockFullscreenTitleBarDragCore(e);

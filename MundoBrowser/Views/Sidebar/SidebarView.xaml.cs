@@ -86,7 +86,18 @@ public partial class SidebarView : System.Windows.Controls.UserControl
     }
 
     private void TabItem_PreviewMouseLeftButtonDown(object s, MouseButtonEventArgs e) => _tabReorderHelper?.HandlePreviewMouseDown(e);
+    private void TabItem_PreviewMouseLeftButtonUp(object s, MouseButtonEventArgs e) => _tabReorderHelper?.HandlePreviewMouseUp(e);
     private void TabItem_PreviewMouseMove(object s, System.Windows.Input.MouseEventArgs e) => _tabReorderHelper?.HandlePreviewMouseMove(s, e);
+    private void TabItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBoxItem item && item.DataContext is TabViewModel tab)
+        {
+            if (DataContext is MainViewModel vm && vm.SelectedTab != tab)
+            {
+                vm.SelectedTab = tab;
+            }
+        }
+    }
     private void TabItem_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton == MouseButton.Middle && sender is System.Windows.Controls.ListBoxItem item && item.DataContext is TabViewModel tab)

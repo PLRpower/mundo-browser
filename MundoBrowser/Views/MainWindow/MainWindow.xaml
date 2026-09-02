@@ -207,9 +207,9 @@
                StaysOpen="True" 
                Width="{Binding SidebarWidth}">
             <!-- La hauteur du popup est ajustée par rapport au contenu principal -->
-            <Grid Width="{Binding SidebarWidth}" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
+            <Grid x:Name="FloatingSidebarRootGrid" Width="{Binding SidebarWidth}" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
                 <Border x:Name="FloatingSidebarContent" Background="{DynamicResource OverlaySurfaceBrush}" 
-                        CornerRadius="0,15,15,0" BorderBrush="#38FFFFFF" BorderThickness="0,1,1,1" Margin="0,44,0,20">
+                        CornerRadius="0,15,15,0" BorderBrush="#383838" BorderThickness="0,1,1,1" Margin="0,44,0,20">
                     <local:SidebarView x:Name="FloatingSidebarControl" />
                 </Border>
             </Grid>
@@ -480,40 +480,6 @@
                IsOpen="False"
                Width="{Binding ActualWidth, ElementName=MainGrid}">
             <Border Background="#01000000" MouseEnter="TopEdge_MouseEnter" MouseMove="TopEdge_MouseEnter" />
-        </Popup>
-
-        <!-- Native resize overlays. Popups stay above WebView2 child HWNDs, unlike WPF borders. -->
-        <Popup x:Name="ResizeLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="6" Height="{Binding ActualHeight, ElementName=MainGrid}" Background="#01000000"
-                    Cursor="SizeWE" Tag="10" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="6" Height="{Binding ActualHeight, ElementName=MainGrid}" Background="#01000000"
-                    Cursor="SizeWE" Tag="11" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeTopPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="{Binding ActualWidth, ElementName=MainGrid}" Height="6" Background="#01000000"
-                    Cursor="SizeNS" Tag="12" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeBottomPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="{Binding ActualWidth, ElementName=MainGrid}" Height="6" Background="#01000000"
-                    Cursor="SizeNS" Tag="15" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeTopLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="12" Height="12" Background="#01000000"
-                    Cursor="SizeNWSE" Tag="13" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeTopRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="12" Height="12" Background="#01000000"
-                    Cursor="SizeNESW" Tag="14" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeBottomLeftPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="12" Height="12" Background="#01000000"
-                    Cursor="SizeNESW" Tag="16" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
-        </Popup>
-        <Popup x:Name="ResizeBottomRightPopup" AllowsTransparency="True" Placement="Relative" HorizontalOffset="0" VerticalOffset="0">
-            <Border Width="12" Height="12" Background="#01000000"
-                    Cursor="SizeNWSE" Tag="17" MouseLeftButtonDown="ResizeOverlay_MouseLeftButtonDown"/>
         </Popup>
 
     </Grid>

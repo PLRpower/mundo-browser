@@ -9,6 +9,7 @@ namespace MundoBrowser.Helpers;
 
 public class TabReorderHelper
 {
+    private bool _isPossibleDrag;
     private System.Windows.Point _dragStartPoint;
     private ListBoxItem? _lastIndicatorItem;
     private string? _lastTag;
@@ -23,17 +24,36 @@ public class TabReorderHelper
 
     public void HandlePreviewMouseDown(MouseButtonEventArgs e)
     {
-        _dragStartPoint = e.GetPosition(null);
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            _isPossibleDrag = true;
+            _dragStartPoint = e.GetPosition(_listBox);
+        }
+    }
+
+    public void HandlePreviewMouseUp(MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            _isPossibleDrag = false;
+        }
     }
 
     public void HandlePreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed && sender is ListBoxItem item && item.DataContext is TabViewModel)
+        if (!_isPossibleDrag || e.LeftButton != MouseButtonState.Pressed)
         {
-            Vector diff = _dragStartPoint - e.GetPosition(null);
+            _isPossibleDrag = false;
+            return;
+        }
+
+        if (sender is ListBoxItem item && item.DataContext is TabViewModel)
+        {
+            Vector diff = _dragStartPoint - e.GetPosition(_listBox);
             if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance || 
                 Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
+                _isPossibleDrag = false;
                 _viewModel.IsDraggingTab = true;
 
                 System.Windows.GiveFeedbackEventHandler feedbackHandler = (s, a) =>

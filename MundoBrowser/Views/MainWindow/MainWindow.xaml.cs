@@ -22,7 +22,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _isApplyingFullscreenBounds;
     private bool _isRestoringFromFullscreen;
     private bool _fullscreenHidesUi;
-    private bool _resizeOverlaysOpen;
     private bool _isSidebarFloating;
     private bool _isTopBarFloating;
     private bool _isClosingSafe;
@@ -106,7 +105,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         SizeChanged += (_, _) => {
             KeepFullscreenBounds();
-            UpdateResizeOverlayState();
             UpdateEdgeTriggerState();
             UpdateTopEdgeTriggerState();
         };
@@ -131,9 +129,19 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         EdgeTriggerPopup.PlacementTarget = MainGrid;
         FloatingTopBarPopup.PlacementTarget = MainGrid;
         TopEdgeTriggerPopup.PlacementTarget = MainGrid;
-        InitializeResizeOverlays();
         if (FindName("QuickUrlPopup") is System.Windows.Controls.Primitives.Popup quickPopup)
             quickPopup.PlacementTarget = MainGrid;
+
+        EventHandler floatingSidebarOpened = (s, e) =>
+        {
+            if (PresentationSource.FromVisual(FloatingSidebarContent) is System.Windows.Interop.HwndSource popupHwndSource)
+            {
+                NativeMethods.RemoveNoActivate(popupHwndSource.Handle);
+            }
+        };
+        FloatingSidebarPopup.Opened += floatingSidebarOpened;
+        if (FloatingSidebarPopup.IsOpen)
+            floatingSidebarOpened(FloatingSidebarPopup, EventArgs.Empty);
 
         ContentRendered += async (_, _) => {
             if (_contentInitialized)
@@ -164,7 +172,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     };
                     AttachFloatingTitleBarToWindow();
                 }
-                UpdateResizeOverlayState();
                 UpdateEdgeTriggerState();
                 UpdateTopEdgeTriggerState();
 

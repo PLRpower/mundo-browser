@@ -32,9 +32,9 @@
                                 <Setter Property="VerticalAlignment" Value="Top"/>
                                 <Setter Property="Height" Value="36"/>
                                 <Setter Property="Margin" Value="0,0,8,0"/>
-                                <Setter Property="Background" Value="#F21E1E20"/>
+                                <Setter Property="Background" Value="#1E1E20"/>
                                 <Setter Property="CornerRadius" Value="0,0,17,0"/>
-                                <Setter Property="BorderBrush" Value="#38FFFFFF"/>
+                                <Setter Property="BorderBrush" Value="#383838"/>
                                 <Setter Property="BorderThickness" Value="0,0,1,1"/>
                                 <Setter Property="Padding" Value="0,0,2,0"/>
                             </DataTrigger>
@@ -112,7 +112,7 @@
                         <Setter Property="VerticalAlignment" Value="Center"/>
                         <Setter Property="Margin" Value="8,2"/>
                         <Setter Property="CornerRadius" Value="17"/>
-                        <Setter Property="BorderBrush" Value="#333333"/>
+                        <Setter Property="BorderBrush" Value="#383838"/>
                         <Setter Property="BorderThickness" Value="1"/>
                         <Style.Triggers>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
@@ -129,7 +129,7 @@
                                 <Setter Property="VerticalAlignment" Value="Top"/>
                                 <Setter Property="Margin" Value="8,0"/>
                                 <Setter Property="CornerRadius" Value="0,0,17,17"/>
-                                <Setter Property="BorderBrush" Value="#38FFFFFF"/>
+                                <Setter Property="BorderBrush" Value="#383838"/>
                                 <Setter Property="BorderThickness" Value="1,0,1,1"/>
                             </DataTrigger>
                             <!-- Mode flottant avec suggestions ouvertes -->
@@ -356,9 +356,9 @@
                                 <Setter Property="VerticalAlignment" Value="Top"/>
                                 <Setter Property="Height" Value="36"/>
                                 <Setter Property="Margin" Value="0,0,8,0"/>
-                                <Setter Property="Background" Value="#F21E1E20"/>
+                                <Setter Property="Background" Value="#1E1E20"/>
                                 <Setter Property="CornerRadius" Value="0,0,17,17"/>
-                                <Setter Property="BorderBrush" Value="#38FFFFFF"/>
+                                <Setter Property="BorderBrush" Value="#383838"/>
                                 <Setter Property="BorderThickness" Value="1,0,1,1"/>
                                 <Setter Property="Padding" Value="4,0,4,0"/>
                             </DataTrigger>
