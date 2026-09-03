@@ -174,9 +174,10 @@ public partial class WebViewService : IWebViewService, IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             containerGrid = new System.Windows.Controls.Grid();
+            containerGrid.Background = System.Windows.Media.Brushes.White;
 
             webView = new WebView2();
-            webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 24, 24, 26);
+            webView.DefaultBackgroundColor = System.Drawing.Color.White;
             containerGrid.Children.Add(webView);
 
             _container.Children.Add(containerGrid);

@@ -232,7 +232,7 @@
         <!-- ════════════════════════════════════════════════ -->
         <Grid x:Name="ContentRow" Grid.Row="1" Grid.Column="2" Background="Transparent">
             <!-- Container for single WebView2 instance (Normal mode) -->
-            <Grid x:Name="WebViewsContainer">
+            <Grid x:Name="WebViewsContainer" Background="White">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Visible"/>
