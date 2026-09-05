@@ -10,7 +10,6 @@ public partial class MainWindow
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private System.Drawing.Icon? _trayIconImage;
     private bool _isExitRequested;
-    private bool _hasShownTrayNotification;
 
     private void InitializeTrayIcon()
     {
@@ -123,17 +122,8 @@ public partial class MainWindow
         ShowInTaskbar = false;
         Hide();
 
-        if (_trayIcon == null)
-            return;
-
-        _trayIcon.Visible = true;
-        if (_hasShownTrayNotification)
-            return;
-
-        _hasShownTrayNotification = true;
-        _trayIcon.BalloonTipTitle = "MundoBrowser fonctionne en arrière-plan";
-        _trayIcon.BalloonTipText = "Cliquez sur l'icône pour rouvrir le navigateur.";
-        _trayIcon.ShowBalloonTip(3000);
+        if (_trayIcon != null)
+            _trayIcon.Visible = true;
     }
 
     private void TrayIcon_MouseClick(object? sender, System.Windows.Forms.MouseEventArgs e)

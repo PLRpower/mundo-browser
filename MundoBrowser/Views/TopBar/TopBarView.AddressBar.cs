@@ -429,10 +429,44 @@ public partial class TopBarView
             || input.Contains("://", StringComparison.Ordinal))
             return true;
 
-        if (input.Contains('.') && !input.Contains(' '))
+        if (input.Contains(' '))
+            return false;
+
+        if (IsLocalHost(input))
+        {
+            navigationUrl = "http://" + input;
+            return true;
+        }
+
+        if (input.Contains('.'))
         {
             navigationUrl = "https://" + input;
             return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsLocalHost(string input)
+    {
+        ReadOnlySpan<string> prefixes = ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"];
+        foreach (var prefix in prefixes)
+        {
+            if (!input.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (input.Length == prefix.Length)
+                return true;
+
+            char next = input[prefix.Length];
+            if (next is '/' or '?' or '#')
+                return true;
+
+            if (next == ':')
+            {
+                int portStart = prefix.Length + 1;
+                return portStart < input.Length && char.IsAsciiDigit(input[portStart]);
+            }
         }
 
         return false;
