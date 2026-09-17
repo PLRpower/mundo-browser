@@ -225,12 +225,28 @@ public partial class MainWindow
         webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
         {
             tab.IsPlayingAudio = webView.CoreWebView2.IsDocumentPlayingAudio;
-            if (tab.IsPlayingAudio && DataContext is MainViewModel vm)
+            if (DataContext is MainViewModel vm)
             {
-                vm.ActiveMediaTab = tab;
-                vm.IsMediaBarVisible = true;
-                if (!_globalMediaTimer.IsEnabled)
-                    _globalMediaTimer.Start();
+                if (tab.IsPlayingAudio)
+                {
+                    vm.ActiveMediaTab = tab;
+                    vm.IsMediaBarVisible = true;
+                    _globalMediaTimer.Interval = TimeSpan.FromSeconds(2);
+                    if (!_globalMediaTimer.IsEnabled)
+                        _globalMediaTimer.Start();
+                }
+                else if (vm.ActiveMediaTab == tab)
+                {
+                    var otherAudioTab = vm.Tabs.FirstOrDefault(t => t.IsPlayingAudio);
+                    if (otherAudioTab != null)
+                    {
+                        vm.ActiveMediaTab = otherAudioTab;
+                    }
+                    else if (tab.IsMediaPaused)
+                    {
+                        _globalMediaTimer.Stop();
+                    }
+                }
             }
         };
 
@@ -387,6 +403,11 @@ public partial class MainWindow
 
                 var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
                 popupWindow.Content = popupWebView;
+
+                popupWindow.Closed += (_, _) =>
+                {
+                    try { popupWebView.Dispose(); } catch { }
+                };
 
                 popupWebView.CoreWebView2InitializationCompleted += (s, ev) =>
                 {

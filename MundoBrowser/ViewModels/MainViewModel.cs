@@ -12,6 +12,7 @@ namespace MundoBrowser.ViewModels
         private readonly IAdBlockerService _adBlockerService;
         private readonly IUpdateService _updateService;
         private readonly IWebViewService _webViewService;
+        private readonly IDispatcherService _dispatcherService;
 
         public IAppSettingsService AppSettingsService => _appSettingsService;
         internal IAdBlockerService AdBlockerService => _adBlockerService;
@@ -88,12 +89,14 @@ namespace MundoBrowser.ViewModels
             IFaviconService faviconService,
             IAdBlockerService adBlockerService,
             IUpdateService updateService,
-            IWebViewService webViewService)
+            IWebViewService webViewService,
+            IDispatcherService dispatcherService)
         {
             _appSettingsService = appSettingsService;
             _adBlockerService = adBlockerService;
             _updateService = updateService;
             _webViewService = webViewService;
+            _dispatcherService = dispatcherService;
             HistoryManager = historyManager;
             SessionManager = sessionManager;
             FaviconService = faviconService;
@@ -127,7 +130,7 @@ namespace MundoBrowser.ViewModels
 
         private void OnAppSettingsChanged(AppSettings settings)
         {
-            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            _dispatcherService.BeginInvoke(() =>
             {
                 if (IsSidebarVisible != settings.IsSidebarVisible)
                     IsSidebarVisible = settings.IsSidebarVisible;
@@ -239,7 +242,7 @@ namespace MundoBrowser.ViewModels
 
         private void OnActiveDownloadsChanged()
         {
-            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            _dispatcherService.BeginInvoke(() =>
             {
                 HasActiveDownloads = _webViewService.HasActiveDownloads;
                 ActiveDownloadCount = _webViewService.ActiveDownloadCount;

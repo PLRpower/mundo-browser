@@ -28,7 +28,7 @@ public partial class MainWindow
 
         _splitViewHoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Input)
         {
-            Interval = TimeSpan.FromMilliseconds(75)
+            Interval = TimeSpan.FromMilliseconds(150)
         };
         _splitViewHoverTimer.Tick += SplitViewHoverTimer_Tick;
         if (vm.IsSplitViewActive)
@@ -50,6 +50,14 @@ public partial class MainWindow
 
         try
         {
+            Point windowPos = PointFromScreen(new Point(mousePoint.x, mousePoint.y));
+            if (windowPos.X < 0 || windowPos.Y < 0 || windowPos.X > ActualWidth || windowPos.Y > ActualHeight)
+            {
+                if (PrimaryPaneToolbarPopup != null && PrimaryPaneToolbarPopup.IsOpen) PrimaryPaneToolbarPopup.IsOpen = false;
+                if (SecondaryPaneToolbarPopup != null && SecondaryPaneToolbarPopup.IsOpen) SecondaryPaneToolbarPopup.IsOpen = false;
+                return;
+            }
+
             if (PrimaryPaneHost != null && PrimaryPaneToolbarPopup != null)
             {
                 Point primaryScreenPos = PrimaryPaneHost.PointToScreen(new Point(0, 0));

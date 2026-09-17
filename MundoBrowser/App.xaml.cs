@@ -74,11 +74,11 @@ public partial class App : System.Windows.Application
             // Force hardware acceleration for WPF rendering pipeline
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
 
-            // Dynamically adapt WPF animation framerate to match the monitor's native refresh rate (e.g. 144Hz, 165Hz, 240Hz, etc.)
-            int maxRefreshRate = NativeMethods.GetMaxDisplayRefreshRate();
+            // Cap WPF storyboard animation framerate to 60 FPS to avoid saturating the UI thread on 144Hz/240Hz displays.
+            // Note: WebView2 and web content (WebGL, 3D, games) run in Chromium's GPU compositor and natively retain the display's full refresh rate.
             System.Windows.Media.Animation.Timeline.DesiredFrameRateProperty.OverrideMetadata(
                 typeof(System.Windows.Media.Animation.Timeline),
-                new FrameworkPropertyMetadata(maxRefreshRate));
+                new FrameworkPropertyMetadata(60));
         }
         catch
         {
@@ -209,6 +209,8 @@ public partial class App : System.Windows.Application
     private static ServiceProvider ConfigureServices()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IDispatcherService, WpfDispatcherService>();
+        services.AddSingleton<IDialogService, WpfDialogService>();
         services.AddSingleton<IAppSettingsService, AppSettingsService>();
         services.AddSingleton<IHistoryManager, HistoryManager>();
         services.AddSingleton<ISessionManager, SessionManager>();

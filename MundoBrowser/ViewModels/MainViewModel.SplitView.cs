@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows.Controls;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Orientation = System.Windows.Controls.Orientation;
@@ -29,16 +31,29 @@ namespace MundoBrowser.ViewModels
 
         public TabViewModel? ActiveSplitTab => FocusedSplitPane == 0 ? PrimarySplitTab : SecondarySplitTab;
 
-        public IEnumerable<TabViewModel> SidebarTabs
+        private ICollectionView? _sidebarTabsView;
+
+        public ICollectionView SidebarTabs
         {
             get
             {
-                if (PrimarySplitTab != null && SecondarySplitTab != null && Tabs.Contains(PrimarySplitTab))
+                if (_sidebarTabsView == null)
                 {
-                    return Tabs.Where(t => t != SecondarySplitTab);
+                    _sidebarTabsView = CollectionViewSource.GetDefaultView(Tabs);
+                    _sidebarTabsView.Filter = FilterSidebarTab;
                 }
-                return Tabs;
+                return _sidebarTabsView;
             }
+        }
+
+        private bool FilterSidebarTab(object item)
+        {
+            if (item is not TabViewModel tab) return false;
+            if (PrimarySplitTab != null && SecondarySplitTab != null && Tabs.Contains(PrimarySplitTab))
+            {
+                return tab != SecondarySplitTab;
+            }
+            return true;
         }
 
         public void UpdateSplitTabFlags()
@@ -52,7 +67,7 @@ namespace MundoBrowser.ViewModels
                 if (p.Tab != null)
                     p.Tab.IsPrimarySplitTab = (PrimarySplitTab != null && SecondarySplitTab != null && p.Tab == PrimarySplitTab);
             }
-            OnPropertyChanged(nameof(SidebarTabs));
+            _sidebarTabsView?.Refresh();
         }
 
         public event EventHandler? SplitViewLayoutChanged;

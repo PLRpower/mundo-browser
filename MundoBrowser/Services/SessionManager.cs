@@ -15,7 +15,6 @@ public class SessionManager : ISessionManager
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
 
     private readonly string _sessionFilePath;
-    private readonly string _sessionBackupPath;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
 
     public SessionManager()
@@ -23,7 +22,6 @@ public class SessionManager : ISessionManager
         var appFolder = AppRuntime.LocalDataDirectory;
         Directory.CreateDirectory(appFolder);
         _sessionFilePath = Path.Combine(appFolder, "last_session.json");
-        _sessionBackupPath = Path.Combine(appFolder, "last_session.json.bak");
         
         var faviconsPath = Path.Combine(appFolder, "Favicons");
         Directory.CreateDirectory(faviconsPath);
@@ -50,7 +48,7 @@ public class SessionManager : ISessionManager
     /// <inheritdoc/>
     public SessionData? LoadSession()
     {
-        return TryLoadSession(_sessionFilePath) ?? TryLoadSession(_sessionBackupPath);
+        return TryLoadSession(_sessionFilePath);
     }
 
     private static SessionData? TryLoadSession(string path)

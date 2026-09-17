@@ -131,6 +131,8 @@ public class AdBlockerService : IAdBlockerService
         });
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _blockedHostCache = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyCollection<string> BlockedDomains => _activeBlockedDomains;
 
     public IReadOnlyCollection<string> BlockedPathPatterns => DefaultBlockedPathPatternList;
@@ -146,6 +148,7 @@ public class AdBlockerService : IAdBlockerService
                 merged.Add(domain);
             }
             _activeBlockedDomains = merged.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            _blockedHostCache.Clear();
 
             BlockedDomainsUpdated?.Invoke();
         }
@@ -154,6 +157,14 @@ public class AdBlockerService : IAdBlockerService
     public bool ShouldBlockUrl(string? url)
     {
         if (!IsAdBlockerEnabled || string.IsNullOrWhiteSpace(url)) return false;
+
+        // Fast prefix check to avoid allocating Uri for data/blob/file/about schemes
+        if (url.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("blob:", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            return false;
+
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
 
@@ -161,12 +172,18 @@ public class AdBlockerService : IAdBlockerService
         if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             host = host[4..];
 
+        if (_blockedHostCache.TryGetValue(host, out bool isBlocked))
+            return isBlocked;
+
         var blockedDomains = _activeBlockedDomains;
         string currentHost = host;
         while (!string.IsNullOrEmpty(currentHost))
         {
             if (blockedDomains.Contains(currentHost))
+            {
+                _blockedHostCache[host] = true;
                 return true;
+            }
 
             int dotIndex = currentHost.IndexOf('.');
             if (dotIndex < 0 || dotIndex == currentHost.Length - 1)
@@ -189,6 +206,7 @@ public class AdBlockerService : IAdBlockerService
             }
         }
 
+        _blockedHostCache[host] = false;
         return false;
     }
 
@@ -407,11 +425,30 @@ public class AdBlockerService : IAdBlockerService
                     } catch (e) {}
                 }
 
-                // Poll actively
-                setInterval(cleanYouTubeAds, 150);
+                // Observe DOM mutations on player & dialogs instead of 150ms tight polling loop
+                const observer = new MutationObserver(() => cleanYouTubeAds());
+                const observeTarget = () => {
+                    const target = document.querySelector('#movie_player') || document.body;
+                    if (target) {
+                        observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+                    }
+                };
 
-                // Handle SPA navigation transitions
-                document.addEventListener('DOMContentLoaded', cleanYouTubeAds);
+                if (document.body) observeTarget();
+                else document.addEventListener('DOMContentLoaded', observeTarget, { once: true });
+
+                // Event-driven triggers for video playback & SPA transitions
+                document.addEventListener('play', (e) => {
+                    if (e.target && e.target.tagName === 'VIDEO') cleanYouTubeAds();
+                }, true);
+
+                // Low-frequency fallback safety check (1s), paused when tab is in background
+                setInterval(() => {
+                    if (document.visibilityState === 'visible') {
+                        cleanYouTubeAds();
+                    }
+                }, 1000);
+
                 window.addEventListener('yt-navigate-finish', cleanYouTubeAds);
                 window.addEventListener('spfdone', cleanYouTubeAds);
                 window.addEventListener('load', cleanYouTubeAds);

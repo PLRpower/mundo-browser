@@ -88,9 +88,7 @@ public partial class WebViewService : IWebViewService, IDisposable
                 "--enable-smooth-scrolling",
                 "--enable-accelerated-2d-canvas",
                 "--enable-accelerated-video-decode",
-                "--enable-features=CanvasOopRasterization,UseSkiaRenderer,VaapiVideoDecoder,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
-                "--num-raster-threads=4",
-                "--enable-highres-timer",
+                "--enable-features=CanvasOopRasterization,UseSkiaRenderer,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
                 "--enable-quic"
             )
         };
@@ -241,18 +239,19 @@ public partial class WebViewService : IWebViewService, IDisposable
             if (adBlocker != null)
             {
                 string currentPageUrl = tab.Url;
+                bool isAdBlockActiveForPage = adBlocker.IsAdBlockerEnabledForSite(currentPageUrl);
 
                 // Inject adblock, cosmetic CSS, YouTube skipper and cookie modal scripts on document creation
                 await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(adBlocker.GetInjectionScript());
 
-                // Single wildcard filter to avoid blocking the UI thread with thousands of COM calls.
+                // Intercept web resources with cached site status to minimize COM overhead on UI thread
                 webView.CoreWebView2.AddWebResourceRequestedFilter(
                     "*",
                     CoreWebView2WebResourceContext.All);
 
                 webView.CoreWebView2.WebResourceRequested += (s, e) =>
                 {
-                    if (adBlocker.IsAdBlockerEnabledForSite(currentPageUrl) && adBlocker.ShouldBlockUrl(e.Request.Uri))
+                    if (isAdBlockActiveForPage && adBlocker.ShouldBlockUrl(e.Request.Uri))
                     {
                         var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
                             null, 204, "No Content", ""
@@ -261,26 +260,11 @@ public partial class WebViewService : IWebViewService, IDisposable
                     }
                 };
 
-                // Apply cosmetic filtering once after the DOM is ready, without a permanent observer.
-                webView.CoreWebView2.DOMContentLoaded += async (_, _) =>
+                webView.CoreWebView2.NavigationStarting += (_, e) =>
                 {
-                    try
-                    {
-                        string script = BuildCosmeticFilteringScript(adBlocker, currentPageUrl);
-                        if (!string.IsNullOrEmpty(script))
-                            await webView.CoreWebView2.ExecuteScriptAsync(script);
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        // WebView2 was disposed while we were awaiting. Just ignore.
-                    }
-                    catch (Exception)
-                    {
-                        // Ignore other errors during script injection
-                    }
+                    currentPageUrl = e.Uri;
+                    isAdBlockActiveForPage = adBlocker.IsAdBlockerEnabledForSite(e.Uri);
                 };
-
-                webView.CoreWebView2.NavigationStarting += (_, e) => currentPageUrl = e.Uri;
             }
 
             webView.CoreWebView2.DOMContentLoaded += (_, _) => PostSettingsToPage(webView);
@@ -393,37 +377,7 @@ public partial class WebViewService : IWebViewService, IDisposable
         finally { _initSemaphore.Release(); }
     }
 
-    private static string BuildCosmeticFilteringScript(IAdBlockerService adBlocker, string? pageUrl)
-    {
-        bool isAdBlockActive = adBlocker.IsAdBlockerEnabledForSite(pageUrl);
-        bool isCookieBlockActive = adBlocker.IsCookieBlockerEnabledForSite(pageUrl);
 
-        string css = "";
-        if (isAdBlockActive)
-            css += adBlocker.GetCosmeticCss();
-        if (isCookieBlockActive)
-            css += adBlocker.GetCookieCosmeticCss();
-
-        string cookieScript = isCookieBlockActive ? adBlocker.GetCookieRemovalScript() : "";
-
-        if (string.IsNullOrWhiteSpace(css) && string.IsNullOrWhiteSpace(cookieScript))
-            return "";
-
-        string serializedCss = System.Text.Json.JsonSerializer.Serialize(css);
-        return $@"
-            (() => {{
-                const css = {serializedCss};
-                if (css && !document.getElementById('mundo-adblock-css')) {{
-                    const style = document.createElement('style');
-                    style.id = 'mundo-adblock-css';
-                    style.textContent = css;
-                    (document.head || document.documentElement).appendChild(style);
-                }}
-
-                {cookieScript}
-            }})();
-        ";
-    }
 
     private void HandleProcessFailed(WebView2 webView, TabViewModel tab, CoreWebView2ProcessFailedEventArgs args)
     {

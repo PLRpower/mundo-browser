@@ -80,10 +80,11 @@ public partial class TopBarView
         }
     }
 
-    private void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    private async void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         UpdateAddressDisplay();
         _suggestionFaviconsCts?.Cancel();
+        _addressSearchCts?.Cancel();
         if (_isUpdatingAddressBar || _isApplyingInlineCompletion || DataContext is not MainViewModel vm)
             return;
 
@@ -114,11 +115,28 @@ public partial class TopBarView
             return;
         }
 
-        var results = vm.HistoryManager.SearchHistory(text, maxResults: 20);
-        TryApplyInlineCompletion(text, results, vm);
-        PopulateSuggestions(text, results, vm);
-        IsSuggestionsOpen = vm.Suggestions.Any();
-        SuggestionsListBox.SelectedIndex = vm.Suggestions.Count > 0 ? 0 : -1;
+        var cts = new CancellationTokenSource();
+        _addressSearchCts = cts;
+
+        try
+        {
+            await Task.Delay(80, cts.Token);
+            if (cts.Token.IsCancellationRequested)
+                return;
+
+            var results = await Task.Run(() => vm.HistoryManager.SearchHistory(text, maxResults: 20), cts.Token);
+            if (cts.Token.IsCancellationRequested || !AddressTextBox.IsKeyboardFocused || AddressTextBox.Text != text)
+                return;
+
+            TryApplyInlineCompletion(text, results, vm);
+            PopulateSuggestions(text, results, vm);
+            IsSuggestionsOpen = vm.Suggestions.Any();
+            SuggestionsListBox.SelectedIndex = vm.Suggestions.Count > 0 ? 0 : -1;
+        }
+        catch (OperationCanceledException)
+        {
+            // Debounced by subsequent keystrokes
+        }
     }
 
     private void AddressTextBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)

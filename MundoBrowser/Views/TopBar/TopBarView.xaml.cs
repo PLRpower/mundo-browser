@@ -18,6 +18,7 @@ public partial class TopBarView : System.Windows.Controls.UserControl
 {
     private CancellationTokenSource? _zoomIndicatorCts;
     private CancellationTokenSource? _suggestionFaviconsCts;
+    private CancellationTokenSource? _addressSearchCts;
     private bool _isUpdatingAddressBar;
     private bool _isApplyingInlineCompletion;
     private bool _suppressInlineCompletionUntilInsertion;

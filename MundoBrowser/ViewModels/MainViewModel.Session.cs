@@ -107,12 +107,8 @@ namespace MundoBrowser.ViewModels
             {
                 await Task.Delay(1000, cts.Token).ConfigureAwait(false);
 
-                var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                if (dispatcher == null || dispatcher.HasShutdownStarted)
-                    return;
-
-                var snapshot = await dispatcher.InvokeAsync(CreateSessionDataSnapshot);
-                if (cts.IsCancellationRequested)
+                var snapshot = await _dispatcherService.InvokeAsync(CreateSessionDataSnapshot);
+                if (snapshot == null || cts.IsCancellationRequested)
                     return;
 
                 await SessionManager.SaveSessionAsync(snapshot).ConfigureAwait(false);

@@ -251,6 +251,10 @@
             <ListBox x:Name="TabsListBox" Grid.Row="3" ItemsSource="{Binding SidebarTabs}" SelectedItem="{Binding SelectedListTab}" 
                      Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     VirtualizingPanel.ScrollUnit="Pixel"
                      AllowDrop="True" Drop="TabsList_Drop" DragOver="TabsList_DragOver" DragLeave="TabsList_DragLeave"
                      Padding="0,2" ClipToBounds="False">
                 <ListBox.ItemContainerStyle>

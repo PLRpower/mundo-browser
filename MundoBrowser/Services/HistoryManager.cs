@@ -13,7 +13,6 @@ public class HistoryManager : IHistoryManager
     private static readonly JsonSerializerOptions JsonOptions = new();
 
     private readonly string _historyFilePath;
-    private readonly string _historyBackupPath;
     private readonly List<HistoryEntry> _history;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private readonly Lock _historyLock = new();
@@ -24,15 +23,12 @@ public class HistoryManager : IHistoryManager
         var appDataPath = AppRuntime.RoamingDataDirectory;
         Directory.CreateDirectory(appDataPath);
         _historyFilePath = Path.Combine(appDataPath, "history.json");
-        _historyBackupPath = _historyFilePath + ".bak";
         _history = LoadHistory();
     }
 
     private List<HistoryEntry> LoadHistory()
     {
-        var history = TryLoadHistory(_historyFilePath)
-                      ?? TryLoadHistory(_historyBackupPath)
-                      ?? [];
+        var history = TryLoadHistory(_historyFilePath) ?? [];
         return history.Take(MaxHistoryEntries).ToList();
     }
 

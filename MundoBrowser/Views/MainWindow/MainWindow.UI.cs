@@ -362,10 +362,10 @@ public partial class MainWindow
     {
         if (_floatingTopBarCheckTimer == null)
         {
-            _floatingTopBarCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+            _floatingTopBarCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
             _floatingTopBarCheckTimer.Tick += (s, e) =>
             {
-                if (!_isTopBarFloating || FloatingTopBarPopup == null || !FloatingTopBarPopup.IsOpen)
+                if (!_isTopBarFloating || FloatingTopBarPopup == null || !FloatingTopBarPopup.IsOpen || !IsActive || WindowState == WindowState.Minimized)
                 {
                     _floatingTopBarCheckTimer.Stop();
                     return;

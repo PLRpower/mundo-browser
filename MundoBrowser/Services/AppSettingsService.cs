@@ -129,22 +129,6 @@ public sealed class AppSettingsService : IAppSettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(site => site, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        if (settings.ProtectionDisabledSites != null && settings.ProtectionDisabledSites.Count > 0)
-        {
-            foreach (var legacySite in settings.ProtectionDisabledSites)
-            {
-                var cleanSite = legacySite.Trim().TrimEnd('.').ToLowerInvariant();
-                if (!string.IsNullOrWhiteSpace(cleanSite))
-                {
-                    if (!settings.AdBlockDisabledSites.Contains(cleanSite, StringComparer.OrdinalIgnoreCase))
-                        settings.AdBlockDisabledSites.Add(cleanSite);
-                    if (!settings.CookieBlockDisabledSites.Contains(cleanSite, StringComparer.OrdinalIgnoreCase))
-                        settings.CookieBlockDisabledSites.Add(cleanSite);
-                }
-            }
-            settings.ProtectionDisabledSites.Clear();
-        }
     }
 
     private static string NormalizeStartPage(string? value)

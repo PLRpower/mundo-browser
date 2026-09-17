@@ -52,7 +52,12 @@ public partial class MainWindow
                 })()";
 
             string json = await webView.CoreWebView2.ExecuteScriptAsync(script);
-            if (string.IsNullOrEmpty(json) || json == "null") return;
+            if (string.IsNullOrEmpty(json) || json == "null")
+            {
+                if (vm.ActiveMediaTab != null && !vm.ActiveMediaTab.IsPlayingAudio)
+                    _globalMediaTimer.Stop();
+                return;
+            }
 
             var data = JsonSerializer.Deserialize<MediaData>(json);
             if (data != null && data.hasMedia)
@@ -64,6 +69,20 @@ public partial class MainWindow
                 tab.MediaArtist = data.artist;
                 tab.IsMediaPaused = data.paused;
                 tab.IsMediaMuted = data.muted;
+
+                if (data.paused && !tab.IsPlayingAudio)
+                {
+                    _globalMediaTimer.Interval = TimeSpan.FromSeconds(5);
+                }
+                else
+                {
+                    _globalMediaTimer.Interval = TimeSpan.FromSeconds(2);
+                }
+            }
+            else
+            {
+                if (vm.ActiveMediaTab != null && !vm.ActiveMediaTab.IsPlayingAudio)
+                    _globalMediaTimer.Stop();
             }
         }
         catch { }
@@ -76,6 +95,12 @@ public partial class MainWindow
     private async void OnMediaActionRequested(object? sender, string action)
     {
         if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null) return;
+
+        if (!_globalMediaTimer.IsEnabled)
+        {
+            _globalMediaTimer.Interval = TimeSpan.FromSeconds(2);
+            _globalMediaTimer.Start();
+        }
         
         var webView = _webViewService.GetWebViewForTab(vm.ActiveMediaTab);
         if (webView?.CoreWebView2 == null) return;

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -14,47 +15,99 @@ namespace MundoBrowser;
 public class PinnedTabBorderBrushConverter : IMultiValueConverter
 {
     private const int MaxCacheEntries = 256;
-    private const int MaxAnalyzedImageDimension = 512;
-    private static readonly Dictionary<string, Brush> Cache = new(StringComparer.Ordinal);
-    private static readonly Queue<string> CacheOrder = new();
-    private static readonly Lock CacheLock = new();
+    private static readonly ConcurrentDictionary<string, Brush> Cache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, List<PositionedColor>> ExtractedColorsCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, byte> ActiveExtractions = new(StringComparer.Ordinal);
+    private static readonly SolidColorBrush DefaultBrush;
+
+    static PinnedTabBorderBrushConverter()
+    {
+        DefaultBrush = new SolidColorBrush(Color.FromRgb(0, 122, 204));
+        DefaultBrush.Freeze();
+    }
 
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
     {
-        string faviconUrl = values.ElementAtOrDefault(0)?.ToString() ?? string.Empty;
-        string pageUrl = values.ElementAtOrDefault(1)?.ToString() ?? string.Empty;
+        string faviconUrl = values.ElementAtOrDefault(0) is string fav && fav != DependencyProperty.UnsetValue.ToString() ? fav : string.Empty;
+        string pageUrl = values.ElementAtOrDefault(1) is string page && page != DependencyProperty.UnsetValue.ToString() ? page : string.Empty;
+
+        if (string.IsNullOrEmpty(faviconUrl) && string.IsNullOrEmpty(pageUrl))
+            return DefaultBrush;
+
         string cacheKey = faviconUrl + "|" + pageUrl;
+        if (Cache.TryGetValue(cacheKey, out var cachedBrush))
+            return cachedBrush;
 
-        lock (CacheLock)
+        if (Cache.Count > MaxCacheEntries)
+            Cache.Clear();
+
+        if (!string.IsNullOrEmpty(faviconUrl) && ExtractedColorsCache.TryGetValue(faviconUrl, out var preExtracted))
         {
-            if (Cache.TryGetValue(cacheKey, out var cachedBrush))
-                return cachedBrush;
-        }
-
-        var positionedColors = ExtractPositionedColors(faviconUrl);
-        if (positionedColors.Count == 0)
-            positionedColors = GetFallbackColors(pageUrl);
-
-        Brush brush = CreateBrush(positionedColors);
-        if (brush.CanFreeze) brush.Freeze();
-
-        lock (CacheLock)
-        {
-            if (Cache.TryGetValue(cacheKey, out var existingBrush))
-                return existingBrush;
-
+            var brush = CreateBrush(preExtracted);
+            if (brush.CanFreeze) brush.Freeze();
             Cache[cacheKey] = brush;
-            CacheOrder.Enqueue(cacheKey);
-            while (CacheOrder.Count > MaxCacheEntries)
-                Cache.Remove(CacheOrder.Dequeue());
+            return brush;
         }
 
-        return brush;
+        var fallbackColors = GetFallbackColors(pageUrl);
+        var liveBrush = CreateBrush(fallbackColors);
+
+        if (IsLocalFile(faviconUrl))
+        {
+            Cache[cacheKey] = liveBrush;
+
+            if (ActiveExtractions.TryAdd(faviconUrl, 0))
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var colors = ExtractPositionedColors(faviconUrl);
+                        if (colors.Count > 0)
+                        {
+                            ExtractedColorsCache[faviconUrl] = colors;
+                            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+                            {
+                                try
+                                {
+                                    if (!liveBrush.IsFrozen)
+                                    {
+                                        ApplyColorsToBrush(liveBrush, colors);
+                                        if (liveBrush.CanFreeze) liveBrush.Freeze();
+                                    }
+                                }
+                                catch
+                                {
+                                }
+                            });
+                        }
+                    }
+                    finally
+                    {
+                        ActiveExtractions.TryRemove(faviconUrl, out _);
+                    }
+                });
+            }
+
+            return liveBrush;
+        }
+
+        if (liveBrush.CanFreeze) liveBrush.Freeze();
+        Cache[cacheKey] = liveBrush;
+        return liveBrush;
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
     {
         return targetTypes.Select(_ => Binding.DoNothing).ToArray();
+    }
+
+    private static bool IsLocalFile(string faviconUrl)
+    {
+        return !string.IsNullOrWhiteSpace(faviconUrl)
+            && Uri.TryCreate(faviconUrl, UriKind.Absolute, out var uri)
+            && uri.IsFile
+            && File.Exists(uri.LocalPath);
     }
 
     private static List<PositionedColor> ExtractPositionedColors(string faviconUrl)
@@ -71,12 +124,13 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
             bitmapImage.BeginInit();
             bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
             bitmapImage.StreamSource = stream;
-            bitmapImage.DecodePixelWidth = 32;
-            bitmapImage.DecodePixelHeight = 32;
+            bitmapImage.DecodePixelWidth = 16;
+            bitmapImage.DecodePixelHeight = 16;
             bitmapImage.EndInit();
             bitmapImage.Freeze();
 
             var bitmap = new FormatConvertedBitmap(bitmapImage, PixelFormats.Bgra32, null, 0);
+            bitmap.Freeze();
             int width = bitmap.PixelWidth;
             int height = bitmap.PixelHeight;
             if (width <= 0 || height <= 0)
@@ -190,98 +244,51 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
             .ToList();
     }
 
-    private static Brush CreateBrush(IReadOnlyList<PositionedColor> positionedColors)
+    private static LinearGradientBrush CreateBrush(IReadOnlyList<PositionedColor> positionedColors)
     {
+        var brush = new LinearGradientBrush();
+        ApplyColorsToBrush(brush, positionedColors);
+        return brush;
+    }
+
+    private static void ApplyColorsToBrush(LinearGradientBrush brush, IReadOnlyList<PositionedColor> positionedColors)
+    {
+        brush.GradientStops.Clear();
+
         if (positionedColors.Count == 0)
-            return new SolidColorBrush(Color.FromRgb(0, 122, 204));
+        {
+            var fallback = Color.FromRgb(0, 122, 204);
+            brush.GradientStops.Add(new GradientStop(fallback, 0.0));
+            brush.GradientStops.Add(new GradientStop(fallback, 1.0));
+            return;
+        }
 
         if (positionedColors.Count == 1)
-            return new SolidColorBrush(positionedColors[0].Color);
+        {
+            var c = positionedColors[0].Color;
+            brush.GradientStops.Add(new GradientStop(c, 0.0));
+            brush.GradientStops.Add(new GradientStop(c, 1.0));
+            return;
+        }
 
         if (positionedColors.Count == 2)
         {
             var c1 = positionedColors[0];
             var c2 = positionedColors[1];
-            return new LinearGradientBrush(
-                c1.Color,
-                c2.Color,
-                new Point(c1.X, c1.Y),
-                new Point(c2.X, c2.Y));
+            brush.StartPoint = new Point(c1.X, c1.Y);
+            brush.EndPoint = new Point(c2.X, c2.Y);
+            brush.GradientStops.Add(new GradientStop(c1.Color, 0.0));
+            brush.GradientStops.Add(new GradientStop(c2.Color, 1.0));
+            return;
         }
 
-        const int textureWidth = 48;
-        const int textureHeight = 32;
-        const int bytesPerPixel = 4;
-        int stride = textureWidth * bytesPerPixel;
-        var pixels = new byte[stride * textureHeight];
-
-        int colorCount = positionedColors.Count;
-        Span<float> posX = stackalloc float[colorCount];
-        Span<float> posY = stackalloc float[colorCount];
-        Span<float> colR = stackalloc float[colorCount];
-        Span<float> colG = stackalloc float[colorCount];
-        Span<float> colB = stackalloc float[colorCount];
-
-        for (int i = 0; i < colorCount; i++)
+        brush.StartPoint = new Point(0, 0);
+        brush.EndPoint = new Point(1, 1);
+        for (int i = 0; i < positionedColors.Count; i++)
         {
-            var pc = positionedColors[i];
-            posX[i] = (float)pc.X;
-            posY[i] = (float)pc.Y;
-            colR[i] = pc.Color.R;
-            colG[i] = pc.Color.G;
-            colB[i] = pc.Color.B;
+            double offset = (double)i / (positionedColors.Count - 1);
+            brush.GradientStops.Add(new GradientStop(positionedColors[i].Color, offset));
         }
-
-        const float invW = 1.0f / (textureWidth - 1);
-        const float invH = 1.0f / (textureHeight - 1);
-
-        for (int y = 0; y < textureHeight; y++)
-        {
-            float normY = y * invH;
-            int rowOffset = y * stride;
-
-            for (int x = 0; x < textureWidth; x++)
-            {
-                float normX = x * invW;
-                float totalWeight = 0f;
-                float red = 0f;
-                float green = 0f;
-                float blue = 0f;
-
-                for (int i = 0; i < colorCount; i++)
-                {
-                    float dx = normX - posX[i];
-                    float dy = normY - posY[i];
-                    float d2 = dx * dx + dy * dy + 0.02f;
-                    // Fast inverse power approximation
-                    float weight = 1.0f / (d2 * d2 * MathF.Sqrt(d2));
-
-                    totalWeight += weight;
-                    red += colR[i] * weight;
-                    green += colG[i] * weight;
-                    blue += colB[i] * weight;
-                }
-
-                float invWeight = totalWeight > 0f ? 1.0f / totalWeight : 1.0f;
-                int offset = rowOffset + x * bytesPerPixel;
-                pixels[offset] = (byte)Math.Clamp(blue * invWeight, 0f, 255f);
-                pixels[offset + 1] = (byte)Math.Clamp(green * invWeight, 0f, 255f);
-                pixels[offset + 2] = (byte)Math.Clamp(red * invWeight, 0f, 255f);
-                pixels[offset + 3] = 255;
-            }
-        }
-
-        var bitmap = new WriteableBitmap(textureWidth, textureHeight, 96, 96, PixelFormats.Bgra32, null);
-        bitmap.WritePixels(new Int32Rect(0, 0, textureWidth, textureHeight), pixels, stride, 0);
-        if (bitmap.CanFreeze) bitmap.Freeze();
-
-        return new ImageBrush(bitmap)
-        {
-            Stretch = Stretch.Fill,
-            TileMode = TileMode.None,
-            AlignmentX = AlignmentX.Center,
-            AlignmentY = AlignmentY.Center
-        };
     }
 
     private static Color EnsureVisible(Color color)

@@ -41,7 +41,7 @@ Mundo Browser offers a clean, ultra-fast alternative for everyday browsing and p
   ```text
   --enable-gpu-rasterization --enable-zero-copy --enable-smooth-scrolling
   --enable-accelerated-2d-canvas --enable-accelerated-video-decode
-  --enable-features=CanvasOopRasterization,UseSkiaRenderer,VaapiVideoDecoder,ParallelDownloading,OverlayScrollbar
+  --enable-features=CanvasOopRasterization,UseSkiaRenderer,ParallelDownloading,OverlayScrollbar
   --num-raster-threads=4 --enable-highres-timer --enable-quic
   ```
 

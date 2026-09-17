@@ -4,16 +4,13 @@ using System.Threading.Tasks;
 using MundoBrowser.Interfaces;
 using Velopack;
 using Velopack.Sources;
-using WpfApplication = System.Windows.Application;
-using WpfMessageBox = System.Windows.MessageBox;
-using WpfMessageBoxButton = System.Windows.MessageBoxButton;
-using WpfMessageBoxImage = System.Windows.MessageBoxImage;
 
 namespace MundoBrowser.Services;
 
 public class UpdateService : IUpdateService
 {
     private readonly IAppSettingsService _settingsService;
+    private readonly IDialogService _dialogService;
     private UpdateManager? _updateManager;
     private UpdateInfo? _updateInfo;
     private string[]? _startArgs;
@@ -27,9 +24,10 @@ public class UpdateService : IUpdateService
 
     public event EventHandler? UpdateStatusChanged;
 
-    public UpdateService(IAppSettingsService settingsService)
+    public UpdateService(IAppSettingsService settingsService, IDialogService dialogService)
     {
         _settingsService = settingsService;
+        _dialogService = dialogService;
     }
 
     public void CheckForUpdatesInBackground(string[]? args)
@@ -76,14 +74,9 @@ public class UpdateService : IUpdateService
 
                 if (isManualCheck)
                 {
-                    WpfApplication.Current.Dispatcher.Invoke(() =>
-                    {
-                        WpfMessageBox.Show(
-                            $"Une nouvelle version ({NewVersionText}) est disponible ! Le téléchargement a démarré en arrière-plan.",
-                            "Mise à jour disponible",
-                            WpfMessageBoxButton.OK,
-                            WpfMessageBoxImage.Information);
-                    });
+                    _dialogService.ShowInformation(
+                        $"Une nouvelle version ({NewVersionText}) est disponible ! Le téléchargement a démarré en arrière-plan.",
+                        "Mise à jour disponible");
                 }
 
                 await _updateManager.DownloadUpdatesAsync(updateInfo, progress =>
@@ -98,14 +91,9 @@ public class UpdateService : IUpdateService
             }
             else if (isManualCheck)
             {
-                WpfApplication.Current.Dispatcher.Invoke(() =>
-                {
-                    WpfMessageBox.Show(
-                        "Vous utilisez déjà la dernière version de MundoBrowser.",
-                        "Mise à jour",
-                        WpfMessageBoxButton.OK,
-                        WpfMessageBoxImage.Information);
-                });
+                _dialogService.ShowInformation(
+                    "Vous utilisez déjà la dernière version de MundoBrowser.",
+                    "Mise à jour");
             }
         }
         catch (Exception ex)
@@ -113,14 +101,9 @@ public class UpdateService : IUpdateService
             Debug.WriteLine($"Update check failed: {ex.Message}");
             if (isManualCheck)
             {
-                WpfApplication.Current.Dispatcher.Invoke(() =>
-                {
-                    WpfMessageBox.Show(
-                        $"Impossible de vérifier les mises à jour : {ex.Message}",
-                        "Erreur",
-                        WpfMessageBoxButton.OK,
-                        WpfMessageBoxImage.Error);
-                });
+                _dialogService.ShowError(
+                    $"Impossible de vérifier les mises à jour : {ex.Message}",
+                    "Erreur");
             }
         }
         finally
@@ -139,11 +122,9 @@ public class UpdateService : IUpdateService
             }
             catch (Exception ex)
             {
-                WpfMessageBox.Show(
+                _dialogService.ShowError(
                     $"Erreur lors de l'application de la mise à jour : {ex.Message}",
-                    "Erreur",
-                    WpfMessageBoxButton.OK,
-                    WpfMessageBoxImage.Error);
+                    "Erreur");
             }
         }
     }

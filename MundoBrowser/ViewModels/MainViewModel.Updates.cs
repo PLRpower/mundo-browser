@@ -39,9 +39,6 @@ namespace MundoBrowser.ViewModels
 
         private void OnUpdateStatusChanged(object? sender, EventArgs e)
         {
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher == null || dispatcher.HasShutdownStarted) return;
-
             void UpdateState()
             {
                 IsUpdateAvailable = _updateService.IsUpdateAvailable;
@@ -67,10 +64,10 @@ namespace MundoBrowser.ViewModels
                 }
             }
 
-            if (dispatcher.CheckAccess())
+            if (_dispatcherService.CheckAccess())
                 UpdateState();
             else
-                dispatcher.BeginInvoke(UpdateState);
+                _dispatcherService.BeginInvoke(UpdateState);
         }
     }
 }
