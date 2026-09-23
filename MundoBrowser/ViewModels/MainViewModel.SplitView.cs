@@ -56,7 +56,7 @@ namespace MundoBrowser.ViewModels
             return true;
         }
 
-        public void UpdateSplitTabFlags()
+        public void UpdateSplitTabFlags(bool refreshView = true)
         {
             foreach (var tab in Tabs)
             {
@@ -67,7 +67,10 @@ namespace MundoBrowser.ViewModels
                 if (p.Tab != null)
                     p.Tab.IsPrimarySplitTab = (PrimarySplitTab != null && SecondarySplitTab != null && p.Tab == PrimarySplitTab);
             }
-            _sidebarTabsView?.Refresh();
+            if (refreshView)
+            {
+                _sidebarTabsView?.Refresh();
+            }
         }
 
         public event EventHandler? SplitViewLayoutChanged;
