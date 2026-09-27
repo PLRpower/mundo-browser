@@ -784,7 +784,28 @@ public partial class MainWindow
         else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { FocusAddressBar(); e.Handled = true; }
         else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }
         else if (key == Key.Right && modifiers == ModifierKeys.Alt) { if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoForward) { _webViewService.ActiveWebView.GoForward(); e.Handled = true; } }
-        else if (key == Key.Escape && _extensionPopupWindow?.IsVisible == true) { CloseExtensionPopup(); e.Handled = true; }
+        else if (key == Key.Escape)
+        {
+            if (_extensionPopupWindow?.IsVisible == true)
+            {
+                CloseExtensionPopup();
+                e.Handled = true;
+            }
+            else if (_isTopBarFloating)
+            {
+                FloatingTopBarControl?.CloseAddressBar();
+                TopBarControl?.CloseAddressBar();
+                HideFloatingTopBar();
+                e.Handled = true;
+            }
+            else if ((TopBarControl != null && (TopBarControl.AddressBar.IsKeyboardFocused || TopBarControl.AddressBar.IsKeyboardFocusWithin || TopBarControl.IsSuggestionsOpen)) ||
+                     (FloatingTopBarControl != null && (FloatingTopBarControl.AddressBar.IsKeyboardFocused || FloatingTopBarControl.AddressBar.IsKeyboardFocusWithin || FloatingTopBarControl.IsSuggestionsOpen)))
+            {
+                TopBarControl?.CloseAddressBar();
+                FloatingTopBarControl?.CloseAddressBar();
+                e.Handled = true;
+            }
+        }
         else if (modifiers == ModifierKeys.Control)
         {
             if (key == Key.OemPlus || key == Key.Add) { AdjustZoom(0.1); e.Handled = true; }

@@ -337,14 +337,17 @@ public partial class WebViewService : IWebViewService, IDisposable
 
             setupEvents(webView);
             
-            string initialUrl = tab.Url;
-            if (initialUrl == "about:preferences" || initialUrl.StartsWith("edge://preferences") || initialUrl.StartsWith("chrome://settings"))
+            if (!tab.IsCreatedFromNewWindow)
             {
-                initialUrl = "https://internals.mundobrowser/settings.html#general";
-                tab.AddressUrl = "about:preferences#general";
-            }
+                string initialUrl = tab.Url;
+                if (initialUrl == "about:preferences" || initialUrl.StartsWith("edge://preferences") || initialUrl.StartsWith("chrome://settings"))
+                {
+                    initialUrl = "https://internals.mundobrowser/settings.html#general";
+                    tab.AddressUrl = "about:preferences#general";
+                }
 
-            if (!string.IsNullOrEmpty(initialUrl)) webView.CoreWebView2.Navigate(initialUrl);
+                if (!string.IsNullOrEmpty(initialUrl)) webView.CoreWebView2.Navigate(initialUrl);
+            }
 
             lock (_initializationTasks)
             {

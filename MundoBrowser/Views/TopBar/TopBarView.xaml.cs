@@ -28,6 +28,7 @@ public partial class TopBarView : System.Windows.Controls.UserControl
     private string? _acceptedCompletionText;
     private string? _acceptedCompletionUrl;
     private string? _suppressedCompletionText;
+    private string? _userTypedText;
     private MainViewModel? _mainViewModel;
     private TabViewModel? _observedZoomTab;
 
@@ -135,6 +136,7 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         ClearAcceptedCompletion();
         _suppressedCompletionText = null;
         _suppressInlineCompletionUntilInsertion = false;
+        _userTypedText = text;
         _isUpdatingAddressBar = true;
         AddressTextBox.Text = text;
         _isUpdatingAddressBar = false;

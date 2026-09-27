@@ -27,10 +27,20 @@ public partial class TopBarView
             if (string.IsNullOrWhiteSpace(input))
                 return;
 
-            string url = GetNavigableInlineCompletionUrl()
-                         ?? (TryGetDirectNavigationUrl(input, out var directUrl, out _)
-                             ? directUrl
-                             : BuildSearchUrl(vm, input));
+            string url;
+            if (IsSuggestionsOpen
+                && SuggestionsListBox.SelectedItem is Models.HistoryEntry selectedEntry
+                && UrlsMatch(input, GetSuggestionDisplayText(selectedEntry)))
+            {
+                url = GetSuggestionNavigationUrl(vm, selectedEntry);
+            }
+            else
+            {
+                url = GetNavigableInlineCompletionUrl()
+                      ?? (TryGetDirectNavigationUrl(input, out var directUrl, out _)
+                          ? directUrl
+                          : BuildSearchUrl(vm, input));
+            }
 
             NavigateToAddress(vm, url);
             ClearInlineCompletion();
@@ -39,45 +49,70 @@ public partial class TopBarView
             GetWebView()?.Focus();
             e.Handled = true;
         }
-        else if (e.Key == Key.Down && IsSuggestionsOpen)
+        else if (e.Key == Key.Down)
         {
-            SuggestionsListBox.Focus();
-            if (SuggestionsListBox.Items.Count > 0)
+            if (IsSuggestionsOpen)
             {
-                int nextIndex = Math.Min(
-                    Math.Max(SuggestionsListBox.SelectedIndex + 1, 0),
-                    SuggestionsListBox.Items.Count - 1);
-                SuggestionsListBox.SelectedIndex = nextIndex;
-                var nextItem = SuggestionsListBox.ItemContainerGenerator.ContainerFromIndex(nextIndex)
-                    as System.Windows.Controls.ListBoxItem;
-                nextItem?.Focus();
+                NavigateSuggestion(1);
+                e.Handled = true;
             }
+            else if (DataContext is MainViewModel vmDown && vmDown.Suggestions.Count > 0)
+            {
+                IsSuggestionsOpen = true;
+                NavigateSuggestion(1);
+                e.Handled = true;
+            }
+        }
+        else if (e.Key == Key.Up && IsSuggestionsOpen)
+        {
+            NavigateSuggestion(-1);
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
         {
-            if (IsSuggestionsOpen)
-            {
-                IsSuggestionsOpen = false;
-            }
-            else
-            {
-                if (DataContext is MainViewModel vmEsc && vmEsc.IsPendingNewTab)
-                {
-                    vmEsc.IsPendingNewTab = false;
-                    if (vmEsc.SelectedTab != null)
-                        vmEsc.AddressBarText = vmEsc.SelectedTab.AddressUrl;
-                }
-
-                AddressTextBox.SelectionLength = 0;
-                var webView = GetWebView();
-                if (webView != null)
-                    webView.Focus();
-                else
-                    Keyboard.ClearFocus();
-            }
+            CloseAddressBar();
             e.Handled = true;
         }
+    }
+
+    public void CloseAddressBar()
+    {
+        _suggestionFaviconsCts?.Cancel();
+        _addressSearchCts?.Cancel();
+        IsSuggestionsOpen = false;
+        SuggestionsListBox.SelectedIndex = -1;
+        ClearInlineCompletion();
+        ClearAcceptedCompletion();
+        _suppressedCompletionText = null;
+        _suppressInlineCompletionUntilInsertion = false;
+
+        string originalUrl = string.Empty;
+        if (DataContext is MainViewModel vm)
+        {
+            vm.IsPendingNewTab = false;
+            originalUrl = vm.SelectedTab?.AddressUrl ?? string.Empty;
+            vm.AddressBarText = originalUrl;
+        }
+
+        SetAddressBarText(originalUrl);
+        AddressTextBox.SelectionLength = 0;
+
+        var mw = GetMainWindow();
+        if (mw != null)
+        {
+            if (mw.TopBarControl != null && mw.TopBarControl != this)
+                mw.TopBarControl.SetAddressBarText(originalUrl);
+            if (mw.FloatingTopBarControl != null && mw.FloatingTopBarControl != this)
+                mw.FloatingTopBarControl.SetAddressBarText(originalUrl);
+        }
+
+        var webView = GetWebView();
+        if (webView != null)
+            webView.Focus();
+        else
+            Keyboard.ClearFocus();
+
+        mw?.OnFloatingTopBarFocusLost();
     }
 
     private async void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -87,6 +122,8 @@ public partial class TopBarView
         _addressSearchCts?.Cancel();
         if (_isUpdatingAddressBar || _isApplyingInlineCompletion || DataContext is not MainViewModel vm)
             return;
+
+        _userTypedText = AddressTextBox.Text;
 
         if (e != null)
         {
@@ -144,6 +181,7 @@ public partial class TopBarView
         UpdateAddressDisplay();
         
         _suppressInlineCompletionUntilInsertion = true;
+        _userTypedText = AddressTextBox.Text;
             
         if (PresentationSource.FromVisual(AddressTextBox) is System.Windows.Interop.HwndSource source && source.Handle != IntPtr.Zero)
         {

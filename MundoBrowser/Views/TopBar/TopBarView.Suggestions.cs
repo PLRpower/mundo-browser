@@ -115,12 +115,114 @@ public partial class TopBarView
         }
     }
 
+    private void NavigateSuggestion(int direction)
+    {
+        if (!IsSuggestionsOpen || SuggestionsListBox.Items.Count == 0)
+            return;
+
+        int currentIndex = SuggestionsListBox.SelectedIndex;
+        int nextIndex;
+
+        if (direction > 0)
+        {
+            if (currentIndex < 0)
+                nextIndex = 0;
+            else
+                nextIndex = Math.Min(currentIndex + 1, SuggestionsListBox.Items.Count - 1);
+        }
+        else
+        {
+            nextIndex = currentIndex - 1;
+        }
+
+        if (nextIndex < 0)
+        {
+            SuggestionsListBox.SelectedIndex = -1;
+            if (_userTypedText != null)
+            {
+                ApplySuggestionTextToAddressBar(_userTypedText);
+            }
+            return;
+        }
+
+        SuggestionsListBox.SelectedIndex = nextIndex;
+        SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
+
+        if (SuggestionsListBox.SelectedItem is Models.HistoryEntry entry)
+        {
+            string displayText = GetSuggestionDisplayText(entry);
+            ApplySuggestionTextToAddressBar(displayText);
+        }
+    }
+
+    private string GetSuggestionDisplayText(Models.HistoryEntry entry)
+    {
+        if (entry.VisitCount == -1 || entry.VisitCount == -2)
+            return entry.Title;
+
+        return FormatUrlForDisplay(entry.Url, _userTypedText);
+    }
+
+    private static string FormatUrlForDisplay(string url, string? typedInput)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return url;
+
+        string displayText = url.Trim();
+        bool inputContainsScheme = typedInput != null &&
+            (typedInput.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+             typedInput.StartsWith("http://", StringComparison.OrdinalIgnoreCase));
+
+        if (!inputContainsScheme)
+        {
+            if (displayText.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                displayText = displayText[8..];
+            else if (displayText.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                displayText = displayText[7..];
+
+            bool inputStartsWithWww = typedInput != null && typedInput.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
+            if (!inputStartsWithWww && displayText.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+                displayText = displayText[4..];
+        }
+
+        if (displayText.EndsWith('/') && (typedInput == null || !typedInput.EndsWith('/')))
+            displayText = displayText.TrimEnd('/');
+
+        return displayText;
+    }
+
+    private void ApplySuggestionTextToAddressBar(string text)
+    {
+        ClearInlineCompletion();
+        ClearAcceptedCompletion();
+        _suppressedCompletionText = null;
+        _suppressInlineCompletionUntilInsertion = true;
+
+        _isUpdatingAddressBar = true;
+        try
+        {
+            if (DataContext is MainViewModel vm)
+                vm.AddressBarText = text;
+
+            AddressTextBox.SetCurrentValue(System.Windows.Controls.TextBox.TextProperty, text);
+            AddressTextBox.CaretIndex = text.Length;
+            AddressTextBox.SelectionLength = 0;
+            var scrollViewer = GetDescendantByType<System.Windows.Controls.ScrollViewer>(AddressTextBox);
+            scrollViewer?.ScrollToRightEnd();
+        }
+        finally
+        {
+            _isUpdatingAddressBar = false;
+        }
+
+        UpdateAddressDisplay();
+    }
+
     private void SuggestionsList_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            IsSuggestionsOpen = false;
-            AddressTextBox.Focus();
+            CloseAddressBar();
             e.Handled = true;
         }
         else if (e.Key == Key.Enter
@@ -130,6 +232,18 @@ public partial class TopBarView
             NavigateToAddress(vm, GetSuggestionNavigationUrl(vm, entry));
             IsSuggestionsOpen = false;
             GetWebView()?.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Down)
+        {
+            NavigateSuggestion(1);
+            AddressTextBox.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Up)
+        {
+            NavigateSuggestion(-1);
+            AddressTextBox.Focus();
             e.Handled = true;
         }
     }

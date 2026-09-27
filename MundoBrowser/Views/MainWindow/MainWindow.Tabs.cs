@@ -252,7 +252,7 @@ public partial class MainWindow
 
         webView.CoreWebView2.NavigationCompleted += (_, args) =>
         {
-            if (!args.IsSuccess || DataContext is not MainViewModel vm || vm.SelectedTab != tab)
+            if (!args.IsSuccess || DataContext is not MainViewModel vm)
                 return;
 
             var source = webView.CoreWebView2.Source;
@@ -277,22 +277,38 @@ public partial class MainWindow
                 tab.Url = tab.AddressUrl = source;
             }
 
-            UpdateTitle();
-            vm.HistoryManager.AddEntry(tab.Url, webView.CoreWebView2.DocumentTitle);
-
-            if (TopBarControl?.AddressBar.IsFocused == false && FloatingTopBarControl?.AddressBar.IsFocused == false)
+            var docTitle = webView.CoreWebView2.DocumentTitle;
+            if (!string.IsNullOrWhiteSpace(docTitle))
             {
-                TopBarControl.SetAddressBarText(tab.AddressUrl);
-                FloatingTopBarControl.SetAddressBarText(tab.AddressUrl);
-                vm.AddressBarText = tab.AddressUrl;
+                tab.Title = docTitle;
             }
 
-            CheckForExtensionStorePage(tab, tab.Url);
-            NotifyExtensionStatusToWebView(webView, tab.Url);
+            vm.HistoryManager.AddEntry(tab.Url, webView.CoreWebView2.DocumentTitle);
+
+            if (vm.SelectedTab == tab)
+            {
+                UpdateTitle();
+
+                if (TopBarControl?.AddressBar.IsFocused == false && FloatingTopBarControl?.AddressBar.IsFocused == false)
+                {
+                    TopBarControl.SetAddressBarText(tab.AddressUrl);
+                    FloatingTopBarControl.SetAddressBarText(tab.AddressUrl);
+                    vm.AddressBarText = tab.AddressUrl;
+                }
+
+                CheckForExtensionStorePage(tab, tab.Url);
+                NotifyExtensionStatusToWebView(webView, tab.Url);
+            }
         };
 
         webView.CoreWebView2.DocumentTitleChanged += (_, _) =>
         {
+            var docTitle = webView.CoreWebView2.DocumentTitle;
+            if (!string.IsNullOrWhiteSpace(docTitle))
+            {
+                tab.Title = docTitle;
+            }
+
             if (_viewModel?.SelectedTab == tab)
                 UpdateTitle();
         };
@@ -383,56 +399,69 @@ public partial class MainWindow
             }
         };
 
-        webView.CoreWebView2.NewWindowRequested += (_, args) =>
+        webView.CoreWebView2.NewWindowRequested += async (_, args) =>
         {
+            var deferral = args.GetDeferral();
             args.Handled = true;
 
-            if (args.WindowFeatures.HasSize || args.WindowFeatures.HasPosition)
+            try
             {
-                var deferral = args.GetDeferral();
-                var popupWindow = new System.Windows.Window
+                if (args.WindowFeatures.HasSize || args.WindowFeatures.HasPosition)
                 {
-                    Title = "Mundo Browser",
-                    Width = args.WindowFeatures.HasSize && args.WindowFeatures.Width > 0 ? args.WindowFeatures.Width : 800,
-                    Height = args.WindowFeatures.HasSize && args.WindowFeatures.Height > 0 ? args.WindowFeatures.Height : 600,
-                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
-                    Owner = this
-                };
-
-                Helpers.NativeMethods.ApplyDarkMode(popupWindow);
-
-                var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
-                popupWindow.Content = popupWebView;
-
-                popupWindow.Closed += (_, _) =>
-                {
-                    try { popupWebView.Dispose(); } catch { }
-                };
-
-                popupWebView.CoreWebView2InitializationCompleted += (s, ev) =>
-                {
-                    if (ev.IsSuccess)
+                    var popupWindow = new System.Windows.Window
                     {
-                        args.NewWindow = popupWebView.CoreWebView2;
-                        
-                        popupWebView.CoreWebView2.WindowCloseRequested += (s2, e2) =>
-                        {
-                            popupWindow.Close();
-                        };
-                        popupWebView.CoreWebView2.DocumentTitleChanged += (s2, e2) =>
-                        {
-                            popupWindow.Title = popupWebView.CoreWebView2.DocumentTitle;
-                        };
-                    }
-                    deferral.Complete();
-                };
+                        Title = "Mundo Browser",
+                        Width = args.WindowFeatures.HasSize && args.WindowFeatures.Width > 0 ? args.WindowFeatures.Width : 800,
+                        Height = args.WindowFeatures.HasSize && args.WindowFeatures.Height > 0 ? args.WindowFeatures.Height : 600,
+                        WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+                        Owner = this
+                    };
 
-                _ = popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
-                popupWindow.Show();
+                    Helpers.NativeMethods.ApplyDarkMode(popupWindow);
+
+                    var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
+                    popupWindow.Content = popupWebView;
+
+                    popupWindow.Closed += (_, _) =>
+                    {
+                        try { popupWebView.Dispose(); } catch { }
+                    };
+
+                    await popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
+                    args.NewWindow = popupWebView.CoreWebView2;
+
+                    popupWebView.CoreWebView2.WindowCloseRequested += (_, _) =>
+                    {
+                        popupWindow.Close();
+                    };
+                    popupWebView.CoreWebView2.DocumentTitleChanged += (_, _) =>
+                    {
+                        popupWindow.Title = popupWebView.CoreWebView2.DocumentTitle;
+                    };
+
+                    popupWindow.Show();
+                }
+                else if (_viewModel != null)
+                {
+                    string targetUrl = string.IsNullOrWhiteSpace(args.Uri) ? "about:blank" : args.Uri;
+                    var newTab = _viewModel.AddTabWithUrl(targetUrl, tab, isFromNewWindow: true);
+
+                    var newWebView = await _webViewService.GetOrCreateWebViewAsync(newTab, wv => SetupWebViewEvents(wv, newTab));
+                    if (newWebView.CoreWebView2 != null)
+                    {
+                        args.NewWindow = newWebView.CoreWebView2;
+                    }
+
+                    newTab.IsCreatedFromNewWindow = false;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                _viewModel?.AddTabWithUrl(args.Uri, tab, isFromNewWindow: true);
+                System.Diagnostics.Debug.WriteLine($"NewWindowRequested handling failed: {ex.Message}");
+            }
+            finally
+            {
+                deferral.Complete();
             }
         };
 
@@ -441,11 +470,11 @@ public partial class MainWindow
             var downloadOp = args.DownloadOperation;
             _webViewService.RegisterActiveDownload(webView, downloadOp);
 
-            bool isBlankDownloadTab = tab.IsCreatedFromNewWindow ||
-                (!webView.CoreWebView2.CanGoBack &&
-                 (string.IsNullOrEmpty(webView.CoreWebView2.DocumentTitle) 
-                  || webView.CoreWebView2.DocumentTitle == "about:blank" 
-                  || webView.CoreWebView2.Source == tab.Url));
+            bool isBlankDownloadTab = !webView.CoreWebView2.CanGoBack &&
+                (string.IsNullOrEmpty(webView.CoreWebView2.DocumentTitle) 
+                 || webView.CoreWebView2.DocumentTitle == "about:blank" 
+                 || webView.CoreWebView2.Source == "about:blank"
+                 || webView.CoreWebView2.Source == tab.Url);
 
             if (isBlankDownloadTab)
             {
