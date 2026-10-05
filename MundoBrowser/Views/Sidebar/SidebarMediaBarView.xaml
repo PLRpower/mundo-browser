@@ -101,7 +101,7 @@
                         <TextBlock Text="{Binding MediaDurationText}" Foreground="#888" FontSize="10" HorizontalAlignment="Right"/>
                     </Grid>
                     <Slider Grid.Row="1"
-                            Value="{Binding MediaProgressRatio}"
+                            Value="{Binding MediaProgressRatio, Mode=OneWay}"
                             Height="20"
                             Margin="0,-5,0,0"
                             Minimum="0"
