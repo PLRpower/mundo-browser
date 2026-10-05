@@ -1,4 +1,3 @@
-using System;
 using Velopack;
 using MundoBrowser.Helpers;
 
@@ -7,7 +6,7 @@ namespace MundoBrowser;
 public class Program
 {
     [STAThread]
-    public static void Main(string[] args)
+    public static void Main()
     {
         VelopackApp.Build()
             .SetAppUserModelId(AppRuntime.AppUserModelId)

@@ -269,7 +269,7 @@
                         <Setter Property="ContextMenu">
                             <Setter.Value>
                                 <ContextMenu Background="#2D2D30" Foreground="White" BorderBrush="#3E3E42">
-                                    <MenuItem Header="Diviser l'écran (Split-View)"
+                                    <MenuItem Header="Diviser l'écran (Split-View)" Visibility="Collapsed"
                                               Command="{Binding DataContext.EnableSplitViewCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                               CommandParameter="{Binding}"/>
                                     <MenuItem Header="Fermer l'onglet"

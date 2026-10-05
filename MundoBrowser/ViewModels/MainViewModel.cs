@@ -23,7 +23,7 @@ namespace MundoBrowser.ViewModels
         public IFaviconService FaviconService { get; }
 
         [ObservableProperty]
-        private ObservableCollection<TabViewModel> _tabs = new();
+        private ObservableCollection<TabViewModel> _tabs = [];
 
         [ObservableProperty]
         private TabViewModel? _selectedTab;
@@ -32,7 +32,7 @@ namespace MundoBrowser.ViewModels
         private TabViewModel? _selectedListTab;
 
         [ObservableProperty]
-        private ObservableCollection<PinnedTab> _pinnedTabs = new();
+        private ObservableCollection<PinnedTab> _pinnedTabs = [];
 
         [ObservableProperty]
         private bool _isSidebarVisible = true;
@@ -54,19 +54,22 @@ namespace MundoBrowser.ViewModels
         }
 
         [ObservableProperty]
-        private ObservableCollection<HistoryEntry> _suggestions = new();
+        private ObservableCollection<HistoryEntry> _suggestions = [];
 
         [ObservableProperty]
         private bool _isPendingNewTab;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(CanShowSplitViewDragOverlay))]
         private bool _isDraggingTab;
+
+        public bool CanShowSplitViewDragOverlay => IsSplitViewFeatureEnabled && IsDraggingTab;
 
         [ObservableProperty]
         private string _addressBarText = "";
 
         [ObservableProperty]
-        private ObservableCollection<ExtensionInfo> _installedExtensions = new();
+        private ObservableCollection<ExtensionInfo> _installedExtensions = [];
 
         [ObservableProperty]
         private bool _hasActiveDownloads;
@@ -122,7 +125,7 @@ namespace MundoBrowser.ViewModels
                 CreateDefaultTab();
             }
 
-            if (SelectedTab == null) SelectedTab = Tabs.FirstOrDefault() ?? PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
+            SelectedTab ??= Tabs.FirstOrDefault() ?? PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
             if (SelectedTab != null) AddressBarText = SelectedTab.AddressUrl;
 
             InitializeSessionTracking();
@@ -149,7 +152,7 @@ namespace MundoBrowser.ViewModels
                 IsPendingNewTab = false;
                 AddressBarText = value.AddressUrl;
 
-                if (PrimarySplitTab != null && SecondarySplitTab != null)
+                if (IsSplitViewFeatureEnabled && PrimarySplitTab != null && SecondarySplitTab != null)
                 {
                     if (value == PrimarySplitTab)
                     {
@@ -302,14 +305,13 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        public async Task CloseTab(TabViewModel tab)
+        public void CloseTab(TabViewModel tab)
         {
             if (tab == null) return;
-            if (tab.IsClosing) return;
 
-            if ((tab == PrimarySplitTab || tab == SecondarySplitTab) && IsSplitViewActive)
+            if (IsSplitViewFeatureEnabled && (tab == PrimarySplitTab || tab == SecondarySplitTab) && IsSplitViewActive)
             {
-                await CloseSplitCombination(tab);
+                CloseSplitCombination(tab);
                 return;
             }
 
@@ -318,7 +320,6 @@ namespace MundoBrowser.ViewModels
 
             if (Tabs.Contains(tab))
             {
-                tab.IsClosing = true;
                 removed = true;
 
                 if (wasSelected)
@@ -326,12 +327,7 @@ namespace MundoBrowser.ViewModels
                     SelectNextTabAfterClose(tab);
                 }
 
-                await Task.Delay(150);
-
-                if (Tabs.Contains(tab))
-                {
-                    Tabs.Remove(tab);
-                }
+                Tabs.Remove(tab);
             }
             else
             {
@@ -356,7 +352,7 @@ namespace MundoBrowser.ViewModels
 
         private void SelectNextTabAfterClose(TabViewModel tabBeingClosed)
         {
-            var remainingTabs = Tabs.Where(t => t != tabBeingClosed && !t.IsClosing).ToList();
+            var remainingTabs = Tabs.Where(t => t != tabBeingClosed).ToList();
             if (remainingTabs.Count > 0)
             {
                 int currentIndex = Tabs.IndexOf(tabBeingClosed);
@@ -384,14 +380,10 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        public async Task CloseOtherTabs()
+        public void CloseOtherTabs()
         {
-            var toRemove = Tabs.Where(t => t != SelectedTab && !t.IsClosing).ToList();
+            var toRemove = Tabs.Where(t => t != SelectedTab).ToList();
             if (toRemove.Count == 0) return;
-
-            foreach (var tab in toRemove) tab.IsClosing = true;
-
-            await Task.Delay(150);
 
             foreach (var tab in toRemove) Tabs.Remove(tab);
         }

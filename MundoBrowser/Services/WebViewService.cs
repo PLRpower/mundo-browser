@@ -22,6 +22,9 @@ public partial class WebViewService : IWebViewService, IDisposable
     private System.Windows.Controls.Panel? _container;
     private CoreWebView2Environment? _environment;
     private WebView2? _activeWebView;
+    private TabViewModel? _activeTab;
+    private TabViewModel? _splitPrimaryTab;
+    private TabViewModel? _splitSecondaryTab;
     private readonly System.Timers.Timer _memoryTimer;
     private int _memoryOptimizationRunning;
     private readonly IAppSettingsService _settingsService;
@@ -34,7 +37,7 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     private readonly Dictionary<TabViewModel, Task<WebView2>> _initializationTasks = new();
     private readonly HashSet<TabViewModel> _removedTabs = [];
-    private readonly SemaphoreSlim _initSemaphore = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _initSemaphore = new(1, 1);
     private readonly Dictionary<WebView2, HashSet<CoreWebView2DownloadOperation>> _activeDownloads = new();
     private readonly List<WebView2> _pendingDisposalWebViews = new();
 
@@ -54,7 +57,7 @@ public partial class WebViewService : IWebViewService, IDisposable
     {
         lock (_initializationTasks)
         {
-            return _webViews.Values.ToList();
+            return [.. _webViews.Values];
         }
     }
 
@@ -89,6 +92,9 @@ public partial class WebViewService : IWebViewService, IDisposable
                 "--enable-accelerated-2d-canvas",
                 "--enable-accelerated-video-decode",
                 "--enable-features=CanvasOopRasterization,UseSkiaRenderer,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
+                "--disable-features=AutomaticTabDiscarding,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling",
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
                 "--enable-quic"
             )
         };
@@ -122,7 +128,7 @@ public partial class WebViewService : IWebViewService, IDisposable
                 if (isAlive)
                     return existing;
 
-                DiscardTab(tab);
+                DiscardTab(tab, force: true);
             }
 
             if (_initializationTasks.TryGetValue(tab, out var existingTask))
@@ -141,9 +147,9 @@ public partial class WebViewService : IWebViewService, IDisposable
             var wv = await initTask;
             try
             {
-                if (wv.CoreWebView2 != null)
+                if (wv.CoreWebView2 is { } core)
                 {
-                    wv.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+                    core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
                 }
             }
             catch { }
@@ -291,7 +297,7 @@ public partial class WebViewService : IWebViewService, IDisposable
 
             webView.CoreWebView2.ProcessFailed += (sender, args) =>
             {
-                HandleProcessFailed(webView, tab, args);
+                HandleProcessFailed(webView, args);
             };
 
             webView.WebMessageReceived += (s, e) =>
@@ -365,14 +371,8 @@ public partial class WebViewService : IWebViewService, IDisposable
         }
         catch (Exception ex)
         {
-            if (containerGrid != null)
-            {
-                _container?.Children.Remove(containerGrid);
-            }
-            if (webView != null)
-            {
-                webView.Dispose();
-            }
+            if (containerGrid != null) _container?.Children.Remove(containerGrid);
+            webView?.Dispose();
 
             System.Diagnostics.Debug.WriteLine($"WebView initialization failed: {ex.Message}");
             throw;
@@ -382,7 +382,7 @@ public partial class WebViewService : IWebViewService, IDisposable
 
 
 
-    private void HandleProcessFailed(WebView2 webView, TabViewModel tab, CoreWebView2ProcessFailedEventArgs args)
+    private void HandleProcessFailed(WebView2 webView, CoreWebView2ProcessFailedEventArgs args)
     {
         System.Diagnostics.Debug.WriteLine($"WebView ProcessFailed: Kind={args.ProcessFailedKind}, Reason={args.Reason}, ExitCode={args.ExitCode}");
 
@@ -398,10 +398,13 @@ public partial class WebViewService : IWebViewService, IDisposable
                     var deadTabs = _webViews.Keys.ToList();
                     foreach (var deadTab in deadTabs)
                     {
-                        DiscardTab(deadTab);
+                        DiscardTab(deadTab, force: true);
                     }
                     _activeWebView = null;
                     _activeTabContainer = null;
+                    _activeTab = null;
+                    _splitPrimaryTab = null;
+                    _splitSecondaryTab = null;
 
                     BrowserProcessExited?.Invoke();
                 }
@@ -427,11 +430,13 @@ public partial class WebViewService : IWebViewService, IDisposable
         if (_activeTabContainer != null && _activeTabContainer.MainWebView != webView)
         {
             _activeTabContainer.ContainerGrid.Visibility = Visibility.Collapsed;
-            _ = TrySuspendWebView(_activeTabContainer.MainWebView);
         }
 
         if (_tabContainers.TryGetValue(tab, out var currentContainer))
         {
+            _activeTab = tab;
+            _splitPrimaryTab = null;
+            _splitSecondaryTab = null;
             _activeTabContainer = currentContainer;
             _activeTabContainer.ContainerGrid.Visibility = Visibility.Visible;
             _activeWebView = webView;
@@ -462,8 +467,17 @@ public partial class WebViewService : IWebViewService, IDisposable
     {
         if (_container == null) return Task.CompletedTask;
 
+        _splitPrimaryTab = isSplit ? primaryTab : null;
+        _splitSecondaryTab = isSplit ? secondaryTab : null;
+        _activeTab = activeTab ?? primaryTab;
+
         if (isSplit && primaryTab != null && secondaryTab != null && primaryHost != null && secondaryHost != null)
         {
+            primaryTab.LastAccessed = DateTime.Now;
+            secondaryTab.LastAccessed = DateTime.Now;
+            primaryTab.IsDiscarded = false;
+            secondaryTab.IsDiscarded = false;
+
             foreach (var kvp in _tabContainers)
             {
                 var tab = kvp.Key;
@@ -485,7 +499,6 @@ public partial class WebViewService : IWebViewService, IDisposable
                 {
                     ReParentContainer(container.ContainerGrid, _container);
                     container.ContainerGrid.Visibility = Visibility.Collapsed;
-                    _ = TrySuspendWebView(container.MainWebView);
                 }
             }
 
@@ -496,6 +509,12 @@ public partial class WebViewService : IWebViewService, IDisposable
         }
         else
         {
+            if (activeTab != null)
+            {
+                activeTab.LastAccessed = DateTime.Now;
+                activeTab.IsDiscarded = false;
+            }
+
             foreach (var kvp in _tabContainers)
             {
                 var tab = kvp.Key;
@@ -512,7 +531,6 @@ public partial class WebViewService : IWebViewService, IDisposable
                 else
                 {
                     container.ContainerGrid.Visibility = Visibility.Collapsed;
-                    _ = TrySuspendWebView(container.MainWebView);
                 }
             }
         }
@@ -543,19 +561,13 @@ public partial class WebViewService : IWebViewService, IDisposable
         catch { }
     }
 
-    private static async Task TrySuspendWebView(WebView2 webView)
+    private static void TrySetNormalMemoryTarget(WebView2 webView)
     {
         try
         {
-            if (webView.CoreWebView2 != null)
+            if (webView.CoreWebView2 != null && webView.CoreWebView2.MemoryUsageTargetLevel != CoreWebView2MemoryUsageTargetLevel.Normal)
             {
-                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
-                bool isPlaying = false;
-                try { isPlaying = webView.CoreWebView2.IsDocumentPlayingAudio; } catch { }
-                if (!isPlaying)
-                {
-                    await webView.CoreWebView2.TrySuspendAsync();
-                }
+                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
             }
         }
         catch { }
@@ -699,6 +711,10 @@ public partial class WebViewService : IWebViewService, IDisposable
     {
         lock (_initializationTasks)
             _removedTabs.Add(tab);
+
+        if (_activeTab == tab) _activeTab = null;
+        if (_splitPrimaryTab == tab) _splitPrimaryTab = null;
+        if (_splitSecondaryTab == tab) _splitSecondaryTab = null;
 
         if (_tabContainers.TryGetValue(tab, out var container))
         {

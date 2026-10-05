@@ -112,8 +112,8 @@ public partial class MainWindow
 
         if (DataContext is MainViewModel vm)
         {
-            UpdateSidebarWidth(hideUI ? false : vm.IsSidebarVisible);
-            UpdateTopBarHeight(hideUI ? false : vm.IsTopBarVisible, animate: false);
+            UpdateSidebarWidth(!hideUI && vm.IsSidebarVisible);
+            UpdateTopBarHeight(!hideUI && vm.IsTopBarVisible);
         }
 
         ApplyFullscreenBounds();
@@ -170,7 +170,7 @@ public partial class MainWindow
             if (DataContext is MainViewModel vm)
             {
                 UpdateSidebarWidth(vm.IsSidebarVisible);
-                UpdateTopBarHeight(vm.IsTopBarVisible, animate: false);
+                UpdateTopBarHeight(vm.IsTopBarVisible);
             }
 
             OnWindowStateChanged();
@@ -326,8 +326,8 @@ public partial class MainWindow
 
         if (DataContext is MainViewModel vm)
         {
-            UpdateTopBarHeight(vm.IsTopBarVisible, animate: false);
-            UpdateSidebarWidth(vm.IsSidebarVisible, animate: false);
+            UpdateTopBarHeight(vm.IsTopBarVisible);
+            UpdateSidebarWidth(vm.IsSidebarVisible);
         }
 
         UpdateWindowFrameVisuals();

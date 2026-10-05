@@ -9,6 +9,12 @@ namespace MundoBrowser.Models
         [NotifyPropertyChangedFor(nameof(IsEmpty))]
         private TabViewModel? _tab;
 
+        partial void OnTabChanged(TabViewModel? oldValue, TabViewModel? newValue)
+        {
+            if (oldValue != null) oldValue.IsPinned = false;
+            if (newValue != null) newValue.IsPinned = true;
+        }
+
         [ObservableProperty]
         private bool _isSelected = false;
 

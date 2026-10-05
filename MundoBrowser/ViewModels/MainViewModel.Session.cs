@@ -1,6 +1,5 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Threading;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using MundoBrowser.Models;
@@ -341,8 +340,8 @@ namespace MundoBrowser.ViewModels
                         SecondarySplitTab = secondaryTab;
                         SplitOrientation = (Orientation)session.SplitOrientation;
                         FocusedSplitPane = session.FocusedSplitPane;
-                        IsSplitViewActive = session.IsSplitViewActive;
-                        if (session.IsSplitViewActive)
+                        IsSplitViewActive = IsSplitViewFeatureEnabled && session.IsSplitViewActive;
+                        if (IsSplitViewActive)
                         {
                             SelectedTab = session.FocusedSplitPane == 0 ? primaryTab : secondaryTab;
                         }

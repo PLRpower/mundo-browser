@@ -137,7 +137,7 @@ public partial class FaviconService : IFaviconService, IDisposable
             var result = await resolutionTask;
             if (result != null)
             {
-                string? relativePath = null;
+                string? relativePath;
                 lock (_cacheLock)
                 {
                     if (Uri.TryCreate(result, UriKind.Absolute, out var resultUri) && resultUri.IsFile)

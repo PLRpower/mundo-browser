@@ -1,12 +1,8 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace MundoBrowser.Helpers;
 
@@ -14,7 +10,7 @@ namespace MundoBrowser.Helpers;
 /// Downloads, parses, and caches remote adblock/tracker domain lists.
 /// Supports standard Hosts format (0.0.0.0 domain), Adblock format (||domain^), and plain domain lists.
 /// </summary>
-public static class AdBlockListDownloader
+public static partial class AdBlockListDownloader
 {
     private static readonly HttpClient HttpClient = new()
     {
@@ -27,9 +23,8 @@ public static class AdBlockListDownloader
     private static string CacheFilePath => Path.Combine(AppRuntime.LocalDataDirectory, "adblock_domains_cache.txt");
     private static string MetaFilePath => Path.Combine(AppRuntime.LocalDataDirectory, "adblock_cache_meta.json");
 
-    private static readonly Regex DomainRegex = new(
-        @"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$", RegexOptions.IgnoreCase)]
+    private static partial Regex DomainRegex();
 
     private static readonly HashSet<string> IgnoredHosts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -241,6 +236,6 @@ public static class AdBlockListDownloader
         if (domain.Contains('/') || domain.Contains(':') || domain.Contains(' ') || domain.Contains('*'))
             return false;
 
-        return DomainRegex.IsMatch(domain);
+        return DomainRegex().IsMatch(domain);
     }
 }

@@ -1,6 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using MundoBrowser.Interfaces;
 
 namespace MundoBrowser.ViewModels
 {

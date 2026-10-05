@@ -7,10 +7,11 @@ namespace MundoBrowser.Helpers;
 public static class WindowsDefaultBrowserRegistration
 {
     private const string ApplicationName = "Mundo Browser";
-    private const string ApplicationDescription = "Navigateur web pour ouvrir les liens web et les fichiers HTML.";
+    private const string ApplicationDescription = "Navigateur web pour ouvrir les liens web, les fichiers HTML et les documents PDF.";
     private const string BrowserClientKeyName = "MundoBrowser.exe";
     private const string HtmlProgId = "MundoBrowserHTML";
     private const string UrlProgId = "MundoBrowserURL";
+    private const string PdfProgId = "MundoBrowserPDF";
     private const string RegisterCommandSwitch = "--register-default-browser";
     private const string CapabilitiesPath = @"Software\Clients\StartMenuInternet\" + BrowserClientKeyName + @"\Capabilities";
 
@@ -21,6 +22,16 @@ public static class WindowsDefaultBrowserRegistration
         ".shtml",
         ".xht",
         ".xhtml"
+    ];
+
+    private static readonly string[] SupportedExtensions =
+    [
+        ".htm",
+        ".html",
+        ".shtml",
+        ".xht",
+        ".xhtml",
+        ".pdf"
     ];
 
     public static bool TryHandleCommandLine(string[]? args)
@@ -52,7 +63,7 @@ public static class WindowsDefaultBrowserRegistration
             RegisterApplicationEntry(iconPath, openCommand);
             RegisterProgIds(iconPath, openCommand);
             RegisterOpenWithProgIds();
-            RegisterBrowserClient(iconPath, appCommand, openCommand);
+            RegisterBrowserClient(iconPath, appCommand);
 
             using (RegistryKey? registeredApps = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications", true))
             {
@@ -80,6 +91,7 @@ public static class WindowsDefaultBrowserRegistration
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\" + BrowserClientKeyName, false);
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\" + HtmlProgId, false);
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\" + UrlProgId, false);
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\" + PdfProgId, false);
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Applications\" + BrowserClientKeyName, false);
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\App Paths\" + BrowserClientKeyName, false);
             UnregisterOpenWithProgIds();
@@ -116,7 +128,7 @@ public static class WindowsDefaultBrowserRegistration
         defaultIcon?.SetValue("", iconPath, RegistryValueKind.String);
 
         using RegistryKey? supportedTypes = application?.CreateSubKey("SupportedTypes", true);
-        foreach (string extension in HtmlExtensions)
+        foreach (string extension in SupportedExtensions)
             supportedTypes?.SetValue(extension, "", RegistryValueKind.String);
 
         using RegistryKey? command = application?.CreateSubKey(@"shell\open\command", true);
@@ -157,6 +169,22 @@ public static class WindowsDefaultBrowserRegistration
         {
             command?.SetValue("", openCommand, RegistryValueKind.String);
         }
+
+        using RegistryKey? pdf = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + PdfProgId, true);
+        pdf?.SetValue("", "Mundo Browser PDF Document", RegistryValueKind.String);
+        pdf?.SetValue("FriendlyTypeName", "Document PDF Mundo Browser", RegistryValueKind.String);
+        pdf?.SetValue("AppUserModelID", AppRuntime.AppUserModelId, RegistryValueKind.String);
+        RegisterProgIdApplication(pdf, iconPath);
+
+        using (RegistryKey? defaultIcon = pdf?.CreateSubKey("DefaultIcon", true))
+        {
+            defaultIcon?.SetValue("", iconPath, RegistryValueKind.String);
+        }
+
+        using (RegistryKey? command = pdf?.CreateSubKey(@"shell\open\command", true))
+        {
+            command?.SetValue("", openCommand, RegistryValueKind.String);
+        }
     }
 
     private static void RegisterProgIdApplication(RegistryKey? progId, string iconPath)
@@ -178,6 +206,13 @@ public static class WindowsDefaultBrowserRegistration
 
             openWithProgIds?.SetValue(HtmlProgId, Array.Empty<byte>(), RegistryValueKind.None);
         }
+
+        using (RegistryKey? pdfOpenWith = Registry.CurrentUser.CreateSubKey(
+            @"Software\Classes\.pdf\OpenWithProgids",
+            true))
+        {
+            pdfOpenWith?.SetValue(PdfProgId, Array.Empty<byte>(), RegistryValueKind.None);
+        }
     }
 
     private static void UnregisterOpenWithProgIds()
@@ -190,9 +225,16 @@ public static class WindowsDefaultBrowserRegistration
 
             openWithProgIds?.DeleteValue(HtmlProgId, false);
         }
+
+        using (RegistryKey? pdfOpenWith = Registry.CurrentUser.OpenSubKey(
+            @"Software\Classes\.pdf\OpenWithProgids",
+            true))
+        {
+            pdfOpenWith?.DeleteValue(PdfProgId, false);
+        }
     }
 
-    private static void RegisterBrowserClient(string iconPath, string appCommand, string openCommand)
+    private static void RegisterBrowserClient(string iconPath, string appCommand)
     {
         using RegistryKey? client = Registry.CurrentUser.CreateSubKey(
             @"Software\Clients\StartMenuInternet\" + BrowserClientKeyName,
@@ -226,12 +268,15 @@ public static class WindowsDefaultBrowserRegistration
         {
             foreach (string extension in HtmlExtensions)
                 fileAssociations?.SetValue(extension, HtmlProgId, RegistryValueKind.String);
+
+            fileAssociations?.SetValue(".pdf", PdfProgId, RegistryValueKind.String);
         }
 
         using (RegistryKey? mimeAssociations = capabilities?.CreateSubKey("MIMEAssociations", true))
         {
             mimeAssociations?.SetValue("text/html", HtmlProgId, RegistryValueKind.String);
             mimeAssociations?.SetValue("application/xhtml+xml", HtmlProgId, RegistryValueKind.String);
+            mimeAssociations?.SetValue("application/pdf", PdfProgId, RegistryValueKind.String);
         }
 
         using (RegistryKey? startmenu = capabilities?.CreateSubKey("Startmenu", true))

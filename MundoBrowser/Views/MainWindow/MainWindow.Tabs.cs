@@ -137,7 +137,7 @@ public partial class MainWindow
         }
         else if (e.PropertyName == nameof(MainViewModel.SidebarWidth) && vm.IsSidebarVisible)
         {
-            UpdateSidebarWidth(visible: true, animate: false);
+            UpdateSidebarWidth(true);
             UpdateTopEdgeTriggerState();
         }
     }
@@ -214,7 +214,7 @@ public partial class MainWindow
         {
             try
             {
-                await HandleExtensionWebMessageAsync(webView, tab, e.WebMessageAsJson);
+                await HandleExtensionWebMessageAsync(webView, e.WebMessageAsJson);
             }
             catch
             {
@@ -225,6 +225,7 @@ public partial class MainWindow
         webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
         {
             tab.IsPlayingAudio = webView.CoreWebView2.IsDocumentPlayingAudio;
+            if (tab.IsPlayingAudio) tab.LastAccessed = DateTime.Now;
             if (DataContext is MainViewModel vm)
             {
                 if (tab.IsPlayingAudio)
@@ -250,8 +251,11 @@ public partial class MainWindow
             }
         };
 
+        webView.CoreWebView2.NavigationStarting += (_, _) => tab.LastAccessed = DateTime.Now;
+
         webView.CoreWebView2.NavigationCompleted += (_, args) =>
         {
+            tab.LastAccessed = DateTime.Now;
             if (!args.IsSuccess || DataContext is not MainViewModel vm)
                 return;
 
@@ -495,13 +499,13 @@ public partial class MainWindow
                             }
                         }
 
-                        _ = _viewModel.CloseTab(tab);
+                        _viewModel.CloseTab(tab);
                     }
                 });
             }
         };
 
-        webView.CoreWebView2.WindowCloseRequested += (_, _) => _ = _viewModel?.CloseTab(tab);
+        webView.CoreWebView2.WindowCloseRequested += (_, _) => _viewModel?.CloseTab(tab);
     }
 
     private void UpdateTitle()

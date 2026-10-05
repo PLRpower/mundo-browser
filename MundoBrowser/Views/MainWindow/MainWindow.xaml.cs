@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using MundoBrowser.Helpers;
@@ -132,16 +131,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (FindName("QuickUrlPopup") is System.Windows.Controls.Primitives.Popup quickPopup)
             quickPopup.PlacementTarget = MainGrid;
 
-        EventHandler floatingSidebarOpened = (s, e) =>
+        void FloatingSidebarOpened(object? s, EventArgs e)
         {
             if (PresentationSource.FromVisual(FloatingSidebarContent) is System.Windows.Interop.HwndSource popupHwndSource)
             {
                 NativeMethods.RemoveNoActivate(popupHwndSource.Handle);
             }
-        };
-        FloatingSidebarPopup.Opened += floatingSidebarOpened;
+        }
+        FloatingSidebarPopup.Opened += FloatingSidebarOpened;
         if (FloatingSidebarPopup.IsOpen)
-            floatingSidebarOpened(FloatingSidebarPopup, EventArgs.Empty);
+            FloatingSidebarOpened(FloatingSidebarPopup, EventArgs.Empty);
 
         ContentRendered += async (_, _) => {
             if (_contentInitialized)
@@ -179,13 +178,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
                 if (DataContext is MainViewModel vm)
                 {
-                    UpdateSidebarWidth(vm.IsSidebarVisible, animate: false);
-                    UpdateTopBarHeight(vm.IsTopBarVisible, animate: false);
+                    UpdateSidebarWidth(vm.IsSidebarVisible);
+                    UpdateTopBarHeight(vm.IsTopBarVisible);
 
                     // Process startup arguments (URLs or files)
                     if (_startArgs != null && _startArgs.Length > 0)
                     {
-                        string input = _startArgs[0];
+                        string input = _startArgs[0].Trim('\"');
                         // Handle local paths for PDF or HTML files
                         if (System.IO.File.Exists(input))
                         {
@@ -216,7 +215,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (args.Length > 0 && DataContext is MainViewModel vm)
         {
-            string input = args[0];
+            string input = args[0].Trim('\"');
             if (System.IO.File.Exists(input))
             {
                 input = new Uri(System.IO.Path.GetFullPath(input)).AbsoluteUri;
@@ -340,7 +339,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
             };
 
-            EventHandler popupOpened = (s, e) =>
+            void PopupOpened(object? s, EventArgs e)
             {
                 if (PresentationSource.FromVisual(FloatingTopBarContent) is System.Windows.Interop.HwndSource popupHwndSource)
                 {
@@ -348,11 +347,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
                 UpdateFloatingTitleBarButtonsBackground();
                 SetFloatingCaptionButtonsVisible(_currentFloatingZone == FloatingTopBarZone.Right || _currentFloatingZone == FloatingTopBarZone.All, animate: false);
-            };
+            }
 
-            FloatingTopBarPopup.Opened += popupOpened;
+            FloatingTopBarPopup.Opened += PopupOpened;
             if (FloatingTopBarPopup.IsOpen)
-                popupOpened(FloatingTopBarPopup, EventArgs.Empty);
+                PopupOpened(FloatingTopBarPopup, EventArgs.Empty);
         }
         catch (Exception ex)
         {

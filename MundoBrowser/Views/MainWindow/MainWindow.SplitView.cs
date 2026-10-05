@@ -9,8 +9,6 @@ using Orientation = System.Windows.Controls.Orientation;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using VerticalAlignment = System.Windows.VerticalAlignment;
 using Point = System.Windows.Point;
-using Rect = System.Windows.Rect;
-using Button = System.Windows.Controls.Button;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using Mouse = System.Windows.Input.Mouse;
@@ -24,6 +22,8 @@ public partial class MainWindow
 
     private void InitializeSplitViewEvents(MainViewModel vm)
     {
+        if (!MainViewModel.IsSplitViewFeatureEnabled) return;
+
         vm.SplitViewLayoutChanged += MainViewModel_SplitViewLayoutChanged;
 
         _splitViewHoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Input)
@@ -273,6 +273,11 @@ public partial class MainWindow
     private void HandleDropOnZone(DragEventArgs e, Action<TabViewModel> applyDropAction)
     {
         if (_viewModel == null) return;
+        if (!MainViewModel.IsSplitViewFeatureEnabled)
+        {
+            _viewModel.IsDraggingTab = false;
+            return;
+        }
 
         if (e.Data.GetData(typeof(TabViewModel)) is TabViewModel droppedTab)
         {

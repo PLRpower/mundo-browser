@@ -12,7 +12,7 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
-    private void UpdateSidebarWidth(bool visible, bool animate = true)
+    private void UpdateSidebarWidth(bool visible)
     {
         if (SidebarColumn == null || SplitterColumn == null || DataContext is not MainViewModel vm) return;
         
@@ -111,7 +111,7 @@ public partial class MainWindow
         }
     }
 
-    private void UpdateTopBarHeight(bool visible, bool animate = true)
+    private void UpdateTopBarHeight(bool visible)
     {
         if (WindowTitleBar == null || DataContext is not MainViewModel vm) return;
 
@@ -140,7 +140,6 @@ public partial class MainWindow
         bool isForcedFixed = WindowState != WindowState.Maximized;
         bool effectiveVisible = isForcedFixed || visible;
 
-        double targetHeight = effectiveVisible ? 40 : 0;
         bool isTopBarPinned = effectiveVisible && !_isFullscreen;
         bool isSidebarPinned = vm.IsSidebarVisible && !_isFullscreen;
 
@@ -777,7 +776,7 @@ public partial class MainWindow
         else if (key == Key.F5 || (key == Key.R && modifiers == ModifierKeys.Control)) { _webViewService.ActiveWebView?.Reload(); e.Handled = true; }
         else if (key == Key.F11) { SetFullscreen(!_isFullscreen); e.Handled = true; }
         else if (key == Key.F12 || (key == Key.I && modifiers == (ModifierKeys.Control | ModifierKeys.Shift))) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { _ = _webViewService.ToggleDevToolsForTabAsync(vm.SelectedTab); e.Handled = true; } }
-        else if (key == Key.S && modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) { if (DataContext is MainViewModel vm) { vm.ToggleSplitViewCommand.Execute(null); e.Handled = true; } }
+        else if (key == Key.S && modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) { if (MainViewModel.IsSplitViewFeatureEnabled && DataContext is MainViewModel vm) { vm.ToggleSplitViewCommand.Execute(null); } e.Handled = true; }
         else if (key == Key.J && modifiers == ModifierKeys.Control) { _webViewService.OpenDownloadDialog(); e.Handled = true; }
         else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
         else if (key == Key.W && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { vm.CloseTabCommand.Execute(vm.SelectedTab); e.Handled = true; } }

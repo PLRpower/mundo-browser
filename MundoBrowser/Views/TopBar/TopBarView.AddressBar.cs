@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using MundoBrowser.Helpers;
@@ -481,6 +482,14 @@ public partial class TopBarView
         navigationUrl = input;
         displayText = input;
 
+        string trimmed = input.Trim('\"');
+        if (File.Exists(trimmed))
+        {
+            navigationUrl = new Uri(Path.GetFullPath(trimmed)).AbsoluteUri;
+            displayText = trimmed;
+            return true;
+        }
+
         if (input.StartsWith("about:", StringComparison.OrdinalIgnoreCase)
             || input.Contains("://", StringComparison.Ordinal))
             return true;
@@ -540,8 +549,12 @@ public partial class TopBarView
     private static void NavigateToAddress(MainViewModel vm, string url)
     {
         if (vm.IsPendingNewTab)
+        {
             vm.AddTabWithUrl(url);
-        else if (vm.SelectedTab != null)
+            return;
+        }
+
+        if (vm.SelectedTab != null)
             vm.SelectedTab.Url = url;
     }
 

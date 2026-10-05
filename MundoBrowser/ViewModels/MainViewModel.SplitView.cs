@@ -1,6 +1,4 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Windows.Controls;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -13,6 +11,8 @@ namespace MundoBrowser.ViewModels
         // ════════════════════════════════════════════════════════════════
         // Split-View State & Management
         // ════════════════════════════════════════════════════════════════
+
+        public static bool IsSplitViewFeatureEnabled { get; set; } = false;
 
         [ObservableProperty]
         private bool _isSplitViewActive;
@@ -48,6 +48,7 @@ namespace MundoBrowser.ViewModels
 
         private bool FilterSidebarTab(object item)
         {
+            if (!IsSplitViewFeatureEnabled) return true;
             if (item is not TabViewModel tab) return false;
             if (PrimarySplitTab != null && SecondarySplitTab != null && Tabs.Contains(PrimarySplitTab))
             {
@@ -58,6 +59,14 @@ namespace MundoBrowser.ViewModels
 
         public void UpdateSplitTabFlags(bool refreshView = true)
         {
+            if (!IsSplitViewFeatureEnabled)
+            {
+                foreach (var tab in Tabs) tab.IsPrimarySplitTab = false;
+                foreach (var p in PinnedTabs) if (p.Tab != null) p.Tab.IsPrimarySplitTab = false;
+                if (refreshView) _sidebarTabsView?.Refresh();
+                return;
+            }
+
             foreach (var tab in Tabs)
             {
                 tab.IsPrimarySplitTab = (PrimarySplitTab != null && SecondarySplitTab != null && tab == PrimarySplitTab);
@@ -84,6 +93,17 @@ namespace MundoBrowser.ViewModels
 
         partial void OnIsSplitViewActiveChanged(bool value)
         {
+            if (!IsSplitViewFeatureEnabled)
+            {
+                if (value)
+                {
+                    _isSplitViewActive = false;
+                    OnPropertyChanged(nameof(IsSplitViewActive));
+                }
+                UpdateSplitTabFlags();
+                return;
+            }
+
             if (value)
             {
                 if (PrimarySplitTab == null) PrimarySplitTab = SelectedTab;
@@ -143,11 +163,16 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        public void ToggleSplitView() => IsSplitViewActive = !IsSplitViewActive;
+        public void ToggleSplitView()
+        {
+            if (!IsSplitViewFeatureEnabled) return;
+            IsSplitViewActive = !IsSplitViewActive;
+        }
 
         [RelayCommand]
         public void EnableSplitView(TabViewModel? secondaryTab = null)
         {
+            if (!IsSplitViewFeatureEnabled) return;
             PrimarySplitTab = SelectedTab;
             if (secondaryTab != null && secondaryTab != PrimarySplitTab)
             {
@@ -159,6 +184,7 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void EnableSplitViewWithOrientation(string orientation)
         {
+            if (!IsSplitViewFeatureEnabled) return;
             SplitOrientation = orientation == "Vertical"
                 ? Orientation.Vertical
                 : Orientation.Horizontal;
@@ -178,9 +204,7 @@ namespace MundoBrowser.ViewModels
         public void SwapSplitPanes()
         {
             if (!IsSplitViewActive) return;
-            var temp = PrimarySplitTab;
-            PrimarySplitTab = SecondarySplitTab;
-            SecondarySplitTab = temp;
+            (PrimarySplitTab, SecondarySplitTab) = (SecondarySplitTab, PrimarySplitTab);
             FocusedSplitPane = FocusedSplitPane == 0 ? 1 : 0;
         }
 
@@ -193,7 +217,7 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        public async Task CloseSingleSplitPaneTab(TabViewModel? tabToClose)
+        public void CloseSingleSplitPaneTab(TabViewModel? tabToClose)
         {
             if (tabToClose == null) return;
 
@@ -208,7 +232,7 @@ namespace MundoBrowser.ViewModels
                 SelectedTab = remainingTab;
             }
 
-            await CloseTab(tabToClose);
+            CloseTab(tabToClose);
             NotifySplitViewLayoutChanged();
         }
 
@@ -250,7 +274,7 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        public async Task CloseSplitCombination(TabViewModel? tab = null)
+        public void CloseSplitCombination(TabViewModel? tab = null)
         {
             TabViewModel? primary = PrimarySplitTab;
             TabViewModel? secondary = SecondarySplitTab;
@@ -260,17 +284,6 @@ namespace MundoBrowser.ViewModels
             IsSplitViewActive = false;
             PrimarySplitTab = null;
             SecondarySplitTab = null;
-
-            if (primary != null && Tabs.Contains(primary))
-            {
-                primary.IsClosing = true;
-            }
-            if (secondary != null && Tabs.Contains(secondary))
-            {
-                secondary.IsClosing = true;
-            }
-
-            await Task.Delay(150);
 
             if (secondary != null)
             {
@@ -282,14 +295,14 @@ namespace MundoBrowser.ViewModels
             if (primary != null)
             {
                 bool wasSelected = (SelectedTab == primary || SelectedTab == secondary);
-                if (Tabs.Contains(primary)) Tabs.Remove(primary);
-                else foreach (var p in PinnedTabs) { if (p.Tab == primary) p.Tab = null; }
-                if (ActiveMediaTab == primary) ActiveMediaTab = null;
-
                 if (wasSelected)
                 {
                     SelectNextTabAfterClose(primary);
                 }
+
+                if (Tabs.Contains(primary)) Tabs.Remove(primary);
+                else foreach (var p in PinnedTabs) { if (p.Tab == primary) p.Tab = null; }
+                if (ActiveMediaTab == primary) ActiveMediaTab = null;
             }
         }
     }

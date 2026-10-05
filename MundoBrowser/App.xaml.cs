@@ -143,6 +143,7 @@ public partial class App : System.Windows.Application
             using var writer = new StreamWriter(client);
             writer.WriteLine(JsonSerializer.Serialize(args ?? []));
             writer.Flush();
+            client.WaitForPipeDrain();
         }
         catch
         {

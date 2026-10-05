@@ -295,7 +295,7 @@
                PlacementTarget="{Binding ElementName=ContentRow}"
                Placement="Center"
                StaysOpen="True"
-               IsOpen="{Binding IsDraggingTab}">
+               IsOpen="{Binding CanShowSplitViewDragOverlay}">
             <Border Width="{Binding ActualWidth, ElementName=ContentRow}"
                     Height="{Binding ActualHeight, ElementName=ContentRow}"
                     Background="#AA0A0A0C" CornerRadius="0"

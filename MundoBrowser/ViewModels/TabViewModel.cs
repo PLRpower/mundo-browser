@@ -11,13 +11,13 @@ namespace MundoBrowser.ViewModels
         private DateTime _lastAccessed = DateTime.Now;
 
         [ObservableProperty]
-        private bool _isClosing;
-
-        [ObservableProperty]
         private bool _isPrimarySplitTab;
 
         [ObservableProperty]
-        private bool _isDiscarded = true;
+        private bool _isPinned;
+
+        [ObservableProperty]
+        private bool _isDiscarded = false;
 
         // The active URL of the WebView
         [ObservableProperty]

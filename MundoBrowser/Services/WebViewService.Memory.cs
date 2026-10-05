@@ -1,9 +1,54 @@
+using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser.Services;
 
 public partial class WebViewService
 {
+    public bool IsTabProtected(TabViewModel tab, WebView2? webView = null)
+    {
+        if (_disposed) return false;
+        if (!EcoModeEnabled) return true;
+
+        // Active tab currently selected
+        if (tab == _activeTab) return true;
+
+        // Visible tabs in split view
+        if (tab == _splitPrimaryTab || tab == _splitSecondaryTab) return true;
+
+        // Active WebView reference
+        if (webView != null && webView == _activeWebView) return true;
+
+        // Pinned tabs are always kept alive
+        if (tab.IsPinned) return true;
+
+        // Tabs playing audio or holding media session / paused media
+        if (tab.IsPlayingAudio || tab.IsMediaPaused || tab.MediaDuration > 0 || !string.IsNullOrWhiteSpace(tab.MediaTitle))
+            return true;
+
+        // CoreWebView2 audio state check
+        if (webView?.CoreWebView2 != null)
+        {
+            try
+            {
+                if (webView.CoreWebView2.IsDocumentPlayingAudio) return true;
+            }
+            catch { }
+        }
+
+        // Active downloads protect tab from discard
+        if (webView != null)
+        {
+            lock (_activeDownloads)
+            {
+                if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     private void CheckMemoryOptimization(object? sender, System.Timers.ElapsedEventArgs e)
     {
         if (_disposed || !EcoModeEnabled) return;
@@ -23,6 +68,10 @@ public partial class WebViewService
                 try
                 {
                     var now = DateTime.Now;
+                    if (_activeTab != null) _activeTab.LastAccessed = now;
+                    if (_splitPrimaryTab != null) _splitPrimaryTab.LastAccessed = now;
+                    if (_splitSecondaryTab != null) _splitSecondaryTab.LastAccessed = now;
+
                     var tabsToDiscard = new Queue<TabViewModel>();
 
                     foreach (var entry in _webViews)
@@ -30,28 +79,15 @@ public partial class WebViewService
                         var tab = entry.Key;
                         var webView = entry.Value;
 
-                        if (webView == _activeWebView) continue;
-
-                        bool isPlayingAudio = false;
-                        try { isPlayingAudio = webView.CoreWebView2?.IsDocumentPlayingAudio ?? false; } catch { }
-                        if (isPlayingAudio) continue;
-
-                        bool hasActiveDownloads = false;
-                        lock (_activeDownloads)
+                        if (IsTabProtected(tab, webView))
                         {
-                            if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
-                                hasActiveDownloads = true;
+                            TrySetNormalMemoryTarget(webView);
+                            continue;
                         }
-                        if (hasActiveDownloads) continue;
 
                         if ((now - tab.LastAccessed).TotalMinutes > EcoModeMinutes)
                         {
                             tabsToDiscard.Enqueue(tab);
-                        }
-                        else
-                        {
-                            // Throttle memory and suspend inactive background tab
-                            _ = TrySuspendWebView(webView);
                         }
                     }
 
@@ -79,7 +115,12 @@ public partial class WebViewService
 
         try
         {
-            DiscardTab(tabs.Dequeue());
+            var tab = tabs.Dequeue();
+            _webViews.TryGetValue(tab, out var webView);
+            if (!IsTabProtected(tab, webView))
+            {
+                DiscardTab(tab);
+            }
         }
         catch
         {
@@ -92,8 +133,11 @@ public partial class WebViewService
             System.Windows.Threading.DispatcherPriority.SystemIdle);
     }
 
-    private void DiscardTab(TabViewModel tab)
+    private void DiscardTab(TabViewModel tab, bool force = false)
     {
+        if (!force && IsTabProtected(tab))
+            return;
+
         if (_tabContainers.TryGetValue(tab, out var container))
         {
             if (container.ContainerGrid.Parent is System.Windows.Controls.Panel parent)

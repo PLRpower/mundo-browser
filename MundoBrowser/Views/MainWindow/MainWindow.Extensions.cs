@@ -1,4 +1,3 @@
-using System.IO;
 using System.Text.Json;
 using System.Windows;
 using Microsoft.Web.WebView2.Wpf;
@@ -41,7 +40,7 @@ public partial class MainWindow
         }
     }
 
-    private async Task HandleExtensionWebMessageAsync(WebView2 webView, TabViewModel tab, string json)
+    private async Task HandleExtensionWebMessageAsync(WebView2 webView, string json)
     {
         if (string.IsNullOrWhiteSpace(json) || webView.CoreWebView2 == null) return;
 
@@ -86,7 +85,7 @@ public partial class MainWindow
 
     private async Task HandleInstallExtensionFromPageAsync(WebView2 webView, string extensionId)
     {
-        if (DataContext is not MainViewModel vm || webView.CoreWebView2?.Profile == null)
+        if (DataContext is not MainViewModel || webView.CoreWebView2?.Profile == null)
             return;
 
         try

@@ -4,7 +4,8 @@ namespace MundoBrowser.Helpers;
 
 public static partial class ChromeWebStoreHelper
 {
-    private static readonly Regex ExtensionIdRegex = new Regex(@"^[a-p]{32}$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    [GeneratedRegex(@"^[a-p]{32}$", RegexOptions.IgnoreCase)]
+    private static partial Regex ExtensionIdRegex();
 
     public static bool IsChromeWebStoreUrl(string? url)
     {
@@ -24,7 +25,7 @@ public static partial class ChromeWebStoreHelper
             for (int i = segments.Length - 1; i >= 0; i--)
             {
                 var segment = segments[i].Trim().ToLowerInvariant();
-                if (segment.Length == 32 && ExtensionIdRegex.IsMatch(segment))
+                if (segment.Length == 32 && ExtensionIdRegex().IsMatch(segment))
                 {
                     return segment;
                 }

@@ -1,6 +1,3 @@
-using System;
-using System.Threading.Tasks;
-
 namespace MundoBrowser.Interfaces;
 
 public interface IUpdateService

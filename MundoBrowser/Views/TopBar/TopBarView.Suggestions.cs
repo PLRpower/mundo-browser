@@ -99,11 +99,10 @@ public partial class TopBarView
 
     private void SuggestionsList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        var clickedElement = e.OriginalSource as DependencyObject;
-        var clickedItem = clickedElement == null
-            ? null
-            : System.Windows.Controls.ItemsControl.ContainerFromElement(SuggestionsListBox, clickedElement)
-                as System.Windows.Controls.ListBoxItem;
+        if (e.OriginalSource is not DependencyObject clickedElement) return;
+
+        var clickedItem = System.Windows.Controls.ItemsControl.ContainerFromElement(SuggestionsListBox, clickedElement)
+            as System.Windows.Controls.ListBoxItem;
 
         if (clickedItem?.DataContext is Models.HistoryEntry entry && DataContext is MainViewModel vm)
         {
