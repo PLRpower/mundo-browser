@@ -32,7 +32,7 @@ Mundo Browser offers a clean, ultra-fast alternative for everyday browsing and p
 ### 2.3 Local Privacy & Clean Web
 - **In-Process Ad Blocker**: Network interception powered by compiled .NET 10 `FrozenSet<string>` domain lookup for instant filtering without extra resource cost.
 - **Automatic Cookie Banner Removal**: Automatically dismisses cookie popups and restores full page scrolling.
-- **Strict Data Locality**: User profiles, cache, and history stay strictly on your device (`%LOCALAPPDATA%/MundoBrowser/WebView2Data`). No remote telemetry or tracking.
+- **Strict Data Locality**: User profiles, cache, and history stay strictly on your device (`%APPDATA%/MundoBrowser/WebView2Data`). No remote telemetry or tracking.
 
 ### 2.4 High Performance & EcoMode
 - **Smart Tab Discarding**: Automatically unloads idle tabs after a configurable threshold to free up RAM, keeping placeholder tabs instantly reloadable.

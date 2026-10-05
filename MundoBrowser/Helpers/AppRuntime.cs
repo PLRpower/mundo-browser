@@ -19,13 +19,11 @@ public static class AppRuntime
     private const string DataDirectoryName = "MundoBrowser";
 #endif
 
-    public static string LocalDataDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        DataDirectoryName);
-
     public static string RoamingDataDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         DataDirectoryName);
+
+    public static string LocalDataDirectory { get; } = RoamingDataDirectory;
 
     private static string? _version;
     private static string? _channel;

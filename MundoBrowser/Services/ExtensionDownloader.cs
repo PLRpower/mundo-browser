@@ -1,6 +1,8 @@
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Text.RegularExpressions;
+using Microsoft.Web.WebView2.Core;
 using MundoBrowser.Helpers;
 
 namespace MundoBrowser.Services;
@@ -13,7 +15,7 @@ public class ExtensionDownloader
     private static readonly Lazy<HttpClient> LazyHttpClient = new(() =>
     {
         var client = new HttpClient();
-        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.Add("User-Agent", $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{GetBrowserVersion()} Safari/537.36");
         client.DefaultRequestHeaders.Add("Referer", "https://chromewebstore.google.com/");
         client.Timeout = TimeSpan.FromSeconds(30);
         return client;
@@ -38,14 +40,15 @@ public class ExtensionDownloader
             if (!IsValidExtensionId(extensionId))
                 throw new ArgumentException("Invalid Chrome Web Store extension ID.", nameof(extensionId));
 
+            var browserVersion = GetBrowserVersion();
             string[] urlVariants =
             [
-                // Variant 1: Modern Google APIs endpoint (MV3 compatible)
-                $"https://update.googleapis.com/service/update2/crx?response=redirect&acceptformat=crx3&x=id%3D{extensionId}%26uc",
-                // Variant 2: Classic endpoint with precise version
-                $"https://clients2.google.com/service/update2/crx?response=redirect&os=win&arch=x64&os_arch=x86-64&nacl_arch=x86-64&prod=chromebrowser&prodchannel=stable&prodversion=123.0.6312.122&acceptformat=crx3&x=id%3D{extensionId}%26installsource%3Dondemand%26uc",
-                // Variant 3: Ultra-minimalist
-                $"https://clients2.google.com/service/update2/crx?response=redirect&x=id%3D{extensionId}%26uc"
+                // Variant 1: clients2 endpoint with dynamic WebView2 runtime version
+                $"https://clients2.google.com/service/update2/crx?response=redirect&os=win&arch=x86-64&prod=chromecrx&prodchannel=unknown&prodversion={browserVersion}&acceptformat=crx2,crx3&x=id%3D{extensionId}%26uc",
+                // Variant 2: Modern Google APIs endpoint with dynamic WebView2 runtime version
+                $"https://update.googleapis.com/service/update2/crx?response=redirect&os=win&arch=x86-64&prod=chromecrx&prodchannel=unknown&prodversion={browserVersion}&acceptformat=crx2,crx3&x=id%3D{extensionId}%26uc",
+                // Variant 3: High version fallback (protects against extensions requiring a newer Chrome than local WebView2 runtime)
+                $"https://clients2.google.com/service/update2/crx?response=redirect&os=win&arch=x86-64&prod=chromecrx&prodchannel=unknown&prodversion=9999.0.9999.0&acceptformat=crx2,crx3&x=id%3D{extensionId}%26uc"
             ];
 
             byte[]? crxBytes = null;
@@ -318,5 +321,22 @@ public class ExtensionDownloader
     private static bool IsValidExtensionId(string extensionId)
     {
         return extensionId.Length == 32 && extensionId.All(c => c is >= 'a' and <= 'p');
+    }
+
+    private static string GetBrowserVersion()
+    {
+        try
+        {
+            var rawVersion = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            var match = Regex.Match(rawVersion, @"^\d+(\.\d+)+");
+            if (match.Success)
+                return match.Value;
+        }
+        catch
+        {
+            // Fallback if WebView2 runtime is not yet available or query fails
+        }
+
+        return "9999.0.9999.0";
     }
 }
