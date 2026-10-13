@@ -40,6 +40,7 @@ public partial class WebViewService : IWebViewService, IDisposable
     private readonly SemaphoreSlim _initSemaphore = new(1, 1);
     private readonly Dictionary<WebView2, HashSet<CoreWebView2DownloadOperation>> _activeDownloads = new();
     private readonly List<WebView2> _pendingDisposalWebViews = new();
+    private readonly List<(WebView2 WebView, UIElement? Element)> _pendingGracefulDisposals = new();
 
     public WebView2? ActiveWebView => _activeWebView;
     public CoreWebView2Environment? WebViewEnvironment => _environment;
@@ -692,14 +693,11 @@ public partial class WebViewService : IWebViewService, IDisposable
             {
                 try
                 {
-                    if (_tabContainers.Values.FirstOrDefault(c => c.MainWebView == webView) is { } container)
+                    if (webView.Parent is UIElement parent && parent != _container)
                     {
-                        _container?.Children.Remove(container.ContainerGrid);
+                        _container?.Children.Remove(parent);
                     }
-                    else
-                    {
-                        _container?.Children.Remove(webView);
-                    }
+                    _container?.Children.Remove(webView);
                     webView.Dispose();
                 }
                 catch { }
@@ -723,33 +721,91 @@ public partial class WebViewService : IWebViewService, IDisposable
             if (_activeWebView == container.MainWebView) _activeWebView = null;
             if (_activeTabContainer == container) _activeTabContainer = null;
 
-            bool hasActiveDownloads = false;
-            lock (_activeDownloads)
-            {
-                if (_activeDownloads.TryGetValue(container.MainWebView, out var downloads) && downloads.Count > 0)
-                {
-                    hasActiveDownloads = true;
-                    _pendingDisposalWebViews.Add(container.MainWebView);
-                }
-            }
-
-            if (hasActiveDownloads)
-            {
-                container.ContainerGrid.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                _container?.Children.Remove(container.ContainerGrid);
-                try { container.MainWebView.Dispose(); } catch { }
-            }
+            ScheduleGracefulDisposal(container.MainWebView, container.ContainerGrid);
         }
         else if (_webViews.TryGetValue(tab, out var webView))
         {
             _webViews.Remove(tab);
             if (_activeWebView == webView) _activeWebView = null;
-            _container?.Children.Remove(webView);
-            try { webView.Dispose(); } catch { }
+
+            ScheduleGracefulDisposal(webView, null);
         }
+    }
+
+    private void ScheduleGracefulDisposal(WebView2 webView, UIElement? element)
+    {
+        if (element != null) element.Visibility = Visibility.Collapsed;
+        else webView.Visibility = Visibility.Collapsed;
+
+        try
+        {
+            if (webView.CoreWebView2 != null)
+            {
+                _ = webView.CoreWebView2.ExecuteScriptAsync(@"
+                    (function() {
+                        try {
+                            window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+                            Object.defineProperty(document, 'visibilityState', { value: 'hidden', writable: true });
+                            document.dispatchEvent(new Event('visibilitychange'));
+                            window.dispatchEvent(new Event('beforeunload'));
+                        } catch(e) {}
+                    })();
+                ");
+            }
+        }
+        catch { }
+
+        lock (_activeDownloads)
+        {
+            if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
+            {
+                _pendingDisposalWebViews.Add(webView);
+                return;
+            }
+        }
+
+        lock (_pendingGracefulDisposals)
+        {
+            if (_disposed)
+            {
+                if (element != null) _container?.Children.Remove(element);
+                else if (webView.Parent is UIElement parent && parent != _container) _container?.Children.Remove(parent);
+                else _container?.Children.Remove(webView);
+                try { webView.Dispose(); } catch { }
+                return;
+            }
+            _pendingGracefulDisposals.Add((webView, element));
+        }
+
+        _ = Task.Delay(2000).ContinueWith(_ =>
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted) return;
+
+            dispatcher.BeginInvoke(() =>
+            {
+                lock (_pendingGracefulDisposals)
+                {
+                    if (!_pendingGracefulDisposals.Remove((webView, element)))
+                        return;
+                }
+
+                lock (_activeDownloads)
+                {
+                    if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
+                    {
+                        _pendingDisposalWebViews.Add(webView);
+                        return;
+                    }
+                }
+
+                if (element != null) _container?.Children.Remove(element);
+                else if (webView.Parent is UIElement parent && parent != _container) _container?.Children.Remove(parent);
+                else _container?.Children.Remove(webView);
+
+                try { webView.Dispose(); } catch { }
+            });
+        });
     }
 
     public void Dispose()
@@ -761,6 +817,30 @@ public partial class WebViewService : IWebViewService, IDisposable
         _memoryTimer.Stop();
         _memoryTimer.Elapsed -= CheckMemoryOptimization;
         _memoryTimer.Dispose();
+
+        lock (_pendingGracefulDisposals)
+        {
+            foreach (var (wv, el) in _pendingGracefulDisposals)
+            {
+                if (el != null) _container?.Children.Remove(el);
+                else if (wv.Parent is UIElement p && p != _container) _container?.Children.Remove(p);
+                else _container?.Children.Remove(wv);
+                try { wv.Dispose(); } catch { }
+            }
+            _pendingGracefulDisposals.Clear();
+        }
+
+        lock (_activeDownloads)
+        {
+            foreach (var wv in _pendingDisposalWebViews)
+            {
+                if (wv.Parent is UIElement p && p != _container)
+                    _container?.Children.Remove(p);
+                _container?.Children.Remove(wv);
+                try { wv.Dispose(); } catch { }
+            }
+            _pendingDisposalWebViews.Clear();
+        }
 
         foreach (var container in _tabContainers.Values.ToList())
         {
