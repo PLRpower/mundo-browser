@@ -39,10 +39,10 @@ Mundo Browser offers a clean, ultra-fast alternative for everyday browsing and p
 - **Media & Download Protection**: Tabs with active audio or ongoing downloads are never discarded.
 - **Hardware Acceleration**: Tuned Chromium flags for hardware rasterization, GPU compositing, and smooth scrolling:
   ```text
-  --enable-gpu-rasterization --enable-zero-copy --enable-smooth-scrolling
-  --enable-accelerated-2d-canvas --enable-accelerated-video-decode
-  --enable-features=CanvasOopRasterization,UseSkiaRenderer,ParallelDownloading,OverlayScrollbar
-  --num-raster-threads=4 --enable-highres-timer --enable-quic
+  --enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --enable-unsafe-webgpu
+  --enable-features=WebGPU,WebGPUService,CanvasOopRasterization,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching
+  --use-angle=d3d11 --force_high_performance_gpu --gpu-preference=2 --enable-webgl --enable-webgl2-compute-context
+  --num-raster-threads=4 --enable-smooth-scrolling --enable-accelerated-2d-canvas --enable-accelerated-video-decode --enable-quic
   ```
 
 ---

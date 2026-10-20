@@ -89,10 +89,18 @@ public partial class WebViewService : IWebViewService, IDisposable
                 "--enable-gpu-rasterization",
                 "--enable-zero-copy",
                 "--ignore-gpu-blocklist",
+                "--enable-unsafe-webgpu",
+                "--enable-features=WebGPU,WebGPUService,CanvasOopRasterization,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
+                "--use-angle=d3d11",
+                "--force_high_performance_gpu",
+                "--gpu-preference=2",
+                "--enable-webgl",
+                "--enable-webgl2-compute-context",
+                "--num-raster-threads=4",
                 "--enable-smooth-scrolling",
                 "--enable-accelerated-2d-canvas",
                 "--enable-accelerated-video-decode",
-                "--enable-features=CanvasOopRasterization,UseSkiaRenderer,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
+
                 "--disable-features=AutomaticTabDiscarding,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling",
                 "--disable-background-timer-throttling",
                 "--disable-renderer-backgrounding",
@@ -254,11 +262,16 @@ public partial class WebViewService : IWebViewService, IDisposable
                 // Intercept web resources with cached site status to minimize COM overhead on UI thread
                 webView.CoreWebView2.AddWebResourceRequestedFilter(
                     "*",
-                    CoreWebView2WebResourceContext.All);
+                    CoreWebView2WebResourceContext.Script);
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Image);
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.XmlHttpRequest);
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Fetch);
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Other);
 
                 webView.CoreWebView2.WebResourceRequested += (s, e) =>
                 {
-                    if (isAdBlockActiveForPage && adBlocker.ShouldBlockUrl(e.Request.Uri))
+                    if (!isAdBlockActiveForPage) return;
+                    if (adBlocker.ShouldBlockUrl(e.Request.Uri))
                     {
                         var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
                             null, 204, "No Content", ""
