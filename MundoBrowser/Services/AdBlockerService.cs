@@ -75,6 +75,17 @@ public class AdBlockerService : IAdBlockerService
         "*://*.youtube-nocookie.com/api/stats/ads*"
     ];
 
+    private static readonly FrozenSet<string> CookieConsentDomains = new string[]
+    {
+        "cookielaw.org", "onetrust.com", "optanon.blob.core.windows.net",
+        "didomi.io", "privacy-center.org", "cookiebot.com", "cookiebot.eu",
+        "usercentrics.eu", "usercentrics.com", "consentmanager.net",
+        "consensu.org", "quantcast.com", "trustarc.com", "truste.com",
+        "axept.io", "sirdata.com", "sddan.com", "privacy-mgmt.com",
+        "sourcepoint.com", "iubenda.com", "cookieyes.com", "termly.io",
+        "osano.com", "fundingchoicesmessages.google.com", "consent.google.com"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     private readonly IAppSettingsService _settingsService;
     private volatile FrozenSet<string> _activeBlockedDomains;
     private bool _isAdBlockerEnabled;
@@ -149,7 +160,7 @@ public class AdBlockerService : IAdBlockerService
         }
     }
 
-    public bool ShouldBlockUrl(string? url)
+    public bool ShouldBlockUrl(string? url, bool isCookieBlockerActive = true)
     {
         if (!IsAdBlockerEnabled || string.IsNullOrWhiteSpace(url)) return false;
 
@@ -167,24 +178,16 @@ public class AdBlockerService : IAdBlockerService
         if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             host = host[4..];
 
+        if (!isCookieBlockerActive && IsDomainInSet(host, CookieConsentDomains))
+            return false;
+
         if (_blockedHostCache.TryGetValue(host, out bool isBlocked))
             return isBlocked;
 
-        var blockedDomains = _activeBlockedDomains;
-        string currentHost = host;
-        while (!string.IsNullOrEmpty(currentHost))
+        if (IsDomainInSet(host, _activeBlockedDomains))
         {
-            if (blockedDomains.Contains(currentHost))
-            {
-                _blockedHostCache[host] = true;
-                return true;
-            }
-
-            int dotIndex = currentHost.IndexOf('.');
-            if (dotIndex < 0 || dotIndex == currentHost.Length - 1)
-                break;
-
-            currentHost = currentHost[(dotIndex + 1)..];
+            _blockedHostCache[host] = true;
+            return true;
         }
 
         if (host.EndsWith("youtube.com", StringComparison.OrdinalIgnoreCase) ||
@@ -205,6 +208,40 @@ public class AdBlockerService : IAdBlockerService
         return false;
     }
 
+    private static bool IsDomainInSet(string host, FrozenSet<string> domainSet)
+    {
+        string currentHost = host;
+        while (!string.IsNullOrEmpty(currentHost))
+        {
+            if (domainSet.Contains(currentHost))
+                return true;
+
+            int dotIndex = currentHost.IndexOf('.');
+            if (dotIndex < 0 || dotIndex == currentHost.Length - 1)
+                break;
+
+            currentHost = currentHost[(dotIndex + 1)..];
+        }
+        return false;
+    }
+
+    private static bool IsSiteMatch(string host, string site)
+    {
+        return host.Equals(site, StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith("." + site, StringComparison.OrdinalIgnoreCase) ||
+               site.EndsWith("." + host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSiteDisabled(string host, List<string> disabledSites)
+    {
+        for (int i = 0; i < disabledSites.Count; i++)
+        {
+            if (IsSiteMatch(host, disabledSites[i]))
+                return true;
+        }
+        return false;
+    }
+
     public string? GetSiteHost(string? url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
@@ -221,9 +258,7 @@ public class AdBlockerService : IAdBlockerService
         string? host = GetSiteHost(url);
         if (host == null) return IsAdBlockerEnabled;
 
-        return !_settingsService.Current.AdBlockDisabledSites.Contains(
-            host,
-            StringComparer.OrdinalIgnoreCase);
+        return !IsSiteDisabled(host, _settingsService.Current.AdBlockDisabledSites);
     }
 
     public bool SetAdBlockerEnabledForSite(string? url, bool enabled)
@@ -233,8 +268,7 @@ public class AdBlockerService : IAdBlockerService
 
         _settingsService.Update(settings =>
         {
-            settings.AdBlockDisabledSites.RemoveAll(
-                site => site.Equals(host, StringComparison.OrdinalIgnoreCase));
+            settings.AdBlockDisabledSites.RemoveAll(site => IsSiteMatch(host, site));
 
             if (!enabled)
                 settings.AdBlockDisabledSites.Add(host);
@@ -249,9 +283,7 @@ public class AdBlockerService : IAdBlockerService
         string? host = GetSiteHost(url);
         if (host == null) return IsCookieBlockerEnabled;
 
-        return !_settingsService.Current.CookieBlockDisabledSites.Contains(
-            host,
-            StringComparer.OrdinalIgnoreCase);
+        return !IsSiteDisabled(host, _settingsService.Current.CookieBlockDisabledSites);
     }
 
     public bool SetCookieBlockerEnabledForSite(string? url, bool enabled)
@@ -261,8 +293,7 @@ public class AdBlockerService : IAdBlockerService
 
         _settingsService.Update(settings =>
         {
-            settings.CookieBlockDisabledSites.RemoveAll(
-                site => site.Equals(host, StringComparison.OrdinalIgnoreCase));
+            settings.CookieBlockDisabledSites.RemoveAll(site => IsSiteMatch(host, site));
 
             if (!enabled)
                 settings.CookieBlockDisabledSites.Add(host);
@@ -347,9 +378,11 @@ public class AdBlockerService : IAdBlockerService
                 const removeCookieModals = () => {
                     const selector = '#qc-cmp2-container, #onetrust-consent-sdk, #didomi-host, ' +
                                      '.fc-consent-root, #usercentrics-root, [id^="tarteaucitron"]';
-                    document.querySelectorAll(selector).forEach(el => el.remove());
+                    const modals = document.querySelectorAll(selector);
+                    if (modals.length === 0) return;
+                    modals.forEach(el => el.remove());
                     
-                    // Force body scroll unlock
+                    // Force body scroll unlock only when a cookie modal was actually removed
                     if (document.body && document.body.style.overflow === 'hidden') {
                         document.body.style.overflow = '';
                         document.body.style.position = '';
@@ -453,34 +486,84 @@ public class AdBlockerService : IAdBlockerService
 
     public string GetInjectionScript()
     {
-        string css = "";
-        if (IsAdBlockerEnabled)
-            css += GetCosmeticCss();
-        if (IsCookieBlockerEnabled)
-            css += GetCookieCosmeticCss();
+        bool adBlockGlobal = IsAdBlockerEnabled;
+        bool cookieBlockGlobal = IsCookieBlockerEnabled;
+        if (!adBlockGlobal && !cookieBlockGlobal)
+            return string.Empty;
 
-        string serializedCss = JsonSerializer.Serialize(css);
-        string ytScript = IsAdBlockerEnabled ? GetYouTubeAdBlockScript() : "";
-        string cookieScript = IsCookieBlockerEnabled ? GetCookieRemovalScript() : "";
+        string serializedAdCss = JsonSerializer.Serialize(adBlockGlobal ? GetCosmeticCss() : string.Empty);
+        string serializedCookieCss = JsonSerializer.Serialize(cookieBlockGlobal ? GetCookieCosmeticCss() : string.Empty);
+        string serializedAdDisabled = JsonSerializer.Serialize(_settingsService.Current.AdBlockDisabledSites);
+        string serializedCookieDisabled = JsonSerializer.Serialize(_settingsService.Current.CookieBlockDisabledSites);
+        string ytScript = adBlockGlobal ? GetYouTubeAdBlockScript() : string.Empty;
+        string cookieScript = cookieBlockGlobal ? GetCookieRemovalScript() : string.Empty;
 
         return $$"""
             (function() {
-                try {
-                    const css = {{serializedCss}};
-                    const injectCss = () => {
-                        if (!css || document.getElementById('mundo-adblock-css')) return;
-                        const style = document.createElement('style');
-                        style.id = 'mundo-adblock-css';
-                        style.textContent = css;
-                        (document.head || document.documentElement).appendChild(style);
-                    };
+                const normalizeHost = (h) => {
+                    if (!h) return '';
+                    const clean = h.replace(/\.$/, '').toLowerCase();
+                    return clean.startsWith('www.') ? clean.slice(4) : clean;
+                };
 
-                    if (document.documentElement) injectCss();
-                    else document.addEventListener('DOMContentLoaded', injectCss, { once: true });
-                } catch(e) {}
+                const getTopHost = () => {
+                    try {
+                        if (window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
+                            const origin = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
+                            if (origin && origin !== 'null') {
+                                return normalizeHost(new URL(origin).hostname);
+                            }
+                        }
+                    } catch (e) {}
+                    return normalizeHost(window.location.hostname);
+                };
 
-                {{ytScript}}
-                {{cookieScript}}
+                const isHostDisabled = (host, list) => {
+                    if (!host || !list) return false;
+                    for (let i = 0; i < list.length; i++) {
+                        const site = list[i];
+                        if (host === site || host.endsWith('.' + site) || site.endsWith('.' + host)) return true;
+                    }
+                    return false;
+                };
+
+                const topHost = getTopHost();
+                const selfHost = normalizeHost(window.location.hostname);
+                const adDisabledSites = {{serializedAdDisabled}};
+                const cookieDisabledSites = {{serializedCookieDisabled}};
+
+                const adBlockActive = {{(adBlockGlobal ? "true" : "false")}} &&
+                    !isHostDisabled(topHost, adDisabledSites) &&
+                    !isHostDisabled(selfHost, adDisabledSites);
+                const cookieBlockActive = {{(cookieBlockGlobal ? "true" : "false")}} &&
+                    !isHostDisabled(topHost, cookieDisabledSites) &&
+                    !isHostDisabled(selfHost, cookieDisabledSites);
+
+                const injectStyle = (id, cssText) => {
+                    if (!cssText || document.getElementById(id)) return;
+                    const style = document.createElement('style');
+                    style.id = id;
+                    style.textContent = cssText;
+                    (document.head || document.documentElement).appendChild(style);
+                };
+
+                if (adBlockActive) {
+                    try {
+                        const adCss = {{serializedAdCss}};
+                        if (document.documentElement) injectStyle('mundo-adblock-css', adCss);
+                        else document.addEventListener('DOMContentLoaded', () => injectStyle('mundo-adblock-css', adCss), { once: true });
+                    } catch (e) {}
+                    {{ytScript}}
+                }
+
+                if (cookieBlockActive) {
+                    try {
+                        const cookieCss = {{serializedCookieCss}};
+                        if (document.documentElement) injectStyle('mundo-cookieblock-css', cookieCss);
+                        else document.addEventListener('DOMContentLoaded', () => injectStyle('mundo-cookieblock-css', cookieCss), { once: true });
+                    } catch (e) {}
+                    {{cookieScript}}
+                }
             })();
             """;
     }

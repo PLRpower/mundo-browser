@@ -1,4 +1,4 @@
-using System.Collections.Specialized;
+﻿using System.Collections.Specialized;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
@@ -49,7 +49,7 @@ public partial class MainWindow
         try
         {
             var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-            if (switchVersion != Volatile.Read(ref _tabSwitchVersion)
+            if ((switchVersion != Volatile.Read(ref _tabSwitchVersion) && _viewModel?.SelectedTab != tab)
                 || _viewModel?.SelectedTab != tab
                 || !_trackedTabs.Contains(tab))
                 return;
@@ -70,7 +70,7 @@ public partial class MainWindow
                 vm.AddressBarText = tab.AddressUrl;
             }
         }
-        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException)
         {
             // Tab switch cancelled or WebView recovering from crash
         }
@@ -103,7 +103,7 @@ public partial class MainWindow
                 catch { }
             }
         }
-        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException)
         {
             // The tab was closed or webview crashed while its WebView was being initialized.
         }
@@ -122,7 +122,7 @@ public partial class MainWindow
             {
                 await SwitchToTabAsync(vm.SelectedTab);
             }
-            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException)
             {
                 // The selected tab changed again or crashed while initializing.
             }
@@ -251,11 +251,21 @@ public partial class MainWindow
             }
         };
 
-        webView.CoreWebView2.NavigationStarting += (_, _) => tab.LastAccessed = DateTime.Now;
+        ulong activeNavigationId = 0;
+
+        webView.CoreWebView2.NavigationStarting += (_, args) =>
+        {
+            activeNavigationId = args.NavigationId;
+            tab.LastAccessed = DateTime.Now;
+            tab.IsLoading = true;
+        };
 
         webView.CoreWebView2.NavigationCompleted += (_, args) =>
         {
             tab.LastAccessed = DateTime.Now;
+            if (activeNavigationId == 0 || args.NavigationId == activeNavigationId)
+                tab.IsLoading = false;
+
             if (!args.IsSuccess || DataContext is not MainViewModel vm)
                 return;
 
@@ -421,7 +431,7 @@ public partial class MainWindow
                         Owner = this
                     };
 
-                    Helpers.NativeMethods.ApplyDarkMode(popupWindow);
+                    popupWindow.SourceInitialized += (_, _) => Helpers.NativeMethods.ApplyDarkMode(popupWindow);
 
                     var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
                     popupWindow.Content = popupWebView;
@@ -430,6 +440,8 @@ public partial class MainWindow
                     {
                         try { popupWebView.Dispose(); } catch { }
                     };
+
+                    popupWindow.Show();
 
                     await popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
                     args.NewWindow = popupWebView.CoreWebView2;
@@ -442,8 +454,6 @@ public partial class MainWindow
                     {
                         popupWindow.Title = popupWebView.CoreWebView2.DocumentTitle;
                     };
-
-                    popupWindow.Show();
                 }
                 else if (_viewModel != null)
                 {

@@ -190,7 +190,18 @@ namespace MundoBrowser.ViewModels
 
         partial void OnSelectedListTabChanged(TabViewModel? value)
         {
-            if (value != null) SelectedTab = value;
+            if (value != null) SelectTab(value);
+        }
+
+        public void SelectTab(TabViewModel? tab)
+        {
+            if (tab == null) return;
+            if (SelectedTab == tab)
+            {
+                OnPropertyChanged(nameof(SelectedTab));
+                return;
+            }
+            SelectedTab = tab;
         }
 
         private void CreateDefaultTab()
@@ -280,7 +291,7 @@ namespace MundoBrowser.ViewModels
         [RelayCommand]
         public void OpenPinnedTab(PinnedTab pinned)
         {
-            if (pinned != null && !pinned.IsEmpty) SelectedTab = pinned.Tab;
+            if (pinned != null && !pinned.IsEmpty) SelectTab(pinned.Tab);
         }
 
         public void PinTab(TabViewModel tab, int slotIndex)

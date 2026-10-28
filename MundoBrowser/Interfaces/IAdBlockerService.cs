@@ -11,7 +11,7 @@ public interface IAdBlockerService
 
     string? GetSiteHost(string? url);
     bool IsAdBlockerEnabledForSite(string? url);
-    bool ShouldBlockUrl(string? url);
+    bool ShouldBlockUrl(string? url, bool isCookieBlockerActive = true);
     bool SetAdBlockerEnabledForSite(string? url, bool enabled);
     bool IsCookieBlockerEnabledForSite(string? url);
     bool SetCookieBlockerEnabledForSite(string? url, bool enabled);

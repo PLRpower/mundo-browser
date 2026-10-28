@@ -114,5 +114,6 @@ namespace MundoBrowser.Interfaces
         /// Toggles the DevTools state for the specified tab.
         /// </summary>
         Task ToggleDevToolsForTabAsync(TabViewModel tab);
+        Task RefreshAdBlockerAsync(WebView2? targetWebView = null);
     }
 }

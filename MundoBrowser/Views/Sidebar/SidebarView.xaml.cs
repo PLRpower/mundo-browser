@@ -85,17 +85,30 @@ public partial class SidebarView : System.Windows.Controls.UserControl
         }
     }
 
-    private void TabItem_PreviewMouseLeftButtonDown(object s, MouseButtonEventArgs e) => _tabReorderHelper?.HandlePreviewMouseDown(e);
+    private void TabItem_PreviewMouseLeftButtonDown(object s, MouseButtonEventArgs e)
+    {
+        _tabReorderHelper?.HandlePreviewMouseDown(s, e);
+
+        if (e.ChangedButton == MouseButton.Left
+            && !TabReorderHelper.IsClickOnButton(e.OriginalSource as DependencyObject, s as DependencyObject)
+            && s is System.Windows.Controls.ListBoxItem { DataContext: TabViewModel tab }
+            && !tab.IsPrimarySplitTab
+            && DataContext is MainViewModel vm)
+        {
+            vm.SelectTab(tab);
+        }
+    }
+
     private void TabItem_PreviewMouseLeftButtonUp(object s, MouseButtonEventArgs e) => _tabReorderHelper?.HandlePreviewMouseUp(e);
     private void TabItem_PreviewMouseMove(object s, System.Windows.Input.MouseEventArgs e) => _tabReorderHelper?.HandlePreviewMouseMove(s, e);
     private void TabItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is System.Windows.Controls.ListBoxItem item && item.DataContext is TabViewModel tab)
+        if (!TabReorderHelper.IsClickOnButton(e.OriginalSource as DependencyObject, sender as DependencyObject)
+            && sender is System.Windows.Controls.ListBoxItem { DataContext: TabViewModel tab }
+            && !tab.IsPrimarySplitTab
+            && DataContext is MainViewModel vm)
         {
-            if (DataContext is MainViewModel vm && vm.SelectedTab != tab)
-            {
-                vm.SelectedTab = tab;
-            }
+            vm.SelectTab(tab);
         }
     }
     private void TabItem_MouseDown(object sender, MouseButtonEventArgs e)

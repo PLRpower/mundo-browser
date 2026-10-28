@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Input;
 using MundoBrowser.Models;
 using MundoBrowser.ViewModels;
@@ -170,10 +170,30 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         AdBlockerContextMenu.IsOpen = true;
     }
 
+    private string? GetCurrentSiteUrl()
+    {
+        var vm = DataContext as MainViewModel;
+        var service = vm?.AdBlockerService;
+        if (service == null) return null;
+
+        try
+        {
+            var source = GetWebView()?.CoreWebView2?.Source;
+            if (service.GetSiteHost(source) != null)
+                return source;
+        }
+        catch { }
+
+        if (service.GetSiteHost(vm?.SelectedTab?.AddressUrl) != null)
+            return vm?.SelectedTab?.AddressUrl;
+
+        return vm?.SelectedTab?.Url;
+    }
+
     private void AdBlockerContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         var service = (DataContext as MainViewModel)?.AdBlockerService;
-        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
+        string? url = GetCurrentSiteUrl();
         string? host = service?.GetSiteHost(url);
 
         if (service == null || host == null)
@@ -191,57 +211,67 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         bool adBlockEnabled = service.IsAdBlockerEnabledForSite(url);
         bool cookieBlockEnabled = service.IsCookieBlockerEnabledForSite(url);
 
-        CurrentSiteAdBlockerMenuItem.IsEnabled = true;
+        CurrentSiteAdBlockerMenuItem.IsEnabled = service.IsAdBlockerEnabled;
         CurrentSiteAdBlockerMenuItem.IsChecked = adBlockEnabled;
 
-        CurrentSiteCookieBlockerMenuItem.IsEnabled = true;
+        CurrentSiteCookieBlockerMenuItem.IsEnabled = service.IsCookieBlockerEnabled;
         CurrentSiteCookieBlockerMenuItem.IsChecked = cookieBlockEnabled;
 
+        bool anyGlobalEnabled = service.IsAdBlockerEnabled || service.IsCookieBlockerEnabled;
         bool allDisabled = !adBlockEnabled && !cookieBlockEnabled;
-        CurrentSiteProtectionMenuItem.IsEnabled = true;
+        CurrentSiteProtectionMenuItem.IsEnabled = anyGlobalEnabled;
         CurrentSiteProtectionMenuItem.Header = allDisabled
             ? $"Réactiver toutes les protections sur {host}"
             : $"Désactiver toutes les protections sur {host}";
     }
 
-    private void ToggleCurrentSiteAdBlocker_Click(object sender, RoutedEventArgs e)
+    private async void ToggleCurrentSiteAdBlocker_Click(object sender, RoutedEventArgs e)
     {
-        var service = (DataContext as MainViewModel)?.AdBlockerService;
-        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
-        if (service == null || service.GetSiteHost(url) == null) return;
+        var vm = DataContext as MainViewModel;
+        var service = vm?.AdBlockerService;
+        string? url = GetCurrentSiteUrl();
+        if (vm == null || service == null || service.GetSiteHost(url) == null) return;
 
         bool currentStatus = service.IsAdBlockerEnabledForSite(url);
         if (service.SetAdBlockerEnabledForSite(url, !currentStatus))
         {
-            GetWebView()?.Reload();
+            var webView = GetWebView();
+            await vm.WebViewService.RefreshAdBlockerAsync(webView);
+            webView?.Reload();
         }
     }
 
-    private void ToggleCurrentSiteCookieBlocker_Click(object sender, RoutedEventArgs e)
+    private async void ToggleCurrentSiteCookieBlocker_Click(object sender, RoutedEventArgs e)
     {
-        var service = (DataContext as MainViewModel)?.AdBlockerService;
-        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
-        if (service == null || service.GetSiteHost(url) == null) return;
+        var vm = DataContext as MainViewModel;
+        var service = vm?.AdBlockerService;
+        string? url = GetCurrentSiteUrl();
+        if (vm == null || service == null || service.GetSiteHost(url) == null) return;
 
         bool currentStatus = service.IsCookieBlockerEnabledForSite(url);
         if (service.SetCookieBlockerEnabledForSite(url, !currentStatus))
         {
-            GetWebView()?.Reload();
+            var webView = GetWebView();
+            await vm.WebViewService.RefreshAdBlockerAsync(webView);
+            webView?.Reload();
         }
     }
 
-    private void ToggleCurrentSiteProtection_Click(object sender, RoutedEventArgs e)
+    private async void ToggleCurrentSiteProtection_Click(object sender, RoutedEventArgs e)
     {
-        var service = (DataContext as MainViewModel)?.AdBlockerService;
-        string? url = (DataContext as MainViewModel)?.SelectedTab?.AddressUrl;
-        if (service == null || service.GetSiteHost(url) == null) return;
+        var vm = DataContext as MainViewModel;
+        var service = vm?.AdBlockerService;
+        string? url = GetCurrentSiteUrl();
+        if (vm == null || service == null || service.GetSiteHost(url) == null) return;
 
         bool allDisabled = !service.IsAdBlockerEnabledForSite(url) && !service.IsCookieBlockerEnabledForSite(url);
         bool newStatus = allDisabled; // If all disabled, re-enable all (true). Otherwise disable all (false).
 
         service.SetAdBlockerEnabledForSite(url, newStatus);
         service.SetCookieBlockerEnabledForSite(url, newStatus);
-        GetWebView()?.Reload();
+        var webView = GetWebView();
+        await vm.WebViewService.RefreshAdBlockerAsync(webView);
+        webView?.Reload();
     }
 
     private int _openExtensionContextMenuCount;

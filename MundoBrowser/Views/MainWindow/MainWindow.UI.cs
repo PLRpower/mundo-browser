@@ -646,6 +646,10 @@ public partial class MainWindow
 
     private void MainViewModel_TabDragCompleted(object? sender, EventArgs e)
     {
+        if (DataContext is MainViewModel { SelectedTab: { } selectedTab })
+        {
+            _ = SwitchToTabAsync(selectedTab);
+        }
         if (_isSidebarFloating && FloatingSidebarPopup != null && !FloatingSidebarContent.IsMouseOver)
         {
             HideFloatingSidebar();
@@ -865,7 +869,8 @@ public partial class MainWindow
 
                 // Focus WebView if available, otherwise clear focus
                 var wv = GetActiveWebView();
-                if (wv != null) wv.Focus();
+                bool clickedInsideSidebar = clickedElement != null && FindAncestor<SidebarView>(clickedElement) != null;
+                if (!clickedInsideSidebar && wv != null) wv.Focus();
                 else Keyboard.ClearFocus();
             }
         }

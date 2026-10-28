@@ -9,6 +9,7 @@ public class TabReorderHelper
 {
     private bool _isPossibleDrag;
     private System.Windows.Point _dragStartPoint;
+    private ListBoxItem? _dragSourceItem;
     private ListBoxItem? _lastIndicatorItem;
     private string? _lastTag;
     private readonly System.Windows.Controls.ListBox _listBox;
@@ -20,13 +21,21 @@ public class TabReorderHelper
         _viewModel = viewModel;
     }
 
-    public void HandlePreviewMouseDown(MouseButtonEventArgs e)
+    public void HandlePreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Left)
+        if (e.ChangedButton != MouseButton.Left)
+            return;
+
+        if (IsClickOnButton(e.OriginalSource as DependencyObject, sender as DependencyObject))
         {
-            _isPossibleDrag = true;
-            _dragStartPoint = e.GetPosition(_listBox);
+            _isPossibleDrag = false;
+            _dragSourceItem = null;
+            return;
         }
+
+        _isPossibleDrag = true;
+        _dragSourceItem = sender as ListBoxItem;
+        _dragStartPoint = e.GetPosition(_listBox);
     }
 
     public void HandlePreviewMouseUp(MouseButtonEventArgs e)
@@ -34,6 +43,7 @@ public class TabReorderHelper
         if (e.ChangedButton == MouseButton.Left)
         {
             _isPossibleDrag = false;
+            _dragSourceItem = null;
         }
     }
 
@@ -42,16 +52,22 @@ public class TabReorderHelper
         if (!_isPossibleDrag || e.LeftButton != MouseButtonState.Pressed)
         {
             _isPossibleDrag = false;
+            _dragSourceItem = null;
             return;
         }
+
+        if (!ReferenceEquals(sender, _dragSourceItem))
+            return;
 
         if (sender is ListBoxItem item && item.DataContext is TabViewModel)
         {
             Vector diff = _dragStartPoint - e.GetPosition(_listBox);
-            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance || 
-                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            double minX = Math.Max(SystemParameters.MinimumHorizontalDragDistance, 6.0);
+            double minY = Math.Max(SystemParameters.MinimumVerticalDragDistance, 6.0);
+            if (Math.Abs(diff.X) > minX || Math.Abs(diff.Y) > minY)
             {
                 _isPossibleDrag = false;
+                _dragSourceItem = null;
                 _viewModel.IsDraggingTab = true;
 
                 System.Windows.GiveFeedbackEventHandler feedbackHandler = (s, a) =>
@@ -76,6 +92,17 @@ public class TabReorderHelper
                 }
             }
         }
+    }
+
+    public static bool IsClickOnButton(DependencyObject? source, DependencyObject? stopAt)
+    {
+        while (source != null && !ReferenceEquals(source, stopAt))
+        {
+            if (source is System.Windows.Controls.Primitives.ButtonBase)
+                return true;
+            source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+        }
+        return false;
     }
 
     public void HandleDragOver(System.Windows.DragEventArgs e)

@@ -152,6 +152,8 @@ public partial class WebViewService
             try { container.MainWebView.Dispose(); } catch { }
             _tabContainers.Remove(tab);
             _webViews.Remove(tab);
+            _adBlockScriptIds.Remove(container.MainWebView);
+            tab.IsLoading = false;
             tab.IsDiscarded = true;
         }
         else if (_webViews.TryGetValue(tab, out var webView))
@@ -159,6 +161,8 @@ public partial class WebViewService
             _container?.Children.Remove(webView);
             try { webView.Dispose(); } catch { }
             _webViews.Remove(tab);
+            _adBlockScriptIds.Remove(webView);
+            tab.IsLoading = false;
             tab.IsDiscarded = true;
         }
     }

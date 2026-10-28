@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
+using MundoBrowser.Interfaces;
+using MundoBrowser.ViewModels;
 
 namespace MundoBrowser.Services;
 
@@ -93,10 +95,12 @@ public partial class WebViewService
 
             case "adBlockerEnabled":
                 _adBlockerService.IsAdBlockerEnabled = value.GetBoolean();
+                _ = RefreshAdBlockerAsync();
                 break;
 
             case "cookieBlockerEnabled":
                 _adBlockerService.IsCookieBlockerEnabled = value.GetBoolean();
+                _ = RefreshAdBlockerAsync();
                 break;
 
             case "trackingPreventionEnabled":
@@ -145,19 +149,140 @@ public partial class WebViewService
         }
     }
 
-    private void ApplyTrackingPrevention(WebView2 webView)
+    private void ApplyTrackingPrevention(WebView2 webView, string? pageUrl = null)
     {
         try
         {
-            webView.CoreWebView2.Profile.PreferredTrackingPreventionLevel =
-                _settingsService.Current.IsTrackingPreventionEnabled
-                    ? CoreWebView2TrackingPreventionLevel.Balanced
-                    : CoreWebView2TrackingPreventionLevel.None;
+            if (webView.CoreWebView2?.Profile == null) return;
+
+            string? url = pageUrl;
+            if (string.IsNullOrEmpty(url))
+            {
+                try { url = webView.CoreWebView2.Source; } catch { }
+            }
+
+            bool siteProtectionsActive = _adBlockerService.IsAdBlockerEnabledForSite(url)
+                                         && _adBlockerService.IsCookieBlockerEnabledForSite(url);
+
+            var targetLevel = (_settingsService.Current.IsTrackingPreventionEnabled && siteProtectionsActive)
+                ? CoreWebView2TrackingPreventionLevel.Balanced
+                : CoreWebView2TrackingPreventionLevel.None;
+
+            if (webView.CoreWebView2.Profile.PreferredTrackingPreventionLevel != targetLevel)
+            {
+                webView.CoreWebView2.Profile.PreferredTrackingPreventionLevel = targetLevel;
+            }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to apply tracking prevention setting: {ex.Message}");
         }
+    }
+
+    public async Task RefreshAdBlockerAsync(WebView2? targetWebView = null)
+    {
+        var allWebViews = GetAllWebViews().ToList();
+        if (targetWebView != null && !allWebViews.Contains(targetWebView))
+        {
+            allWebViews.Insert(0, targetWebView);
+        }
+        else if (targetWebView != null)
+        {
+            allWebViews.Remove(targetWebView);
+            allWebViews.Insert(0, targetWebView);
+        }
+
+        string script = _adBlockerService.GetInjectionScript();
+
+        foreach (var webView in allWebViews)
+        {
+            try
+            {
+                if (webView.CoreWebView2 == null) continue;
+
+                if (_adBlockScriptIds.Remove(webView, out var oldScriptId) && !string.IsNullOrEmpty(oldScriptId))
+                {
+                    webView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(oldScriptId);
+                }
+
+                if (!string.IsNullOrEmpty(script))
+                {
+                    var newId = await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script);
+                    _adBlockScriptIds[webView] = newId;
+                }
+
+                string sourceUrl = webView.CoreWebView2.Source;
+                if (webView == _activeWebView)
+                {
+                    ApplyTrackingPrevention(webView, sourceUrl);
+                }
+
+                bool adActive = _adBlockerService.IsAdBlockerEnabledForSite(sourceUrl);
+                bool cookieActive = _adBlockerService.IsCookieBlockerEnabledForSite(sourceUrl);
+                if (!adActive || !cookieActive)
+                {
+                    string removeAd = !adActive ? "document.getElementById('mundo-adblock-css')?.remove();" : "";
+                    string removeCookie = !cookieActive ? "document.getElementById('mundo-cookieblock-css')?.remove();" : "";
+                    _ = webView.CoreWebView2.ExecuteScriptAsync($"(function(){{{removeAd}{removeCookie}}})();");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to refresh adblocker script: {ex.Message}");
+            }
+        }
+    }
+
+    private static string? ResolveEffectiveSiteUrl(TabViewModel tab, string? currentPageUrl, IAdBlockerService adBlocker)
+    {
+        if (adBlocker.GetSiteHost(currentPageUrl) != null)
+            return currentPageUrl;
+        if (adBlocker.GetSiteHost(tab.AddressUrl) != null)
+            return tab.AddressUrl;
+        if (adBlocker.GetSiteHost(tab.Url) != null)
+            return tab.Url;
+        if (tab.OpenedByTab != null)
+        {
+            if (adBlocker.GetSiteHost(tab.OpenedByTab.AddressUrl) != null)
+                return tab.OpenedByTab.AddressUrl;
+            if (adBlocker.GetSiteHost(tab.OpenedByTab.Url) != null)
+                return tab.OpenedByTab.Url;
+        }
+        return currentPageUrl;
+    }
+
+    private static bool IsAdBlockerActiveForTab(TabViewModel tab, string? effectiveUrl, IAdBlockerService adBlocker)
+    {
+        if (!adBlocker.IsAdBlockerEnabledForSite(effectiveUrl))
+            return false;
+
+        if (tab.OpenedByTab != null)
+        {
+            string? openerUrl = adBlocker.GetSiteHost(tab.OpenedByTab.AddressUrl) != null
+                ? tab.OpenedByTab.AddressUrl
+                : tab.OpenedByTab.Url;
+            if (!adBlocker.IsAdBlockerEnabledForSite(openerUrl) && adBlocker.ShouldBlockUrl(effectiveUrl))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsCookieBlockerActiveForTab(TabViewModel tab, string? effectiveUrl, IAdBlockerService adBlocker)
+    {
+        if (!adBlocker.IsCookieBlockerEnabledForSite(effectiveUrl))
+            return false;
+
+        if (tab.OpenedByTab != null)
+        {
+            string? openerUrl = adBlocker.GetSiteHost(tab.OpenedByTab.AddressUrl) != null
+                ? tab.OpenedByTab.AddressUrl
+                : tab.OpenedByTab.Url;
+            if (!adBlocker.IsCookieBlockerEnabledForSite(openerUrl) && adBlocker.ShouldBlockUrl(effectiveUrl, isCookieBlockerActive: true))
+                return false;
+        }
+
+        return true;
     }
 
     private void BroadcastSettingsToPages()
