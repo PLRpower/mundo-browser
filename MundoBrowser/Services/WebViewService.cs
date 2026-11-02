@@ -397,7 +397,18 @@ public partial class WebViewService : IWebViewService, IDisposable
                     tab.AddressUrl = "about:preferences#general";
                 }
 
-                if (!string.IsNullOrEmpty(initialUrl)) webView.CoreWebView2.Navigate(initialUrl);
+                if (!string.IsNullOrEmpty(initialUrl))
+                {
+                    try
+                    {
+                        webView.CoreWebView2.Navigate(initialUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to navigate to initial URL '{initialUrl}': {ex.Message}");
+                        tab.IsLoading = false;
+                    }
+                }
                 else tab.IsLoading = false;
             }
 

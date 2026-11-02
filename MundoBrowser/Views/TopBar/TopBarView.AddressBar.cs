@@ -474,7 +474,7 @@ public partial class TopBarView
             : null;
     }
 
-    private static bool TryGetDirectNavigationUrl(
+    internal static bool TryGetDirectNavigationUrl(
         string input,
         out string navigationUrl,
         out string displayText)
@@ -483,18 +483,35 @@ public partial class TopBarView
         displayText = input;
 
         string trimmed = input.Trim('\"');
-        if (File.Exists(trimmed))
+        if (!trimmed.Contains('<') && !trimmed.Contains('>') && File.Exists(trimmed))
         {
             navigationUrl = new Uri(Path.GetFullPath(trimmed)).AbsoluteUri;
             displayText = trimmed;
             return true;
         }
 
-        if (input.StartsWith("about:", StringComparison.OrdinalIgnoreCase)
-            || input.Contains("://", StringComparison.Ordinal))
+        if (input.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        if (input.Contains(' '))
+        if (input.Contains("://", StringComparison.Ordinal))
+        {
+            if (Uri.TryCreate(input, UriKind.Absolute, out var parsedUri)
+                && (parsedUri.Scheme == Uri.UriSchemeHttp
+                    || parsedUri.Scheme == Uri.UriSchemeHttps
+                    || parsedUri.Scheme == Uri.UriSchemeFile
+                    || parsedUri.Scheme.Equals("edge", StringComparison.OrdinalIgnoreCase)
+                    || parsedUri.Scheme.Equals("chrome", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (parsedUri.Scheme != Uri.UriSchemeFile && string.IsNullOrWhiteSpace(parsedUri.Host))
+                    return false;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        if (input.Contains(' ') || input.Contains('<') || input.Contains('>') || input.Contains('@'))
             return false;
 
         if (IsLocalHost(input))
@@ -505,8 +522,16 @@ public partial class TopBarView
 
         if (input.Contains('.'))
         {
-            navigationUrl = "https://" + input;
-            return true;
+            string candidate = "https://" + input;
+            if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                && !string.IsNullOrWhiteSpace(uri.Host)
+                && Uri.CheckHostName(uri.Host) != UriHostNameType.Unknown
+                && uri.Host.Trim('.').Contains('.'))
+            {
+                navigationUrl = candidate;
+                return true;
+            }
         }
 
         return false;

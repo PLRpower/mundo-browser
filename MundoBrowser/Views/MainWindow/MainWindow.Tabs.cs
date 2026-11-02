@@ -70,7 +70,7 @@ public partial class MainWindow
                 vm.AddressBarText = tab.AddressUrl;
             }
         }
-        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException or ArgumentException)
         {
             // Tab switch cancelled or WebView recovering from crash
         }
@@ -103,7 +103,7 @@ public partial class MainWindow
                 catch { }
             }
         }
-        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException or ArgumentException)
         {
             // The tab was closed or webview crashed while its WebView was being initialized.
         }
@@ -122,7 +122,7 @@ public partial class MainWindow
             {
                 await SwitchToTabAsync(vm.SelectedTab);
             }
-            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException or ArgumentException)
             {
                 // The selected tab changed again or crashed while initializing.
             }
