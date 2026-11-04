@@ -164,7 +164,7 @@ public partial class MainWindow
             SyncWindowPlacementToViewModel();
             if (DataContext is MainViewModel vm)
             {
-                Task.Run(async () => await vm.SaveCurrentSessionAsync()).GetAwaiter().GetResult();
+                vm.SaveCurrentSessionImmediate();
             }
         }
         catch (Exception ex)

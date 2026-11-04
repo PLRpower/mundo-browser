@@ -1,4 +1,4 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.Helpers;
 using MundoBrowser.ViewModels;
@@ -214,7 +214,11 @@ public partial class MainWindow
         {
             try
             {
-                await HandleExtensionWebMessageAsync(webView, e.WebMessageAsJson);
+                var json = e.WebMessageAsJson;
+                if (TryHandleMediaWebMessage(tab, json))
+                    return;
+
+                await HandleExtensionWebMessageAsync(webView, json);
             }
             catch
             {
@@ -232,12 +236,11 @@ public partial class MainWindow
                 {
                     vm.ActiveMediaTab = tab;
                     vm.IsMediaBarVisible = true;
-                    _globalMediaTimer.Interval = TimeSpan.FromSeconds(2);
-                    if (!_globalMediaTimer.IsEnabled)
-                        _globalMediaTimer.Start();
+                    EnsureMediaObserverInstalled(webView);
                 }
                 else if (vm.ActiveMediaTab == tab)
                 {
+                    EnsureMediaObserverInstalled(webView);
                     var otherAudioTab = vm.Tabs.FirstOrDefault(t => t.IsPlayingAudio);
                     if (otherAudioTab != null)
                     {
@@ -329,51 +332,64 @@ public partial class MainWindow
 
         webView.CoreWebView2.SourceChanged += async (_, _) =>
         {
-            var source = webView.CoreWebView2.Source;
-            if (webView.CoreWebView2.DocumentTitle == "about:preferences"
-                || source.Contains("internals.mundobrowser"))
+            try
             {
-                if (source.Contains("settings.html"))
+                if (webView.CoreWebView2 == null) return;
+                var source = webView.CoreWebView2.Source;
+                if (webView.CoreWebView2.DocumentTitle == "about:preferences"
+                    || source.Contains("internals.mundobrowser"))
                 {
-                    string hash = source.Contains("#") ? source[source.IndexOf("#")..] : "#general";
-                    tab.AddressUrl = "about:preferences" + hash;
+                    if (source.Contains("settings.html"))
+                    {
+                        string hash = source.Contains("#") ? source[source.IndexOf("#")..] : "#general";
+                        tab.AddressUrl = "about:preferences" + hash;
+                    }
+                    else if (string.IsNullOrEmpty(tab.AddressUrl)
+                             || !tab.AddressUrl.StartsWith("about:preferences"))
+                    {
+                        tab.AddressUrl = "about:preferences#general";
+                    }
                 }
-                else if (string.IsNullOrEmpty(tab.AddressUrl)
-                         || !tab.AddressUrl.StartsWith("about:preferences"))
+                else if (source != "about:blank")
                 {
-                    tab.AddressUrl = "about:preferences#general";
-                }
-            }
-            else if (source != "about:blank")
-            {
-                tab.AddressUrl = source;
-            }
-
-            if (_viewModel is { } vm && vm.SelectedTab == tab)
-            {
-                if (TopBarControl?.AddressBar.IsFocused == false && FloatingTopBarControl?.AddressBar.IsFocused == false)
-                {
-                    TopBarControl.SetAddressBarText(tab.AddressUrl);
-                    FloatingTopBarControl?.SetAddressBarText(tab.AddressUrl);
-                    vm.AddressBarText = tab.AddressUrl;
+                    tab.AddressUrl = source;
                 }
 
-                CheckForExtensionStorePage(tab, tab.AddressUrl);
-                NotifyExtensionStatusToWebView(webView, tab.AddressUrl);
-            }
+                if (_viewModel is { } vm && vm.SelectedTab == tab)
+                {
+                    if (TopBarControl?.AddressBar.IsFocused == false && FloatingTopBarControl?.AddressBar.IsFocused == false)
+                    {
+                        TopBarControl.SetAddressBarText(tab.AddressUrl);
+                        FloatingTopBarControl?.SetAddressBarText(tab.AddressUrl);
+                        vm.AddressBarText = tab.AddressUrl;
+                    }
 
-            if (_viewModel is { } mainVm)
-                await mainVm.FaviconService.ResolveFaviconAsync(webView, tab);
+                    CheckForExtensionStorePage(tab, tab.AddressUrl);
+                    NotifyExtensionStatusToWebView(webView, tab.AddressUrl);
+                }
+
+                if (_viewModel is { } mainVm)
+                    await mainVm.FaviconService.ResolveFaviconAsync(webView, tab);
+            }
+            catch
+            {
+            }
         };
 
         webView.CoreWebView2.FaviconChanged += async (_, _) =>
         {
-            if (_viewModel is not { } vm)
-                return;
+            try
+            {
+                if (_viewModel is not { } vm)
+                    return;
 
-            bool shouldRefreshImmediately = vm.SelectedTab == tab || string.IsNullOrEmpty(tab.FaviconUrl);
-            if (shouldRefreshImmediately)
-                await vm.FaviconService.ResolveFaviconAsync(webView, tab, forceReload: true);
+                bool shouldRefreshImmediately = vm.SelectedTab == tab || string.IsNullOrEmpty(tab.FaviconUrl);
+                if (shouldRefreshImmediately)
+                    await vm.FaviconService.ResolveFaviconAsync(webView, tab, forceReload: true);
+            }
+            catch
+            {
+            }
         };
 
         webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) =>
@@ -438,12 +454,14 @@ public partial class MainWindow
 
                     popupWindow.Closed += (_, _) =>
                     {
+                        popupWindow.Content = null;
                         try { popupWebView.Dispose(); } catch { }
                     };
 
                     popupWindow.Show();
 
                     await popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
+                    await _webViewService.ConfigurePopupWebViewAsync(popupWebView, args.Uri);
                     args.NewWindow = popupWebView.CoreWebView2;
 
                     popupWebView.CoreWebView2.WindowCloseRequested += (_, _) =>

@@ -16,9 +16,9 @@ public partial class FaviconService : IFaviconService, IDisposable
 
     private readonly string _faviconsPath;
     private readonly HttpClient _httpClient;
-    private readonly Dictionary<string, string> _domainToRelativePath = [];
-    private readonly Dictionary<string, string> _domainToAbsoluteUrl = [];
-    private readonly Dictionary<string, int> _domainQuality = [];
+    private readonly Dictionary<string, string> _domainToRelativePath = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _domainToAbsoluteUrl = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _domainQuality = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _cacheLock = new();
 
     private const int QualityFallback = 0;
@@ -38,14 +38,22 @@ public partial class FaviconService : IFaviconService, IDisposable
         Task.Run(PreloadCache);
     }
 
-    private readonly Dictionary<string, Task<string?>> _activeResolutions = [];
-    private readonly Dictionary<string, DateTime> _failedDomains = [];
-    private readonly Dictionary<string, DateTime> _lastForcedResolutions = [];
+    private readonly Dictionary<string, Task<string?>> _activeResolutions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _failedDomains = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _lastForcedResolutions = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task ResolveFaviconAsync(WebView2 wv, TabViewModel tab, bool forceReload = false)
     {
-        if (wv.CoreWebView2 == null) return;
-        var source = wv.CoreWebView2.Source;
+        string? source;
+        try
+        {
+            if (wv.CoreWebView2 == null) return;
+            source = wv.CoreWebView2.Source;
+        }
+        catch
+        {
+            return;
+        }
         if (string.IsNullOrEmpty(source)) return;
 
         if (!Uri.TryCreate(source, UriKind.Absolute, out var sourceUri)

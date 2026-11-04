@@ -5,6 +5,8 @@ namespace MundoBrowser.Services;
 
 public partial class WebViewService
 {
+    private const double SuspendInactiveMinutes = 3.0;
+
     public bool IsTabProtected(TabViewModel tab, WebView2? webView = null)
     {
         if (_disposed) return false;
@@ -81,13 +83,22 @@ public partial class WebViewService
 
                         if (IsTabProtected(tab, webView))
                         {
-                            TrySetNormalMemoryTarget(webView);
+                            TryResumeWebView(webView);
                             continue;
                         }
 
-                        if ((now - tab.LastAccessed).TotalMinutes > EcoModeMinutes)
+                        double inactiveMinutes = (now - tab.LastAccessed).TotalMinutes;
+                        if (inactiveMinutes > EcoModeMinutes)
                         {
                             tabsToDiscard.Enqueue(tab);
+                        }
+                        else
+                        {
+                            TrySetLowMemoryTarget(webView);
+                            if (inactiveMinutes >= SuspendInactiveMinutes && !tab.IsLoading)
+                            {
+                                TrySuspendWebView(webView);
+                            }
                         }
                     }
 
@@ -138,30 +149,32 @@ public partial class WebViewService
         if (!force && IsTabProtected(tab))
             return;
 
-        if (_tabContainers.TryGetValue(tab, out var container))
+        TabContainer? container;
+        WebView2? webView = null;
+        lock (_initializationTasks)
         {
-            if (container.ContainerGrid.Parent is System.Windows.Controls.Panel parent)
+            if (_tabContainers.Remove(tab, out container))
             {
-                parent.Children.Remove(container.ContainerGrid);
+                _webViews.Remove(tab);
+                _adBlockScriptIds.Remove(container.MainWebView);
             }
-            else
+            else if (_webViews.Remove(tab, out webView))
             {
-                _container?.Children.Remove(container.ContainerGrid);
+                _adBlockScriptIds.Remove(webView);
             }
+        }
 
+        if (container != null)
+        {
+            RemoveFromParentPanel(container.ContainerGrid);
             try { container.MainWebView.Dispose(); } catch { }
-            _tabContainers.Remove(tab);
-            _webViews.Remove(tab);
-            _adBlockScriptIds.Remove(container.MainWebView);
             tab.IsLoading = false;
             tab.IsDiscarded = true;
         }
-        else if (_webViews.TryGetValue(tab, out var webView))
+        else if (webView != null)
         {
-            _container?.Children.Remove(webView);
+            RemoveFromParentPanel(webView);
             try { webView.Dispose(); } catch { }
-            _webViews.Remove(tab);
-            _adBlockScriptIds.Remove(webView);
             tab.IsLoading = false;
             tab.IsDiscarded = true;
         }

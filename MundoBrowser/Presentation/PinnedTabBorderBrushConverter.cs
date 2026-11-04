@@ -28,8 +28,8 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
 
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
     {
-        string faviconUrl = values.ElementAtOrDefault(0) is string fav && fav != DependencyProperty.UnsetValue.ToString() ? fav : string.Empty;
-        string pageUrl = values.ElementAtOrDefault(1) is string page && page != DependencyProperty.UnsetValue.ToString() ? page : string.Empty;
+        string faviconUrl = values.ElementAtOrDefault(0) is string fav ? fav : string.Empty;
+        string pageUrl = values.ElementAtOrDefault(1) is string page ? page : string.Empty;
 
         if (string.IsNullOrEmpty(faviconUrl) && string.IsNullOrEmpty(pageUrl))
             return DefaultBrush;
@@ -65,6 +65,8 @@ public class PinnedTabBorderBrushConverter : IMultiValueConverter
                         var colors = ExtractPositionedColors(faviconUrl);
                         if (colors.Count > 0)
                         {
+                            if (ExtractedColorsCache.Count > MaxCacheEntries)
+                                ExtractedColorsCache.Clear();
                             ExtractedColorsCache[faviconUrl] = colors;
                             System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
                             {

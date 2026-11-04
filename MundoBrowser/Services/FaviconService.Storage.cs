@@ -11,9 +11,9 @@ public partial class FaviconService
         if (!Directory.Exists(_faviconsPath)) return;
         try
         {
-            var relDict = new Dictionary<string, string>();
-            var absDict = new Dictionary<string, string>();
-            var qualDict = new Dictionary<string, int>();
+            var relDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var absDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var qualDict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in Directory.EnumerateFiles(_faviconsPath, "*.*"))
             {
@@ -246,20 +246,27 @@ public partial class FaviconService
             expectedLength is > 0
                 ? (int)Math.Min(expectedLength.Value, MaxFaviconDownloadBytes)
                 : 0);
-        var buffer = new byte[81920];
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(16384);
         int total = 0;
 
-        while (true)
+        try
         {
-            int read = await input.ReadAsync(buffer);
-            if (read == 0)
-                break;
+            while (true)
+            {
+                int read = await input.ReadAsync(buffer);
+                if (read == 0)
+                    break;
 
-            total += read;
-            if (total > MaxFaviconDownloadBytes)
-                return null;
+                total += read;
+                if (total > MaxFaviconDownloadBytes)
+                    return null;
 
-            await output.WriteAsync(buffer.AsMemory(0, read));
+                await output.WriteAsync(buffer.AsMemory(0, read));
+            }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
         }
 
         return total == 0 ? null : output.ToArray();

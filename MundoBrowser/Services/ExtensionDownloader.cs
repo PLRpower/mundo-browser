@@ -220,20 +220,27 @@ public class ExtensionDownloader
             content.Headers.ContentLength is > 0
                 ? (int)Math.Min(content.Headers.ContentLength.Value, MaxExtensionDownloadBytes)
                 : 0);
-        var buffer = new byte[81920];
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(16384);
         int total = 0;
 
-        while (true)
+        try
         {
-            int read = await input.ReadAsync(buffer);
-            if (read == 0)
-                break;
+            while (true)
+            {
+                int read = await input.ReadAsync(buffer);
+                if (read == 0)
+                    break;
 
-            total = checked(total + read);
-            if (total > MaxExtensionDownloadBytes)
-                return null;
+                total = checked(total + read);
+                if (total > MaxExtensionDownloadBytes)
+                    return null;
 
-            await output.WriteAsync(buffer.AsMemory(0, read));
+                await output.WriteAsync(buffer.AsMemory(0, read));
+            }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
         }
 
         return total == 0 ? null : output.ToArray();

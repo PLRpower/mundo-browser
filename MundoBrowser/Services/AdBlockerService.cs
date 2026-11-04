@@ -86,8 +86,11 @@ public class AdBlockerService : IAdBlockerService
         "osano.com", "fundingchoicesmessages.google.com", "consent.google.com"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    private const int MaxBlockedHostCacheEntries = 4096;
+
     private readonly IAppSettingsService _settingsService;
     private volatile FrozenSet<string> _activeBlockedDomains;
+    private volatile string? _cachedInjectionScript;
     private bool _isAdBlockerEnabled;
     private bool _isCookieBlockerEnabled;
 
@@ -100,6 +103,7 @@ public class AdBlockerService : IAdBlockerService
         {
             if (_isAdBlockerEnabled == value) return;
             _isAdBlockerEnabled = value;
+            _cachedInjectionScript = null;
             _settingsService.Update(settings => settings.IsAdBlockerEnabled = value);
         }
     }
@@ -111,6 +115,7 @@ public class AdBlockerService : IAdBlockerService
         {
             if (_isCookieBlockerEnabled == value) return;
             _isCookieBlockerEnabled = value;
+            _cachedInjectionScript = null;
             _settingsService.Update(settings => settings.IsCookieBlockerEnabled = value);
         }
     }
@@ -174,19 +179,23 @@ public class AdBlockerService : IAdBlockerService
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
 
-        string host = uri.IdnHost.TrimEnd('.');
+        ReadOnlySpan<char> host = uri.IdnHost.AsSpan().TrimEnd('.');
         if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             host = host[4..];
 
-        if (!isCookieBlockerActive && IsDomainInSet(host, CookieConsentDomains))
-            return false;
+        if (IsDomainInSet(host, CookieConsentDomains))
+            return isCookieBlockerActive;
 
-        if (_blockedHostCache.TryGetValue(host, out bool isBlocked))
+        var cacheLookup = _blockedHostCache.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (cacheLookup.TryGetValue(host, out bool isBlocked))
             return isBlocked;
+
+        if (_blockedHostCache.Count > MaxBlockedHostCacheEntries)
+            _blockedHostCache.Clear();
 
         if (IsDomainInSet(host, _activeBlockedDomains))
         {
-            _blockedHostCache[host] = true;
+            cacheLookup[host] = true;
             return true;
         }
 
@@ -204,16 +213,17 @@ public class AdBlockerService : IAdBlockerService
             }
         }
 
-        _blockedHostCache[host] = false;
+        cacheLookup[host] = false;
         return false;
     }
 
-    private static bool IsDomainInSet(string host, FrozenSet<string> domainSet)
+    private static bool IsDomainInSet(ReadOnlySpan<char> host, FrozenSet<string> domainSet)
     {
-        string currentHost = host;
-        while (!string.IsNullOrEmpty(currentHost))
+        var lookup = domainSet.GetAlternateLookup<ReadOnlySpan<char>>();
+        ReadOnlySpan<char> currentHost = host;
+        while (!currentHost.IsEmpty)
         {
-            if (domainSet.Contains(currentHost))
+            if (lookup.Contains(currentHost))
                 return true;
 
             int dotIndex = currentHost.IndexOf('.');
@@ -266,6 +276,7 @@ public class AdBlockerService : IAdBlockerService
         string? host = GetSiteHost(url);
         if (host == null) return false;
 
+        _cachedInjectionScript = null;
         _settingsService.Update(settings =>
         {
             settings.AdBlockDisabledSites.RemoveAll(site => IsSiteMatch(host, site));
@@ -291,6 +302,7 @@ public class AdBlockerService : IAdBlockerService
         string? host = GetSiteHost(url);
         if (host == null) return false;
 
+        _cachedInjectionScript = null;
         _settingsService.Update(settings =>
         {
             settings.CookieBlockDisabledSites.RemoveAll(site => IsSiteMatch(host, site));
@@ -491,6 +503,10 @@ public class AdBlockerService : IAdBlockerService
         if (!adBlockGlobal && !cookieBlockGlobal)
             return string.Empty;
 
+        var cached = _cachedInjectionScript;
+        if (cached != null)
+            return cached;
+
         string serializedAdCss = JsonSerializer.Serialize(adBlockGlobal ? GetCosmeticCss() : string.Empty);
         string serializedCookieCss = JsonSerializer.Serialize(cookieBlockGlobal ? GetCookieCosmeticCss() : string.Empty);
         string serializedAdDisabled = JsonSerializer.Serialize(_settingsService.Current.AdBlockDisabledSites);
@@ -498,7 +514,7 @@ public class AdBlockerService : IAdBlockerService
         string ytScript = adBlockGlobal ? GetYouTubeAdBlockScript() : string.Empty;
         string cookieScript = cookieBlockGlobal ? GetCookieRemovalScript() : string.Empty;
 
-        return $$"""
+        string script = $$"""
             (function() {
                 const normalizeHost = (h) => {
                     if (!h) return '';
@@ -566,5 +582,8 @@ public class AdBlockerService : IAdBlockerService
                 }
             })();
             """;
+
+        _cachedInjectionScript = script;
+        return script;
     }
 }

@@ -12,41 +12,6 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <local:PinnedTabBorderBrushConverter x:Key="PinnedTabBorderBrushConverter"/>
 
-        <ControlTemplate x:Key="TabLoadingSpinnerTemplate" TargetType="Control">
-            <Viewbox Stretch="Uniform">
-                <Grid Width="16" Height="16">
-                    <Ellipse Width="13.6" Height="13.6" Stroke="#33FFFFFF" StrokeThickness="1.8"/>
-                    <Canvas x:Name="SpinnerCanvas" Width="16" Height="16" RenderTransformOrigin="0.5,0.5">
-                        <Canvas.RenderTransform>
-                            <RotateTransform Angle="0"/>
-                        </Canvas.RenderTransform>
-                        <Path Data="M 8,1.9 A 6.1,6.1 0 1 1 1.9,8"
-                              Stroke="#E0E0E0"
-                              StrokeThickness="1.8"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round"/>
-                    </Canvas>
-                </Grid>
-            </Viewbox>
-            <ControlTemplate.Triggers>
-                <Trigger Property="Visibility" Value="Visible">
-                    <Trigger.EnterActions>
-                        <BeginStoryboard x:Name="SpinStoryboard">
-                            <Storyboard RepeatBehavior="Forever">
-                                <DoubleAnimation Storyboard.TargetName="SpinnerCanvas"
-                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                 From="0" To="360"
-                                                 Duration="0:0:0.75"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.EnterActions>
-                    <Trigger.ExitActions>
-                        <StopStoryboard BeginStoryboardName="SpinStoryboard"/>
-                    </Trigger.ExitActions>
-                </Trigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
-
         <!-- Global focus override for sidebar -->
         <Style TargetType="Button">
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -125,6 +90,7 @@
                                                 CornerRadius="9"
                                                 BorderThickness="4"
                                                 Opacity="0"
+                                                CacheMode="BitmapCache"
                                                 IsHitTestVisible="False">
                                             <Border.BorderBrush>
                                                 <MultiBinding Converter="{StaticResource PinnedTabBorderBrushConverter}">
@@ -148,7 +114,7 @@
                                                     <Control Width="20" Height="20" Template="{StaticResource TabLoadingSpinnerTemplate}"
                                                              Visibility="{Binding Tab.IsLoading, Converter={StaticResource BoolToVis}}"/>
                                                     <!-- Image Favicon -->
-                                                    <Image Source="{Binding Tab.FaviconUrl}" Width="20" Height="20" Stretch="Uniform" 
+                                                    <Image Source="{Binding Tab.FaviconUrl, Converter={x:Static local:Converters.FaviconImage}}" Width="20" Height="20" Stretch="Uniform" 
                                                            SnapsToDevicePixels="True" UseLayoutRounding="True"
                                                            RenderOptions.BitmapScalingMode="HighQuality">
                                                         <Image.Style>
@@ -211,20 +177,6 @@
                                             <Setter TargetName="SelectionBorder" Property="Opacity" Value="1"/>
                                             <Setter TargetName="SelectionGlow" Property="Opacity" Value="0.55"/>
                                             <Setter TargetName="border" Property="Background" Value="#B0202023"/>
-                                            <DataTrigger.EnterActions>
-                                                <BeginStoryboard x:Name="SelectedGlowPulse">
-                                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                                                        <DoubleAnimation Storyboard.TargetName="SelectionGlow"
-                                                                         Storyboard.TargetProperty="Opacity"
-                                                                         From="0.35"
-                                                                         To="0.72"
-                                                                         Duration="0:0:1.4"/>
-                                                    </Storyboard>
-                                                </BeginStoryboard>
-                                            </DataTrigger.EnterActions>
-                                            <DataTrigger.ExitActions>
-                                                <StopStoryboard BeginStoryboardName="SelectedGlowPulse"/>
-                                            </DataTrigger.ExitActions>
                                         </DataTrigger>
                                         <!-- Disabled hover effect on pinned tabs / favicons -->
 
@@ -430,7 +382,7 @@
                                             </TextBlock.Style>
                                         </TextBlock>
                                         <!-- Actual Favicon -->
-                                        <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                        <Image Source="{Binding FaviconUrl, Converter={x:Static local:Converters.FaviconImage}}" Width="16" Height="16" Stretch="Uniform" 
                                                SnapsToDevicePixels="True" UseLayoutRounding="True"
                                                RenderOptions.BitmapScalingMode="HighQuality">
                                             <Image.Style>
@@ -528,7 +480,7 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
                                             <!-- Actual Favicon -->
-                                            <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                            <Image Source="{Binding FaviconUrl, Converter={x:Static local:Converters.FaviconImage}}" Width="16" Height="16" Stretch="Uniform" 
                                                    SnapsToDevicePixels="True" UseLayoutRounding="True"
                                                    RenderOptions.BitmapScalingMode="HighQuality">
                                                 <Image.Style>
@@ -593,7 +545,7 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
                                             <!-- Actual Favicon -->
-                                            <Image Source="{Binding FaviconUrl}" Width="16" Height="16" Stretch="Uniform" 
+                                            <Image Source="{Binding FaviconUrl, Converter={x:Static local:Converters.FaviconImage}}" Width="16" Height="16" Stretch="Uniform" 
                                                    SnapsToDevicePixels="True" UseLayoutRounding="True"
                                                    RenderOptions.BitmapScalingMode="HighQuality">
                                                 <Image.Style>

@@ -252,9 +252,27 @@ namespace MundoBrowser.ViewModels
             }
             catch { }
 
-            await HistoryManager.FlushAsync();
             var snapshot = CreateSessionDataSnapshot();
-            await SessionManager.SaveSessionAsync(snapshot);
+            await HistoryManager.FlushAsync().ConfigureAwait(false);
+            await SessionManager.SaveSessionAsync(snapshot).ConfigureAwait(false);
+        }
+
+        internal void SaveCurrentSessionImmediate()
+        {
+            var pendingSave = Interlocked.Exchange(ref _sessionSaveDebounceCts, null);
+            try
+            {
+                pendingSave?.Cancel();
+                pendingSave?.Dispose();
+            }
+            catch { }
+
+            var snapshot = CreateSessionDataSnapshot();
+            Task.Run(async () =>
+            {
+                await HistoryManager.FlushAsync().ConfigureAwait(false);
+                await SessionManager.SaveSessionAsync(snapshot).ConfigureAwait(false);
+            }).GetAwaiter().GetResult();
         }
 
         private void RestoreSession(SessionData session)

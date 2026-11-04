@@ -49,11 +49,10 @@ public static partial class AdBlockListDownloader
         {
             try
             {
-                var cachedLines = await File.ReadAllLinesAsync(CacheFilePath, cancellationToken).ConfigureAwait(false);
-                foreach (var line in cachedLines)
+                await foreach (var line in File.ReadLinesAsync(CacheFilePath, cancellationToken).ConfigureAwait(false))
                 {
                     string trimmed = line.Trim();
-                    if (!string.IsNullOrEmpty(trimmed) && IsValidDomain(trimmed))
+                    if (trimmed.Length >= 3)
                     {
                         domains.Add(trimmed);
                     }

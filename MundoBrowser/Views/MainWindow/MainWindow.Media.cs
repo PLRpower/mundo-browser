@@ -1,10 +1,111 @@
 using System.Text.Json;
+using Microsoft.Web.WebView2.Wpf;
 using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
 
 public partial class MainWindow
 {
+    private const string MediaObserverInitScript = """
+        (function() {
+            if (!window.__mundoMediaObserverInstalled) {
+                window.__mundoMediaObserverInstalled = true;
+                let lastTimeUpdate = 0;
+
+                const sendMediaState = () => {
+                    try {
+                        if (!window.chrome || !window.chrome.webview) return;
+                        const media = document.querySelector('video, audio');
+                        if (!media) {
+                            window.chrome.webview.postMessage({ type: 'mediaState', hasMedia: false });
+                            return;
+                        }
+                        let title = document.title || '';
+                        let artist = '';
+                        if (navigator.mediaSession && navigator.mediaSession.metadata) {
+                            title = navigator.mediaSession.metadata.title || title;
+                            artist = navigator.mediaSession.metadata.artist || '';
+                        }
+                        window.chrome.webview.postMessage({
+                            type: 'mediaState',
+                            hasMedia: true,
+                            title: title,
+                            artist: artist,
+                            position: Number.isFinite(media.currentTime) ? media.currentTime : 0,
+                            duration: Number.isFinite(media.duration) ? media.duration : 0,
+                            paused: Boolean(media.paused),
+                            muted: Boolean(media.muted)
+                        });
+                    } catch (e) {}
+                };
+
+                window.__mundoSendMediaState = sendMediaState;
+
+                const events = ['play', 'pause', 'volumechange', 'loadedmetadata', 'durationchange', 'seeked', 'ended', 'emptied'];
+                for (let i = 0; i < events.length; i++) {
+                    document.addEventListener(events[i], sendMediaState, true);
+                }
+
+                document.addEventListener('timeupdate', () => {
+                    const now = Date.now();
+                    if (now - lastTimeUpdate >= 2500) {
+                        lastTimeUpdate = now;
+                        sendMediaState();
+                    }
+                }, true);
+            }
+            if (window.__mundoSendMediaState) {
+                window.__mundoSendMediaState();
+            }
+        })();
+        """;
+
+    private static void EnsureMediaObserverInstalled(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 != null)
+            {
+                _ = webView.CoreWebView2.ExecuteScriptAsync(MediaObserverInitScript);
+            }
+        }
+        catch { }
+    }
+
+    private bool TryHandleMediaWebMessage(TabViewModel tab, string json)
+    {
+        if (string.IsNullOrEmpty(json) || !json.Contains("\"mediaState\"", StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            var data = JsonSerializer.Deserialize<MediaData>(json);
+            if (data == null || data.type != "mediaState")
+                return false;
+
+            if (data.hasMedia)
+            {
+                if (!tab.IsSeeking) tab.MediaPosition = data.position;
+                tab.MediaDuration = data.duration;
+                tab.MediaTitle = data.title;
+                tab.MediaArtist = data.artist;
+                tab.IsMediaPaused = data.paused;
+                tab.IsMediaMuted = data.muted;
+                _globalMediaTimer.Stop();
+            }
+            else if (DataContext is MainViewModel vm && vm.ActiveMediaTab == tab && !tab.IsPlayingAudio)
+            {
+                _globalMediaTimer.Stop();
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async void UpdateActiveMediaInfo(object? sender, EventArgs e)
     {
         if (DataContext is not MainViewModel vm || vm.ActiveMediaTab == null || !vm.IsMediaBarVisible)
@@ -160,12 +261,18 @@ public partial class MainWindow
 
         if (!string.IsNullOrEmpty(script))
         {
-            try { await webView.CoreWebView2.ExecuteScriptAsync(script); } catch { }
+            try
+            {
+                await webView.CoreWebView2.ExecuteScriptAsync(script);
+                EnsureMediaObserverInstalled(webView);
+            }
+            catch { }
         }
     }
 
     public class MediaData
     {
+        public string? type { get; set; }
         public string title { get; set; } = "";
         public string artist { get; set; } = "";
         public double position { get; set; }

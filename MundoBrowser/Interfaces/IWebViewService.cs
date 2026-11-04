@@ -115,5 +115,6 @@ namespace MundoBrowser.Interfaces
         /// </summary>
         Task ToggleDevToolsForTabAsync(TabViewModel tab);
         Task RefreshAdBlockerAsync(WebView2? targetWebView = null);
+        Task ConfigurePopupWebViewAsync(WebView2 popupWebView, string? initialUrl);
     }
 }

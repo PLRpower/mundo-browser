@@ -396,7 +396,15 @@ namespace MundoBrowser.ViewModels
             var toRemove = Tabs.Where(t => t != SelectedTab).ToList();
             if (toRemove.Count == 0) return;
 
-            foreach (var tab in toRemove) Tabs.Remove(tab);
+            if (IsSplitViewActive)
+                DisableSplitView();
+
+            foreach (var tab in toRemove)
+            {
+                if (ActiveMediaTab == tab)
+                    ActiveMediaTab = null;
+                Tabs.Remove(tab);
+            }
         }
     }
 }

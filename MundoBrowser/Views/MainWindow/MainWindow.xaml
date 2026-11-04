@@ -160,7 +160,7 @@
             <Grid Height="40" ClipToBounds="True" Background="Transparent"
                   MouseLeave="FloatingTopBarContent_MouseLeave"
                   MouseMove="FloatingTopBarContent_MouseMove">
-                <Border x:Name="FloatingTopBarContent" Background="Transparent" BorderThickness="0">
+                <Border x:Name="FloatingTopBarContent" Background="Transparent" BorderThickness="0" DataContext="{x:Null}">
                     <ui:TitleBar x:Name="FloatingTitleBar"
                                  Height="40"
                                  HorizontalContentAlignment="Stretch"
@@ -209,9 +209,8 @@
             <!-- La hauteur du popup est ajustée par rapport au contenu principal -->
             <Grid x:Name="FloatingSidebarRootGrid" Width="{Binding SidebarWidth}" Height="{Binding ActualHeight, ElementName=ContentRow}" ClipToBounds="True" MouseLeave="FloatingSidebarContent_MouseLeave">
                 <Border x:Name="FloatingSidebarContent" Background="{DynamicResource OverlaySurfaceBrush}" 
-                        CornerRadius="0,15,15,0" BorderBrush="#383838" BorderThickness="0,1,1,1" Margin="0,44,0,20">
-                    <local:SidebarView x:Name="FloatingSidebarControl" />
-                </Border>
+                        CornerRadius="0,15,15,0" BorderBrush="#383838" BorderThickness="0,1,1,1" Margin="0,44,0,20"
+                        DataContext="{x:Null}"/>
             </Grid>
         </Popup>
 

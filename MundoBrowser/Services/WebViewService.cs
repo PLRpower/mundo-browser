@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -47,13 +47,27 @@ public partial class WebViewService : IWebViewService, IDisposable
     public CoreWebView2Environment? WebViewEnvironment => _environment;
     public event Action? BrowserProcessExited;
 
-    public WebView2? GetWebViewForTab(TabViewModel tab) => _webViews.TryGetValue(tab, out var wv) ? wv : null;
-
-    public WebView2? GetAnyActiveWebView() => _activeWebView ?? _webViews.Values.FirstOrDefault(w =>
+    public WebView2? GetWebViewForTab(TabViewModel tab)
     {
-        try { return w.CoreWebView2 != null; }
-        catch { return false; }
-    });
+        lock (_initializationTasks)
+        {
+            return _webViews.TryGetValue(tab, out var wv) ? wv : null;
+        }
+    }
+
+    public WebView2? GetAnyActiveWebView()
+    {
+        if (_activeWebView != null) return _activeWebView;
+        lock (_initializationTasks)
+        {
+            foreach (var w in _webViews.Values)
+            {
+                try { if (w.CoreWebView2 != null) return w; }
+                catch { }
+            }
+        }
+        return null;
+    }
 
     public IReadOnlyList<WebView2> GetAllWebViews()
     {
@@ -89,22 +103,13 @@ public partial class WebViewService : IWebViewService, IDisposable
             AdditionalBrowserArguments = string.Join(" ",
                 "--enable-gpu-rasterization",
                 "--enable-zero-copy",
-                "--ignore-gpu-blocklist",
-                "--enable-unsafe-webgpu",
-                "--enable-features=WebGPU,WebGPUService,CanvasOopRasterization,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
+                "--enable-features=WebGPU,CanvasOopRasterization,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
                 "--use-angle=d3d11",
-                "--force_high_performance_gpu",
-                "--gpu-preference=2",
                 "--enable-webgl",
-                "--enable-webgl2-compute-context",
-                "--num-raster-threads=4",
                 "--enable-smooth-scrolling",
                 "--enable-accelerated-2d-canvas",
                 "--enable-accelerated-video-decode",
-
-                "--disable-features=AutomaticTabDiscarding,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling",
-                "--disable-background-timer-throttling",
-                "--disable-renderer-backgrounding",
+                "--disable-features=AutomaticTabDiscarding",
                 "--enable-quic"
             )
         };
@@ -266,9 +271,25 @@ public partial class WebViewService : IWebViewService, IDisposable
 
             // AdBlocker Integration (Network and Cosmetic)
             var adBlocker = _adBlockerService;
+            string currentPageUrl = tab.Url;
+            bool isAdBlockActiveForPage = true;
+            bool isCookieBlockActiveForPage = true;
+
+            void RefreshPageProtectionState(string? candidateUrl = null)
+            {
+                if (!string.IsNullOrWhiteSpace(candidateUrl) && !candidateUrl.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+                    currentPageUrl = candidateUrl;
+
+                if (adBlocker == null) return;
+                string? effectiveUrl = ResolveEffectiveSiteUrl(tab, currentPageUrl, adBlocker);
+                isAdBlockActiveForPage = IsAdBlockerActiveForTab(tab, effectiveUrl, adBlocker);
+                isCookieBlockActiveForPage = IsCookieBlockerActiveForTab(tab, effectiveUrl, adBlocker);
+                ApplyTrackingPrevention(webView, effectiveUrl);
+            }
+
             if (adBlocker != null)
             {
-                string currentPageUrl = tab.Url;
+                RefreshPageProtectionState(currentPageUrl);
 
                 // Inject adblock, cosmetic CSS, YouTube skipper and cookie modal scripts on document creation
                 string initialScript = adBlocker.GetInjectionScript();
@@ -278,43 +299,28 @@ public partial class WebViewService : IWebViewService, IDisposable
                     _adBlockScriptIds[webView] = scriptId;
                 }
 
-                // Intercept web resources with dynamic site status
-                webView.CoreWebView2.AddWebResourceRequestedFilter(
-                    "*",
-                    CoreWebView2WebResourceContext.Script);
+                // Intercept web resources with cached site status
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Script);
                 webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Image);
                 webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.XmlHttpRequest);
                 webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Fetch);
                 webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Other);
 
-                webView.CoreWebView2.WebResourceRequested += (s, e) =>
+                webView.CoreWebView2.WebResourceRequested += (_, e) =>
                 {
-                    string? effectiveUrl = ResolveEffectiveSiteUrl(tab, currentPageUrl, adBlocker);
-                    if (!IsAdBlockerActiveForTab(tab, effectiveUrl, adBlocker)) return;
+                    if (!isAdBlockActiveForPage || !adBlocker.IsAdBlockerEnabled) return;
 
-                    bool cookieBlockActive = IsCookieBlockerActiveForTab(tab, effectiveUrl, adBlocker);
+                    bool cookieBlockActive = isCookieBlockActiveForPage && adBlocker.IsCookieBlockerEnabled;
                     if (adBlocker.ShouldBlockUrl(e.Request.Uri, cookieBlockActive))
                     {
-                        var response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
-                            null, 204, "No Content", ""
-                        );
-                        e.Response = response;
+                        e.Response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
+                            null, 204, "No Content", "");
                     }
-                };
-
-                webView.CoreWebView2.NavigationStarting += (_, e) =>
-                {
-                    if (!string.IsNullOrWhiteSpace(e.Uri) && !e.Uri.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
-                        currentPageUrl = e.Uri;
-                    ApplyTrackingPrevention(webView, ResolveEffectiveSiteUrl(tab, currentPageUrl, adBlocker));
                 };
 
                 webView.CoreWebView2.SourceChanged += (_, _) =>
                 {
-                    var src = webView.CoreWebView2.Source;
-                    if (!string.IsNullOrWhiteSpace(src) && !src.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
-                        currentPageUrl = src;
-                    ApplyTrackingPrevention(webView, ResolveEffectiveSiteUrl(tab, currentPageUrl, adBlocker));
+                    RefreshPageProtectionState(webView.CoreWebView2.Source);
                 };
             }
 
@@ -327,17 +333,23 @@ public partial class WebViewService : IWebViewService, IDisposable
             webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
                 "internals.mundobrowser", assetsPath, CoreWebView2HostResourceAccessKind.Allow);
 
-            webView.CoreWebView2.NavigationStarting += (s, e) =>
+            webView.CoreWebView2.NavigationStarting += (_, e) =>
             {
                 string uri = e.Uri;
                 // Si on demande une page de paramètres
-                if (uri.StartsWith("about:preferences") || uri.StartsWith("edge://preferences") || uri.StartsWith("chrome://settings"))
+                if (uri.StartsWith("about:preferences", StringComparison.OrdinalIgnoreCase)
+                    || uri.StartsWith("edge://preferences", StringComparison.OrdinalIgnoreCase)
+                    || uri.StartsWith("chrome://settings", StringComparison.OrdinalIgnoreCase))
                 {
                     e.Cancel = true;
-                    string hash = uri.Contains("#") ? uri.Substring(uri.IndexOf("#")) : "#general";
+                    int hashIdx = uri.IndexOf('#');
+                    string hash = hashIdx >= 0 ? uri[hashIdx..] : "#general";
                     tab.AddressUrl = "about:preferences" + hash;
                     webView.CoreWebView2.Navigate("https://internals.mundobrowser/settings.html" + hash);
+                    return;
                 }
+
+                RefreshPageProtectionState(uri);
             };
 
             webView.CoreWebView2.ProcessFailed += (sender, args) =>
@@ -416,20 +428,20 @@ public partial class WebViewService : IWebViewService, IDisposable
             {
                 if (_disposed || _removedTabs.Contains(tab))
                     throw new ObjectDisposedException(nameof(WebViewService));
-            }
 
-            _webViews[tab] = webView;
-            _tabContainers[tab] = new TabContainer
-            {
-                ContainerGrid = containerGrid,
-                MainWebView = webView
-            };
+                _webViews[tab] = webView;
+                _tabContainers[tab] = new TabContainer
+                {
+                    ContainerGrid = containerGrid,
+                    MainWebView = webView
+                };
+            }
             return webView;
         }
         catch (Exception ex)
         {
             tab.IsLoading = false;
-            if (containerGrid != null) _container?.Children.Remove(containerGrid);
+            RemoveFromParentPanel(containerGrid);
             webView?.Dispose();
 
             System.Diagnostics.Debug.WriteLine($"WebView initialization failed: {ex.Message}");
@@ -494,6 +506,8 @@ public partial class WebViewService : IWebViewService, IDisposable
             {
                 container.ContainerGrid.Visibility = Visibility.Collapsed;
                 container.MainWebView.Visibility = Visibility.Collapsed;
+                if (!IsTabProtected(otherTab, container.MainWebView))
+                    TrySetLowMemoryTarget(container.MainWebView);
             }
         }
 
@@ -569,6 +583,8 @@ public partial class WebViewService : IWebViewService, IDisposable
                     ReParentContainer(container.ContainerGrid, _container);
                     container.ContainerGrid.Visibility = Visibility.Collapsed;
                     container.MainWebView.Visibility = Visibility.Collapsed;
+                    if (!IsTabProtected(tab, container.MainWebView))
+                        TrySetLowMemoryTarget(container.MainWebView);
                 }
             }
 
@@ -603,6 +619,8 @@ public partial class WebViewService : IWebViewService, IDisposable
                 {
                     container.ContainerGrid.Visibility = Visibility.Collapsed;
                     container.MainWebView.Visibility = Visibility.Collapsed;
+                    if (!IsTabProtected(tab, container.MainWebView))
+                        TrySetLowMemoryTarget(container.MainWebView);
                 }
             }
         }
@@ -620,14 +638,37 @@ public partial class WebViewService : IWebViewService, IDisposable
         newParent.Children.Add(grid);
     }
 
+    private void RemoveFromParentPanel(UIElement? element)
+    {
+        if (element == null) return;
+        if (element is FrameworkElement { Parent: System.Windows.Controls.Panel parentPanel })
+            parentPanel.Children.Remove(element);
+        else
+            _container?.Children.Remove(element);
+    }
+
     private static void TryResumeWebView(WebView2 webView)
     {
         try
         {
             if (webView.CoreWebView2 != null)
             {
-                webView.CoreWebView2.Resume();
-                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+                if (webView.CoreWebView2.IsSuspended)
+                    webView.CoreWebView2.Resume();
+                if (webView.CoreWebView2.MemoryUsageTargetLevel != CoreWebView2MemoryUsageTargetLevel.Normal)
+                    webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+            }
+        }
+        catch { }
+    }
+
+    private static void TrySuspendWebView(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 is { IsSuspended: false, IsDocumentPlayingAudio: false })
+            {
+                _ = webView.CoreWebView2.TrySuspendAsync();
             }
         }
         catch { }
@@ -640,6 +681,18 @@ public partial class WebViewService : IWebViewService, IDisposable
             if (webView.CoreWebView2 != null && webView.CoreWebView2.MemoryUsageTargetLevel != CoreWebView2MemoryUsageTargetLevel.Normal)
             {
                 webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+            }
+        }
+        catch { }
+    }
+
+    private static void TrySetLowMemoryTarget(WebView2 webView)
+    {
+        try
+        {
+            if (webView.CoreWebView2 != null && webView.CoreWebView2.MemoryUsageTargetLevel != CoreWebView2MemoryUsageTargetLevel.Low)
+            {
+                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
             }
         }
         catch { }
@@ -711,6 +764,64 @@ public partial class WebViewService : IWebViewService, IDisposable
         catch { }
     }
 
+    public async Task ConfigurePopupWebViewAsync(WebView2 popupWebView, string? initialUrl)
+    {
+        if (popupWebView.CoreWebView2 == null)
+            return;
+
+        ApplyTrackingPrevention(popupWebView, initialUrl);
+        ApplyAutofillSettings(popupWebView);
+
+        popupWebView.CoreWebView2.DownloadStarting += (_, args) =>
+        {
+            RegisterActiveDownload(popupWebView, args.DownloadOperation);
+        };
+
+        var adBlocker = _adBlockerService;
+        if (adBlocker == null)
+            return;
+
+        string currentPageUrl = initialUrl ?? string.Empty;
+        bool isAdBlockActiveForPage = adBlocker.IsAdBlockerEnabledForSite(currentPageUrl);
+        bool isCookieBlockActiveForPage = adBlocker.IsCookieBlockerEnabledForSite(currentPageUrl);
+
+        void RefreshPopupProtectionState(string? candidateUrl)
+        {
+            if (!string.IsNullOrWhiteSpace(candidateUrl) && !candidateUrl.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+                currentPageUrl = candidateUrl;
+
+            isAdBlockActiveForPage = adBlocker.IsAdBlockerEnabledForSite(currentPageUrl);
+            isCookieBlockActiveForPage = adBlocker.IsCookieBlockerEnabledForSite(currentPageUrl);
+            ApplyTrackingPrevention(popupWebView, currentPageUrl);
+        }
+
+        string initialScript = adBlocker.GetInjectionScript();
+        if (!string.IsNullOrEmpty(initialScript))
+        {
+            await popupWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(initialScript);
+        }
+
+        popupWebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Script);
+        popupWebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Image);
+        popupWebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.XmlHttpRequest);
+        popupWebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Fetch);
+        popupWebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Other);
+
+        popupWebView.CoreWebView2.WebResourceRequested += (_, e) =>
+        {
+            if (!isAdBlockActiveForPage || !adBlocker.IsAdBlockerEnabled) return;
+            bool cookieBlockActive = isCookieBlockActiveForPage && adBlocker.IsCookieBlockerEnabled;
+            if (adBlocker.ShouldBlockUrl(e.Request.Uri, cookieBlockActive))
+            {
+                e.Response = popupWebView.CoreWebView2.Environment.CreateWebResourceResponse(
+                    null, 204, "No Content", "");
+            }
+        };
+
+        popupWebView.CoreWebView2.NavigationStarting += (_, e) => RefreshPopupProtectionState(e.Uri);
+        popupWebView.CoreWebView2.SourceChanged += (_, _) => RefreshPopupProtectionState(popupWebView.CoreWebView2.Source);
+    }
+
     public void RegisterActiveDownload(WebView2 webView, CoreWebView2DownloadOperation download)
     {
         lock (_activeDownloads)
@@ -725,15 +836,18 @@ public partial class WebViewService : IWebViewService, IDisposable
 
         ActiveDownloadsChanged?.Invoke();
 
-        download.StateChanged += (s, e) =>
+        void OnStateChanged(object? s, object e)
         {
-            if (download.State == CoreWebView2DownloadState.Completed ||
-                download.State == CoreWebView2DownloadState.Interrupted)
+            if (download.State is CoreWebView2DownloadState.Completed or CoreWebView2DownloadState.Interrupted)
             {
+                download.StateChanged -= OnStateChanged;
                 OnDownloadEnded(webView, download);
+                return;
             }
             ActiveDownloadsChanged?.Invoke();
-        };
+        }
+
+        download.StateChanged += OnStateChanged;
     }
 
     private void OnDownloadEnded(WebView2 webView, CoreWebView2DownloadOperation download)
@@ -766,9 +880,9 @@ public partial class WebViewService : IWebViewService, IDisposable
                 {
                     if (webView.Parent is UIElement parent && parent != _container)
                     {
-                        _container?.Children.Remove(parent);
+                        RemoveFromParentPanel(parent);
                     }
-                    _container?.Children.Remove(webView);
+                    RemoveFromParentPanel(webView);
                     webView.Dispose();
                 }
                 catch { }
@@ -778,31 +892,34 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     public void RemoveTab(TabViewModel tab)
     {
+        TabContainer? container;
+        WebView2? webView = null;
         lock (_initializationTasks)
+        {
             _removedTabs.Add(tab);
 
-        if (_activeTab == tab) _activeTab = null;
-        if (_splitPrimaryTab == tab) _splitPrimaryTab = null;
-        if (_splitSecondaryTab == tab) _splitSecondaryTab = null;
+            if (_activeTab == tab) _activeTab = null;
+            if (_splitPrimaryTab == tab) _splitPrimaryTab = null;
+            if (_splitSecondaryTab == tab) _splitSecondaryTab = null;
 
-        if (_tabContainers.TryGetValue(tab, out var container))
-        {
-            _tabContainers.Remove(tab);
-            _webViews.Remove(tab);
-            _adBlockScriptIds.Remove(container.MainWebView);
-            if (_activeWebView == container.MainWebView) _activeWebView = null;
-            if (_activeTabContainer == container) _activeTabContainer = null;
+            if (_tabContainers.Remove(tab, out container))
+            {
+                _webViews.Remove(tab);
+                _adBlockScriptIds.Remove(container.MainWebView);
+                if (_activeWebView == container.MainWebView) _activeWebView = null;
+                if (_activeTabContainer == container) _activeTabContainer = null;
+            }
+            else if (_webViews.Remove(tab, out webView))
+            {
+                _adBlockScriptIds.Remove(webView);
+                if (_activeWebView == webView) _activeWebView = null;
+            }
+        }
 
+        if (container != null)
             ScheduleGracefulDisposal(container.MainWebView, container.ContainerGrid);
-        }
-        else if (_webViews.TryGetValue(tab, out var webView))
-        {
-            _webViews.Remove(tab);
-            _adBlockScriptIds.Remove(webView);
-            if (_activeWebView == webView) _activeWebView = null;
-
+        else if (webView != null)
             ScheduleGracefulDisposal(webView, null);
-        }
     }
 
     private void ScheduleGracefulDisposal(WebView2 webView, UIElement? element)
@@ -841,16 +958,16 @@ public partial class WebViewService : IWebViewService, IDisposable
         {
             if (_disposed)
             {
-                if (element != null) _container?.Children.Remove(element);
-                else if (webView.Parent is UIElement parent && parent != _container) _container?.Children.Remove(parent);
-                else _container?.Children.Remove(webView);
+                if (element != null) RemoveFromParentPanel(element);
+                else if (webView.Parent is UIElement parent && parent != _container) RemoveFromParentPanel(parent);
+                else RemoveFromParentPanel(webView);
                 try { webView.Dispose(); } catch { }
                 return;
             }
             _pendingGracefulDisposals.Add((webView, element));
         }
 
-        _ = Task.Delay(2000).ContinueWith(_ =>
+        _ = Task.Delay(400).ContinueWith(_ =>
         {
             var dispatcher = System.Windows.Application.Current?.Dispatcher;
             if (dispatcher == null || dispatcher.HasShutdownStarted) return;
@@ -872,9 +989,9 @@ public partial class WebViewService : IWebViewService, IDisposable
                     }
                 }
 
-                if (element != null) _container?.Children.Remove(element);
-                else if (webView.Parent is UIElement parent && parent != _container) _container?.Children.Remove(parent);
-                else _container?.Children.Remove(webView);
+                if (element != null) RemoveFromParentPanel(element);
+                else if (webView.Parent is UIElement parent && parent != _container) RemoveFromParentPanel(parent);
+                else RemoveFromParentPanel(webView);
 
                 try { webView.Dispose(); } catch { }
             });
@@ -895,9 +1012,9 @@ public partial class WebViewService : IWebViewService, IDisposable
         {
             foreach (var (wv, el) in _pendingGracefulDisposals)
             {
-                if (el != null) _container?.Children.Remove(el);
-                else if (wv.Parent is UIElement p && p != _container) _container?.Children.Remove(p);
-                else _container?.Children.Remove(wv);
+                if (el != null) RemoveFromParentPanel(el);
+                else if (wv.Parent is UIElement p && p != _container) RemoveFromParentPanel(p);
+                else RemoveFromParentPanel(wv);
                 try { wv.Dispose(); } catch { }
             }
             _pendingGracefulDisposals.Clear();
@@ -908,24 +1025,30 @@ public partial class WebViewService : IWebViewService, IDisposable
             foreach (var wv in _pendingDisposalWebViews)
             {
                 if (wv.Parent is UIElement p && p != _container)
-                    _container?.Children.Remove(p);
-                _container?.Children.Remove(wv);
+                    RemoveFromParentPanel(p);
+                RemoveFromParentPanel(wv);
                 try { wv.Dispose(); } catch { }
             }
             _pendingDisposalWebViews.Clear();
         }
 
-        foreach (var container in _tabContainers.Values.ToList())
+        List<TabContainer> containersToDispose;
+        lock (_initializationTasks)
         {
-            _container?.Children.Remove(container.ContainerGrid);
+            containersToDispose = [.. _tabContainers.Values];
+            _tabContainers.Clear();
+            _webViews.Clear();
+            _adBlockScriptIds.Clear();
+            _initializationTasks.Clear();
+            _removedTabs.Clear();
+        }
+
+        foreach (var container in containersToDispose)
+        {
+            RemoveFromParentPanel(container.ContainerGrid);
             try { container.MainWebView.Dispose(); } catch { }
         }
 
-        _tabContainers.Clear();
-        _webViews.Clear();
-        _adBlockScriptIds.Clear();
-        _initializationTasks.Clear();
-        _removedTabs.Clear();
         _activeWebView = null;
         _activeTabContainer = null;
         _container = null;

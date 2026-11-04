@@ -36,7 +36,11 @@ public partial class MainWindow
             SidebarColumn.MinWidth = 0;
             SplitterColumn.Width = new GridLength(0);
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Collapsed;
-            if (SidebarGrid != null) SidebarGrid.Visibility = Visibility.Collapsed;
+            if (SidebarGrid != null)
+            {
+                SidebarGrid.Visibility = Visibility.Collapsed;
+                SidebarGrid.DataContext = null;
+            }
             if (sidebarTransform != null)
             {
                 sidebarTransform.BeginAnimation(TranslateTransform.XProperty, null);
@@ -86,7 +90,11 @@ public partial class MainWindow
         if (visible)
         {
             HideFloatingSidebar(animate: false);
-            if (SidebarGrid != null) SidebarGrid.Visibility = Visibility.Visible;
+            if (SidebarGrid != null)
+            {
+                SidebarGrid.DataContext = DataContext;
+                SidebarGrid.Visibility = Visibility.Visible;
+            }
             SidebarColumn.Width = new GridLength(targetWidth);
             SidebarColumn.MinWidth = 200;
             SplitterColumn.Width = GridLength.Auto;
@@ -97,7 +105,11 @@ public partial class MainWindow
         else
         {
             if (SidebarSplitter != null) SidebarSplitter.Visibility = Visibility.Collapsed;
-            if (SidebarGrid != null) SidebarGrid.Visibility = Visibility.Collapsed;
+            if (SidebarGrid != null)
+            {
+                SidebarGrid.Visibility = Visibility.Collapsed;
+                SidebarGrid.DataContext = null;
+            }
             HideFloatingSidebar(animate: false);
 
             Dispatcher.BeginInvoke(new Action(() =>
@@ -178,7 +190,12 @@ public partial class MainWindow
 
         bool isTopBarPinned = DataContext is MainViewModel vm && (WindowState != WindowState.Maximized || vm.IsTopBarVisible) && !_isFullscreen;
         FloatingSidebarPopup.VerticalOffset = isTopBarPinned ? 40 : 0;
-        if (FloatingSidebarControl != null)
+        if (FloatingSidebarControl == null)
+        {
+            FloatingSidebarControl = new SidebarView { ShowNavButtons = false };
+            FloatingSidebarContent.Child = FloatingSidebarControl;
+        }
+        else
         {
             FloatingSidebarControl.ShowNavButtons = false;
         }
@@ -226,6 +243,7 @@ public partial class MainWindow
             FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
             if (FloatingSidebarPopup.IsOpen)
                 FloatingSidebarPopup.IsOpen = false;
+            FloatingSidebarContent.DataContext = null;
             UpdateEdgeTriggerState();
             return;
         }
@@ -237,6 +255,7 @@ public partial class MainWindow
             FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
             FloatingSidebarContent.Opacity = 0.0;
             FloatingSidebarPopup.IsOpen = false;
+            FloatingSidebarContent.DataContext = null;
             UpdateEdgeTriggerState();
             return;
         }
@@ -254,6 +273,7 @@ public partial class MainWindow
                 FloatingSidebarPopup.IsOpen = false;
                 FloatingSidebarContent.BeginAnimation(UIElement.OpacityProperty, null);
                 FloatingSidebarContent.Opacity = 0.0;
+                FloatingSidebarContent.DataContext = null;
             }
             UpdateEdgeTriggerState();
         };
@@ -444,6 +464,8 @@ public partial class MainWindow
         {
             _isTopBarFloating = true;
             FloatingTopBarContent.DataContext = DataContext;
+            if (DataContext is MainViewModel vmAddr)
+                FloatingTopBarControl?.SetAddressBarText(vmAddr.AddressBarText);
 
             if (!FloatingTopBarPopup.IsOpen)
             {
@@ -484,6 +506,7 @@ public partial class MainWindow
             FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
             if (FloatingTopBarPopup.IsOpen)
                 FloatingTopBarPopup.IsOpen = false;
+            FloatingTopBarContent.DataContext = null;
             _currentFloatingZone = FloatingTopBarZone.None;
             UpdateTopEdgeTriggerState();
             return;
@@ -497,6 +520,7 @@ public partial class MainWindow
             FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
             FloatingTopBarContent.Opacity = 0.0;
             FloatingTopBarPopup.IsOpen = false;
+            FloatingTopBarContent.DataContext = null;
             UpdateTopEdgeTriggerState();
             return;
         }
@@ -515,6 +539,7 @@ public partial class MainWindow
                 FloatingTopBarPopup.IsOpen = false;
                 FloatingTopBarContent.BeginAnimation(UIElement.OpacityProperty, null);
                 FloatingTopBarContent.Opacity = 0.0;
+                FloatingTopBarContent.DataContext = null;
             }
             UpdateTopEdgeTriggerState();
         };
@@ -782,7 +807,7 @@ public partial class MainWindow
         else if (key == Key.F12 || (key == Key.I && modifiers == (ModifierKeys.Control | ModifierKeys.Shift))) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { _ = _webViewService.ToggleDevToolsForTabAsync(vm.SelectedTab); e.Handled = true; } }
         else if (key == Key.S && modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) { if (MainViewModel.IsSplitViewFeatureEnabled && DataContext is MainViewModel vm) { vm.ToggleSplitViewCommand.Execute(null); } e.Handled = true; }
         else if (key == Key.J && modifiers == ModifierKeys.Control) { _webViewService.OpenDownloadDialog(); e.Handled = true; }
-        else if (key == Key.T && modifiers == ModifierKeys.Control) { ((MainViewModel)DataContext).AddNewTabCommand.Execute(null); e.Handled = true; }
+        else if (key == Key.T && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm) { vm.AddNewTabCommand.Execute(null); e.Handled = true; } }
         else if (key == Key.W && modifiers == ModifierKeys.Control) { if (DataContext is MainViewModel vm && vm.SelectedTab != null) { vm.CloseTabCommand.Execute(vm.SelectedTab); e.Handled = true; } }
         else if ((key == Key.L && modifiers == ModifierKeys.Control) || (key == Key.D && modifiers == ModifierKeys.Alt)) { FocusAddressBar(); e.Handled = true; }
         else if ((key == Key.Left && modifiers == ModifierKeys.Alt) || key == Key.Back) { if (key == Key.Back && e.OriginalSource is System.Windows.Controls.TextBox) return; if (_webViewService.ActiveWebView != null && _webViewService.ActiveWebView.CanGoBack) { _webViewService.ActiveWebView.GoBack(); e.Handled = true; } }

@@ -14,6 +14,41 @@
         <local:NullToBoolConverter x:Key="NullToBoolConverter" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+        <ControlTemplate x:Key="TabLoadingSpinnerTemplate" TargetType="Control">
+            <Viewbox Stretch="Uniform">
+                <Grid Width="16" Height="16">
+                    <Ellipse Width="13.6" Height="13.6" Stroke="#33FFFFFF" StrokeThickness="1.8"/>
+                    <Canvas x:Name="SpinnerCanvas" Width="16" Height="16" RenderTransformOrigin="0.5,0.5">
+                        <Canvas.RenderTransform>
+                            <RotateTransform Angle="0"/>
+                        </Canvas.RenderTransform>
+                        <Path Data="M 8,1.9 A 6.1,6.1 0 1 1 1.9,8"
+                              Stroke="#E0E0E0"
+                              StrokeThickness="1.8"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"/>
+                    </Canvas>
+                </Grid>
+            </Viewbox>
+            <ControlTemplate.Triggers>
+                <Trigger Property="Visibility" Value="Visible">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard x:Name="SpinStoryboard">
+                            <Storyboard RepeatBehavior="Forever">
+                                <DoubleAnimation Storyboard.TargetName="SpinnerCanvas"
+                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                 From="0" To="360"
+                                                 Duration="0:0:0.75"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <StopStoryboard BeginStoryboardName="SpinStoryboard"/>
+                    </Trigger.ExitActions>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
         <!-- Icons (Sources: Assets/Icons/*.svg — viewBox 0 0 20 20) -->
         <Geometry x:Key="IconLeft">M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z</Geometry>
         <Geometry x:Key="IconRight">M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z</Geometry>

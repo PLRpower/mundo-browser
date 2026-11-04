@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:MundoBrowser"
              mc:Ignorable="d" 
              UseLayoutRounding="True"
              SnapsToDevicePixels="True"
@@ -154,12 +155,29 @@
                 </Border.Style>
                 <Grid>
                     <Grid x:Name="AddressBarContent">
+                        <Control Width="16"
+                                 Height="16"
+                                 Margin="11,0,0,0"
+                                 HorizontalAlignment="Left"
+                                 VerticalAlignment="Center"
+                                 IsHitTestVisible="False"
+                                 Template="{StaticResource TabLoadingSpinnerTemplate}"
+                                 Visibility="{Binding SelectedTab.IsLoading, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"/>
                         <Viewbox Width="16"
                                  Height="16"
                                  Margin="11,0,0,0"
                                  HorizontalAlignment="Left"
                                  VerticalAlignment="Center"
                                  IsHitTestVisible="False">
+                            <Viewbox.Style>
+                                <Style TargetType="Viewbox">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab.IsLoading}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Viewbox.Style>
                             <Path Fill="Transparent"
                                   Stroke="#B8B8B8"
                                   StrokeThickness="1.5"
@@ -312,7 +330,7 @@
                                                               Data="M21,21 L15.803,15.803 M15.803,15.803 A7.5,7.5 0 1 0 5.196,5.196 A7.5,7.5 0 0 0 15.803,15.803 Z"/>
                                                     </Viewbox>
                                                     <Image x:Name="SuggestionFavicon"
-                                                           Source="{Binding FaviconUrl}"
+                                                           Source="{Binding FaviconUrl, Converter={x:Static local:Converters.FaviconImage}}"
                                                            Width="16"
                                                            Height="16"
                                                            Stretch="Uniform"

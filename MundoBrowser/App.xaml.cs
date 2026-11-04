@@ -167,7 +167,7 @@ public partial class App : System.Windows.Application
                         ? []
                         : JsonSerializer.Deserialize<string[]>(argsLine) ?? [];
 
-                    mainWindow.Dispatcher.Invoke(() =>
+                    mainWindow.Dispatcher.BeginInvoke(() =>
                     {
                         mainWindow.RestoreFromTray();
 
