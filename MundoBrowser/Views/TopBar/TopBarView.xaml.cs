@@ -163,15 +163,12 @@ public sealed partial class TopBarView : System.Windows.Controls.UserControl, ID
     public void Dispose()
     {
         _zoomIndicatorCts?.Cancel();
-        _zoomIndicatorCts?.Dispose();
         _zoomIndicatorCts = null;
 
         _suggestionFaviconsCts?.Cancel();
-        _suggestionFaviconsCts?.Dispose();
         _suggestionFaviconsCts = null;
 
         _addressSearchCts?.Cancel();
-        _addressSearchCts?.Dispose();
         _addressSearchCts = null;
     }
 

@@ -119,11 +119,13 @@ public partial class TopBarView
     private async void AddressTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         UpdateAddressDisplay();
+        if (_isApplyingInlineCompletion)
+            return;
+
         _suggestionFaviconsCts?.Cancel();
         _addressSearchCts?.Cancel();
-        _addressSearchCts?.Dispose();
         _addressSearchCts = null;
-        if (_isUpdatingAddressBar || _isApplyingInlineCompletion || DataContext is not MainViewModel vm)
+        if (_isUpdatingAddressBar || DataContext is not MainViewModel vm)
             return;
 
         _userTypedText = AddressTextBox.Text;
@@ -157,15 +159,16 @@ public partial class TopBarView
 
         var cts = new CancellationTokenSource();
         _addressSearchCts = cts;
+        var token = cts.Token;
 
         try
         {
-            await Task.Delay(80, cts.Token);
-            if (cts.Token.IsCancellationRequested)
+            await Task.Delay(80, token);
+            if (token.IsCancellationRequested)
                 return;
 
-            var results = await Task.Run(() => vm.HistoryManager.SearchHistory(text, maxResults: 20), cts.Token);
-            if (cts.Token.IsCancellationRequested || !AddressTextBox.IsKeyboardFocused || AddressTextBox.Text != text)
+            var results = await Task.Run(() => vm.HistoryManager.SearchHistory(text, maxResults: 20), token);
+            if (token.IsCancellationRequested || !AddressTextBox.IsKeyboardFocused || AddressTextBox.Text != text)
                 return;
 
             TryApplyInlineCompletion(text, results, vm);
@@ -176,6 +179,12 @@ public partial class TopBarView
         catch (OperationCanceledException)
         {
             // Debounced by subsequent keystrokes
+        }
+        finally
+        {
+            if (ReferenceEquals(_addressSearchCts, cts))
+                _addressSearchCts = null;
+            cts.Dispose();
         }
     }
 

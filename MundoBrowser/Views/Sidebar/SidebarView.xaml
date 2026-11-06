@@ -313,7 +313,7 @@
                                         </Trigger>
                                         <DataTrigger Binding="{Binding IsClosing}" Value="True">
                                             <DataTrigger.EnterActions>
-                                                <BeginStoryboard>
+                                                <BeginStoryboard x:Name="CloseTabStoryboard">
                                                     <Storyboard>
                                                         <DoubleAnimation Storyboard.TargetName="ItemScale"
                                                                          Storyboard.TargetProperty="ScaleY"
@@ -342,6 +342,9 @@
                                                     </Storyboard>
                                                 </BeginStoryboard>
                                             </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="CloseTabStoryboard"/>
+                                            </DataTrigger.ExitActions>
                                         </DataTrigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>

@@ -408,12 +408,14 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
             if (!tab.IsCreatedFromNewWindow)
             {
                 string initialUrl = tab.Url;
-                if (initialUrl == "about:preferences"
+                if (initialUrl.StartsWith("about:preferences", StringComparison.OrdinalIgnoreCase)
                     || initialUrl.StartsWith("edge://preferences", StringComparison.OrdinalIgnoreCase)
                     || initialUrl.StartsWith("chrome://settings", StringComparison.OrdinalIgnoreCase))
                 {
-                    initialUrl = "https://internals.mundobrowser/settings.html#general";
-                    tab.AddressUrl = "about:preferences#general";
+                    int hashIdx = initialUrl.IndexOf('#');
+                    string hash = hashIdx >= 0 ? initialUrl[hashIdx..] : "#general";
+                    initialUrl = "https://internals.mundobrowser/settings.html" + hash;
+                    tab.AddressUrl = "about:preferences" + hash;
                 }
 
                 if (!string.IsNullOrEmpty(initialUrl))
@@ -1004,7 +1006,6 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
         _memoryTimer.Stop();
         _memoryTimer.Elapsed -= CheckMemoryOptimization;
         _memoryTimer.Dispose();
-        _initSemaphore.Dispose();
 
         lock (_pendingGracefulDisposals)
         {

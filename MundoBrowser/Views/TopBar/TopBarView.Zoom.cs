@@ -69,7 +69,6 @@ public partial class TopBarView
     private void UpdateZoomIndicator(bool showTransientAtDefaultZoom)
     {
         _zoomIndicatorCts?.Cancel();
-        _zoomIndicatorCts?.Dispose();
         _zoomIndicatorCts = null;
         ZoomIndicatorButton.BeginAnimation(OpacityProperty, null);
         ZoomIndicatorButton.Opacity = 1;
@@ -98,12 +97,14 @@ public partial class TopBarView
         }
 
         ZoomIndicatorButton.Visibility = Visibility.Visible;
-        _zoomIndicatorCts = new CancellationTokenSource();
-        _ = FadeOutZoomIndicatorAsync(_zoomIndicatorCts.Token);
+        var cts = new CancellationTokenSource();
+        _zoomIndicatorCts = cts;
+        _ = FadeOutZoomIndicatorAsync(cts);
     }
 
-    private async Task FadeOutZoomIndicatorAsync(CancellationToken cancellationToken)
+    private async Task FadeOutZoomIndicatorAsync(CancellationTokenSource cts)
     {
+        var cancellationToken = cts.Token;
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
@@ -112,7 +113,7 @@ public partial class TopBarView
             var fadeOut = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(220));
             fadeOut.Completed += (_, _) =>
             {
-                if (!cancellationToken.IsCancellationRequested)
+                if (ReferenceEquals(_zoomIndicatorCts, cts))
                     ZoomIndicatorButton.Visibility = Visibility.Collapsed;
             };
             ZoomIndicatorButton.BeginAnimation(OpacityProperty, fadeOut);
@@ -120,11 +121,16 @@ public partial class TopBarView
         catch (OperationCanceledException)
         {
         }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     private void DetachZoomIndicatorObservers()
     {
         _zoomIndicatorCts?.Cancel();
+        _zoomIndicatorCts = null;
         if (_observedZoomTab != null)
             _observedZoomTab.PropertyChanged -= ObservedZoomTab_PropertyChanged;
         if (_mainViewModel != null)

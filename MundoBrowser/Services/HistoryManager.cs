@@ -211,7 +211,5 @@ public sealed class HistoryManager : IHistoryManager, IDisposable
     {
         var pendingSave = Interlocked.Exchange(ref _saveDebounceCts, null);
         TryCancel(pendingSave);
-        pendingSave?.Dispose();
-        _saveLock.Dispose();
     }
 }

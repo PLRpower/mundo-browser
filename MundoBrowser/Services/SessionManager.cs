@@ -73,6 +73,5 @@ public sealed class SessionManager : ISessionManager, IDisposable
 
     public void Dispose()
     {
-        _saveLock.Dispose();
     }
 }

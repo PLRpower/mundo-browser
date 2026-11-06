@@ -94,7 +94,6 @@ namespace MundoBrowser.ViewModels
             try
             {
                 previousCts?.Cancel();
-                previousCts?.Dispose();
             }
             catch { }
             _ = DebouncedSaveSessionAsync(cts);
@@ -250,7 +249,6 @@ namespace MundoBrowser.ViewModels
                 if (pendingSave != null)
                 {
                     await pendingSave.CancelAsync().ConfigureAwait(false);
-                    pendingSave.Dispose();
                 }
             }
             catch { }
@@ -266,7 +264,6 @@ namespace MundoBrowser.ViewModels
             try
             {
                 pendingSave?.Cancel();
-                pendingSave?.Dispose();
             }
             catch { }
 

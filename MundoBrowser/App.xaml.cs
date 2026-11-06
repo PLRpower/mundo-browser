@@ -131,7 +131,6 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         _argsListenerCts?.Cancel();
-        _argsListenerCts?.Dispose();
         _argsListenerCts = null;
         _serviceProvider.Dispose();
         _mutex?.Dispose();
@@ -158,52 +157,59 @@ public partial class App : System.Windows.Application
     internal static void StartArgsListener(MainWindow mainWindow)
     {
         _argsListenerCts?.Cancel();
-        _argsListenerCts?.Dispose();
         var cts = new CancellationTokenSource();
         _argsListenerCts = cts;
-        _ = ListenForExternalArgsAsync(mainWindow, cts.Token);
+        _ = ListenForExternalArgsAsync(mainWindow, cts);
     }
 
-    private static async Task ListenForExternalArgsAsync(MainWindow mainWindow, CancellationToken cancellationToken)
+    private static async Task ListenForExternalArgsAsync(MainWindow mainWindow, CancellationTokenSource cts)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var cancellationToken = cts.Token;
+        try
         {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                using var server = new NamedPipeServerStream(UniqueEventName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-                await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-                using var reader = new StreamReader(server);
-                string? argsLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                string[] args = string.IsNullOrWhiteSpace(argsLine)
-                    ? []
-                    : JsonSerializer.Deserialize(argsLine, AppJsonContext.Default.StringArray) ?? [];
-
-                _ = mainWindow.Dispatcher.BeginInvoke(() =>
-                {
-                    mainWindow.RestoreFromTray();
-
-                    if (args.Length > 0)
-                        mainWindow.HandleExternalArguments(args);
-                });
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch
-            {
-                if (mainWindow.Dispatcher.HasShutdownStarted || cancellationToken.IsCancellationRequested)
-                    return;
-
                 try
                 {
-                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                    using var server = new NamedPipeServerStream(UniqueEventName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+                    using var reader = new StreamReader(server);
+                    string? argsLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                    string[] args = string.IsNullOrWhiteSpace(argsLine)
+                        ? []
+                        : JsonSerializer.Deserialize(argsLine, AppJsonContext.Default.StringArray) ?? [];
+
+                    _ = mainWindow.Dispatcher.BeginInvoke(() =>
+                    {
+                        mainWindow.RestoreFromTray();
+
+                        if (args.Length > 0)
+                            mainWindow.HandleExternalArguments(args);
+                    });
                 }
                 catch (OperationCanceledException)
                 {
                     return;
                 }
+                catch
+                {
+                    if (mainWindow.Dispatcher.HasShutdownStarted || cancellationToken.IsCancellationRequested)
+                        return;
+
+                    try
+                    {
+                        await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
             }
+        }
+        finally
+        {
+            cts.Dispose();
         }
     }
 

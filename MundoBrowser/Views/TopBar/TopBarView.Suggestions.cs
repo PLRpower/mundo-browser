@@ -13,9 +13,8 @@ public partial class TopBarView
         MainViewModel vm)
     {
         _suggestionFaviconsCts?.Cancel();
-        _suggestionFaviconsCts?.Dispose();
-        _suggestionFaviconsCts = new CancellationTokenSource();
-        CancellationToken cancellationToken = _suggestionFaviconsCts.Token;
+        var cts = new CancellationTokenSource();
+        _suggestionFaviconsCts = cts;
 
         string trimmedInput = input.Trim();
         vm.Suggestions.Clear();
@@ -68,14 +67,15 @@ public partial class TopBarView
                 break;
         }
 
-        _ = LoadMissingSuggestionFaviconsAsync(vm, vm.Suggestions.ToList(), cancellationToken);
+        _ = LoadMissingSuggestionFaviconsAsync(vm, vm.Suggestions.ToList(), cts);
     }
 
-    private static async Task LoadMissingSuggestionFaviconsAsync(
+    private async Task LoadMissingSuggestionFaviconsAsync(
         MainViewModel vm,
         IReadOnlyList<Models.HistoryEntry> suggestions,
-        CancellationToken cancellationToken)
+        CancellationTokenSource cts)
     {
+        var cancellationToken = cts.Token;
         try
         {
             await Task.Delay(180, cancellationToken);
@@ -92,6 +92,12 @@ public partial class TopBarView
         }
         catch (OperationCanceledException)
         {
+        }
+        finally
+        {
+            if (ReferenceEquals(_suggestionFaviconsCts, cts))
+                _suggestionFaviconsCts = null;
+            cts.Dispose();
         }
     }
 
