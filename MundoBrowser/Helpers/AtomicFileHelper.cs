@@ -1,8 +1,22 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using MundoBrowser.Models;
 
 namespace MundoBrowser.Helpers;
+
+[JsonSerializable(typeof(AppSettings))]
+[JsonSerializable(typeof(SessionData))]
+[JsonSerializable(typeof(List<HistoryEntry>))]
+[JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(MainWindow.MediaData))]
+internal sealed partial class AppJsonContext : JsonSerializerContext
+{
+    public static AppJsonContext Indented { get; } = new(new JsonSerializerOptions { WriteIndented = true });
+}
 
 /// <summary>
 /// Provides atomic file write and robust read operations to prevent file corruption.
@@ -48,6 +62,53 @@ public static class AtomicFileHelper
                 catch (IOException) when (attempt < 3)
                 {
                     await Task.Delay(50 * attempt, cancellationToken);
+                }
+            }
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* best effort */ }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes an object serialized to JSON atomically using source-generated metadata.
+    /// </summary>
+    public static async Task WriteJsonAtomicAsync<T>(string destinationPath, T data, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken = default)
+    {
+        string? directory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        string tempPath = destinationPath + $".tmp.{Guid.NewGuid():N}";
+
+        try
+        {
+            await using (var stream = new FileStream(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                useAsync: true))
+            {
+                await JsonSerializer.SerializeAsync(stream, data, jsonTypeInfo, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    File.Move(tempPath, destinationPath, overwrite: true);
+                    return;
+                }
+                catch (IOException) when (attempt < 3)
+                {
+                    await Task.Delay(50 * attempt, cancellationToken).ConfigureAwait(false);
                 }
             }
         }

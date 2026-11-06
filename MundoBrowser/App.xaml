@@ -34,7 +34,7 @@
                 <Trigger Property="Visibility" Value="Visible">
                     <Trigger.EnterActions>
                         <BeginStoryboard x:Name="SpinStoryboard">
-                            <Storyboard RepeatBehavior="Forever">
+                            <Storyboard RepeatBehavior="Forever" Timeline.DesiredFrameRate="30">
                                 <DoubleAnimation Storyboard.TargetName="SpinnerCanvas"
                                                  Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
                                                  From="0" To="360"

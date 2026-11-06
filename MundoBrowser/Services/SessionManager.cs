@@ -12,7 +12,6 @@ namespace MundoBrowser.Services;
 public sealed class SessionManager : ISessionManager, IDisposable
 {
     private const long MaxSessionFileBytes = 8 * 1024 * 1024;
-    private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
 
     private readonly string _sessionFilePath;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
@@ -33,7 +32,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
         await _saveLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            await AtomicFileHelper.WriteJsonAtomicAsync(_sessionFilePath, sessionData, IndentedJsonOptions).ConfigureAwait(false);
+            await AtomicFileHelper.WriteJsonAtomicAsync(_sessionFilePath, sessionData, AppJsonContext.Indented.SessionData).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -62,7 +61,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
             if (stream.Length > MaxSessionFileBytes)
                 return null;
 
-            return JsonSerializer.Deserialize<SessionData>(stream);
+            return JsonSerializer.Deserialize(stream, AppJsonContext.Default.SessionData);
         }
         catch (Exception ex)
         {

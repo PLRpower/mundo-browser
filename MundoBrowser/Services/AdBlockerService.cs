@@ -169,17 +169,9 @@ public class AdBlockerService : IAdBlockerService
     {
         if (!IsAdBlockerEnabled || string.IsNullOrWhiteSpace(url)) return false;
 
-        // Fast prefix check to avoid allocating Uri for data/blob/file/about schemes
-        if (url.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
-            url.StartsWith("blob:", StringComparison.OrdinalIgnoreCase) ||
-            url.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ||
-            url.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+        if (!TryExtractHttpHostAndPath(url.AsSpan(), out ReadOnlySpan<char> host, out ReadOnlySpan<char> path))
             return false;
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
-
-        ReadOnlySpan<char> host = uri.IdnHost.AsSpan().TrimEnd('.');
         if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             host = host[4..];
 
@@ -202,7 +194,6 @@ public class AdBlockerService : IAdBlockerService
         if (host.EndsWith("youtube.com", StringComparison.OrdinalIgnoreCase) ||
             host.EndsWith("youtube-nocookie.com", StringComparison.OrdinalIgnoreCase))
         {
-            string path = uri.AbsolutePath;
             if (path.StartsWith("/pagead/", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/api/stats/ads", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/ptracking", StringComparison.OrdinalIgnoreCase) ||
@@ -215,6 +206,55 @@ public class AdBlockerService : IAdBlockerService
 
         cacheLookup[host] = false;
         return false;
+    }
+
+    private static bool TryExtractHttpHostAndPath(
+        ReadOnlySpan<char> url,
+        out ReadOnlySpan<char> host,
+        out ReadOnlySpan<char> path)
+    {
+        host = default;
+        path = default;
+
+        int schemeLength;
+        if (url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            schemeLength = 8;
+        else if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            schemeLength = 7;
+        else
+            return false;
+
+        ReadOnlySpan<char> remainder = url[schemeLength..];
+        int slashIdx = remainder.IndexOfAny('/', '?', '#');
+        ReadOnlySpan<char> authority = slashIdx >= 0 ? remainder[..slashIdx] : remainder;
+        path = slashIdx >= 0 && remainder[slashIdx] == '/' ? remainder[slashIdx..] : "/";
+
+        int atIdx = authority.LastIndexOf('@');
+        if (atIdx >= 0)
+            authority = authority[(atIdx + 1)..];
+
+        if (authority.IsEmpty || authority[0] == '[')
+            return false;
+
+        int colonIdx = authority.IndexOf(':');
+        host = (colonIdx >= 0 ? authority[..colonIdx] : authority).TrimEnd('.');
+        if (host.IsEmpty)
+            return false;
+
+        // Fallback to Uri only for non-ASCII Punycode/IDN hosts
+        for (int i = 0; i < host.Length; i++)
+        {
+            if (host[i] > 127)
+            {
+                if (!Uri.TryCreate(url.ToString(), UriKind.Absolute, out var parsedUri))
+                    return false;
+                host = parsedUri.IdnHost.AsSpan().TrimEnd('.');
+                path = parsedUri.AbsolutePath.AsSpan();
+                return !host.IsEmpty;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsDomainInSet(ReadOnlySpan<char> host, FrozenSet<string> domainSet)
@@ -465,12 +505,34 @@ public class AdBlockerService : IAdBlockerService
                     } catch (e) {}
                 }
 
-                // Observe DOM mutations on player & dialogs instead of 150ms tight polling loop
-                const observer = new MutationObserver(() => cleanYouTubeAds());
+                // Throttle DOM mutation callbacks via requestAnimationFrame and scope to #movie_player once available
+                let rafScheduled = false;
+                let attachedToPlayer = false;
+                const scheduleClean = () => {
+                    if (rafScheduled) return;
+                    rafScheduled = true;
+                    requestAnimationFrame(() => {
+                        rafScheduled = false;
+                        if (!attachedToPlayer) {
+                            const player = document.getElementById('movie_player');
+                            if (player) {
+                                attachedToPlayer = true;
+                                observer.disconnect();
+                                observer.observe(player, { childList: true, attributes: true, attributeFilter: ['class'] });
+                            }
+                        }
+                        cleanYouTubeAds();
+                    });
+                };
+
+                const observer = new MutationObserver(scheduleClean);
                 const observeTarget = () => {
-                    const target = document.querySelector('#movie_player') || document.body;
-                    if (target) {
-                        observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+                    const player = document.getElementById('movie_player');
+                    if (player) {
+                        attachedToPlayer = true;
+                        observer.observe(player, { childList: true, attributes: true, attributeFilter: ['class'] });
+                    } else if (document.body) {
+                        observer.observe(document.body, { childList: true, subtree: true });
                     }
                 };
 
@@ -507,10 +569,10 @@ public class AdBlockerService : IAdBlockerService
         if (cached != null)
             return cached;
 
-        string serializedAdCss = JsonSerializer.Serialize(adBlockGlobal ? GetCosmeticCss() : string.Empty);
-        string serializedCookieCss = JsonSerializer.Serialize(cookieBlockGlobal ? GetCookieCosmeticCss() : string.Empty);
-        string serializedAdDisabled = JsonSerializer.Serialize(_settingsService.Current.AdBlockDisabledSites);
-        string serializedCookieDisabled = JsonSerializer.Serialize(_settingsService.Current.CookieBlockDisabledSites);
+        string serializedAdCss = JsonSerializer.Serialize(adBlockGlobal ? GetCosmeticCss() : string.Empty, AppJsonContext.Default.String);
+        string serializedCookieCss = JsonSerializer.Serialize(cookieBlockGlobal ? GetCookieCosmeticCss() : string.Empty, AppJsonContext.Default.String);
+        string serializedAdDisabled = JsonSerializer.Serialize(_settingsService.Current.AdBlockDisabledSites, AppJsonContext.Default.ListString);
+        string serializedCookieDisabled = JsonSerializer.Serialize(_settingsService.Current.CookieBlockDisabledSites, AppJsonContext.Default.ListString);
         string ytScript = adBlockGlobal ? GetYouTubeAdBlockScript() : string.Empty;
         string cookieScript = cookieBlockGlobal ? GetCookieRemovalScript() : string.Empty;
 

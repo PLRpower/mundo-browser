@@ -44,7 +44,10 @@ public sealed class FaviconImageSourceConverter : IValueConverter
             return null;
 
         if (Cache.Count > MaxCacheEntries)
-            Cache.Clear();
+        {
+            foreach (var key in Cache.Keys.Take(MaxCacheEntries / 4))
+                Cache.TryRemove(key, out _);
+        }
 
         try
         {
@@ -59,6 +62,7 @@ public sealed class FaviconImageSourceConverter : IValueConverter
                 bmp.CacheOption = BitmapCacheOption.OnLoad;
                 bmp.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
                 bmp.DecodePixelWidth = 32;
+                bmp.DecodePixelHeight = 32;
                 bmp.StreamSource = stream;
                 bmp.EndInit();
                 bmp.Freeze();
@@ -72,6 +76,7 @@ public sealed class FaviconImageSourceConverter : IValueConverter
                 bmp.BeginInit();
                 bmp.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
                 bmp.DecodePixelWidth = 32;
+                bmp.DecodePixelHeight = 32;
                 bmp.UriSource = uri;
                 bmp.EndInit();
                 Cache[url] = bmp;

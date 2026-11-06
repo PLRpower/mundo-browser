@@ -103,7 +103,10 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
             AdditionalBrowserArguments = string.Join(" ",
                 "--enable-gpu-rasterization",
                 "--enable-zero-copy",
-                "--enable-features=WebGPU,CanvasOopRasterization,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching",
+                "--enable-gpu-memory-buffer-video-frames",
+                "--enable-hardware-overlays=single-fullscreen,single-on-top,underlay",
+                "--process-per-site",
+                "--enable-features=WebGPU,CanvasOopRasterization,ParallelDownloading,OverlayScrollbar,TouchpadAndWheelScrollLatching,ThrottleDisplayNoneAndVisibilityHiddenCrossOriginIframes,IntensiveWakeUpThrottling,BackForwardCacheMemoryControls",
                 "--use-angle=d3d11",
                 "--enable-webgl",
                 "--enable-smooth-scrolling",
@@ -306,6 +309,7 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
                 webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Fetch);
                 webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Other);
 
+                CoreWebView2WebResourceResponse? cachedBlockedResponse = null;
                 webView.CoreWebView2.WebResourceRequested += (_, e) =>
                 {
                     if (!isAdBlockActiveForPage || !adBlocker.IsAdBlockerEnabled) return;
@@ -313,8 +317,9 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
                     bool cookieBlockActive = isCookieBlockActiveForPage && adBlocker.IsCookieBlockerEnabled;
                     if (adBlocker.ShouldBlockUrl(e.Request.Uri, cookieBlockActive))
                     {
-                        e.Response = webView.CoreWebView2.Environment.CreateWebResourceResponse(
+                        cachedBlockedResponse ??= webView.CoreWebView2.Environment.CreateWebResourceResponse(
                             null, 204, "No Content", "");
+                        e.Response = cachedBlockedResponse;
                     }
                 };
 

@@ -75,11 +75,11 @@ public partial class App : System.Windows.Application
             // Force hardware acceleration for WPF rendering pipeline
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
 
-            // Cap WPF storyboard animation framerate to 60 FPS to avoid saturating the UI thread on 144Hz/240Hz displays.
-            // Note: WebView2 and web content (WebGL, 3D, games) run in Chromium's GPU compositor and natively retain the display's full refresh rate.
+            // Match display refresh rate up to 120 FPS for smooth UI animations without saturating 240Hz+ displays.
+            int targetFps = Math.Clamp(NativeMethods.GetMaxDisplayRefreshRate(), 60, 120);
             System.Windows.Media.Animation.Timeline.DesiredFrameRateProperty.OverrideMetadata(
                 typeof(System.Windows.Media.Animation.Timeline),
-                new FrameworkPropertyMetadata(60));
+                new FrameworkPropertyMetadata(targetFps));
         }
         catch
         {
@@ -145,7 +145,7 @@ public partial class App : System.Windows.Application
             using var client = new NamedPipeClientStream(".", UniqueEventName, PipeDirection.Out);
             client.Connect(500); // Wait 500ms max
             using var writer = new StreamWriter(client);
-            writer.WriteLine(JsonSerializer.Serialize(args ?? []));
+            writer.WriteLine(JsonSerializer.Serialize(args ?? [], AppJsonContext.Default.StringArray));
             writer.Flush();
             client.WaitForPipeDrain();
         }
@@ -176,7 +176,7 @@ public partial class App : System.Windows.Application
                 string? argsLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                 string[] args = string.IsNullOrWhiteSpace(argsLine)
                     ? []
-                    : JsonSerializer.Deserialize<string[]>(argsLine) ?? [];
+                    : JsonSerializer.Deserialize(argsLine, AppJsonContext.Default.StringArray) ?? [];
 
                 _ = mainWindow.Dispatcher.BeginInvoke(() =>
                 {

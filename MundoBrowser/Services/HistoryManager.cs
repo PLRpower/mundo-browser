@@ -10,7 +10,6 @@ public sealed class HistoryManager : IHistoryManager, IDisposable
 {
     private const int MaxHistoryEntries = 1000;
     private const long MaxHistoryFileBytes = 16 * 1024 * 1024;
-    private static readonly JsonSerializerOptions JsonOptions = new();
 
     private readonly string _historyFilePath;
     private readonly List<HistoryEntry> _history;
@@ -43,7 +42,7 @@ public sealed class HistoryManager : IHistoryManager, IDisposable
             if (stream.Length > MaxHistoryFileBytes)
                 return null;
 
-            return JsonSerializer.Deserialize<List<HistoryEntry>>(stream);
+            return JsonSerializer.Deserialize(stream, AppJsonContext.Default.ListHistoryEntry);
         }
         catch (Exception ex)
         {
@@ -93,7 +92,7 @@ public sealed class HistoryManager : IHistoryManager, IDisposable
                 snapshot = [.. _history];
             }
 
-            await AtomicFileHelper.WriteJsonAtomicAsync(_historyFilePath, snapshot, JsonOptions, cancellationToken).ConfigureAwait(false);
+            await AtomicFileHelper.WriteJsonAtomicAsync(_historyFilePath, snapshot, AppJsonContext.Default.ListHistoryEntry, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="MundoBrowser/MundoBrowser.csproj" />
+  <Project Path="MundoBrowser.Tests/MundoBrowser.Tests.csproj" />
 </Solution>

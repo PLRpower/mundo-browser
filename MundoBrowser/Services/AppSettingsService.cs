@@ -9,7 +9,6 @@ namespace MundoBrowser.Services;
 public sealed class AppSettingsService : IAppSettingsService
 {
     private const long MaxSettingsFileBytes = 1024 * 1024;
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly Lock _sync = new();
     private readonly string _settingsFilePath;
@@ -58,7 +57,7 @@ public sealed class AppSettingsService : IAppSettingsService
             if (stream.Length > MaxSettingsFileBytes)
                 return null;
 
-            return JsonSerializer.Deserialize<AppSettings>(stream);
+            return JsonSerializer.Deserialize(stream, AppJsonContext.Default.AppSettings);
         }
         catch (Exception ex)
         {
@@ -71,7 +70,7 @@ public sealed class AppSettingsService : IAppSettingsService
     {
         try
         {
-            string json = JsonSerializer.Serialize(Current, JsonOptions);
+            string json = JsonSerializer.Serialize(Current, AppJsonContext.Indented.AppSettings);
             string tempPath = _settingsFilePath + ".tmp";
             File.WriteAllText(tempPath, json);
 

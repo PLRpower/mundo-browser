@@ -79,7 +79,7 @@ public partial class MainWindow
 
         try
         {
-            var data = JsonSerializer.Deserialize<MediaData>(json);
+            var data = JsonSerializer.Deserialize(json, Helpers.AppJsonContext.Default.MediaData);
             if (data == null || data.type != "mediaState")
                 return false;
 
@@ -160,7 +160,7 @@ public partial class MainWindow
                 return;
             }
 
-            var data = JsonSerializer.Deserialize<MediaData>(json);
+            var data = JsonSerializer.Deserialize(json, Helpers.AppJsonContext.Default.MediaData);
             if (data != null && data.hasMedia)
             {
                 var tab = vm.ActiveMediaTab;
