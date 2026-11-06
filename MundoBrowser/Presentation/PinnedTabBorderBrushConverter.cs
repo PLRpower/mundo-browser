@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
-using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -12,18 +11,19 @@ using Point = System.Windows.Point;
 
 namespace MundoBrowser;
 
-public class PinnedTabBorderBrushConverter : IMultiValueConverter
+public sealed class PinnedTabBorderBrushConverter : IMultiValueConverter
 {
     private const int MaxCacheEntries = 256;
     private static readonly ConcurrentDictionary<string, Brush> Cache = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, List<PositionedColor>> ExtractedColorsCache = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, byte> ActiveExtractions = new(StringComparer.Ordinal);
-    private static readonly SolidColorBrush DefaultBrush;
+    private static readonly SolidColorBrush DefaultBrush = CreateDefaultBrush();
 
-    static PinnedTabBorderBrushConverter()
+    private static SolidColorBrush CreateDefaultBrush()
     {
-        DefaultBrush = new SolidColorBrush(Color.FromRgb(0, 122, 204));
-        DefaultBrush.Freeze();
+        var brush = new SolidColorBrush(Color.FromRgb(0, 122, 204));
+        brush.Freeze();
+        return brush;
     }
 
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)

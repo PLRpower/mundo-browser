@@ -192,7 +192,7 @@ public static partial class AdBlockListDownloader
         if (string.IsNullOrWhiteSpace(line)) return null;
 
         // 1. Hosts format: "0.0.0.0 domain.com" or "127.0.0.1 domain.com"
-        if (line.StartsWith("0.0.0.0") || line.StartsWith("127.0.0.1"))
+        if (line.StartsWith("0.0.0.0", StringComparison.Ordinal) || line.StartsWith("127.0.0.1", StringComparison.Ordinal))
         {
             var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length >= 2)
@@ -202,7 +202,7 @@ public static partial class AdBlockListDownloader
         }
 
         // 2. Adblock format: "||domain.com^" or "||domain.com^$third-party"
-        if (line.StartsWith("||"))
+        if (line.StartsWith("||", StringComparison.Ordinal))
         {
             int endIdx = line.IndexOf('^');
             string domainPart = endIdx > 2 ? line[2..endIdx] : line[2..];

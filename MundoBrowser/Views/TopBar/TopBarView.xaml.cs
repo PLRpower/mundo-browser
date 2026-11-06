@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Input;
 using MundoBrowser.Models;
 using MundoBrowser.ViewModels;
@@ -14,7 +14,7 @@ public enum FloatingTopBarZone
     All
 }
 
-public partial class TopBarView : System.Windows.Controls.UserControl
+public sealed partial class TopBarView : System.Windows.Controls.UserControl, IDisposable
 {
     private CancellationTokenSource? _zoomIndicatorCts;
     private CancellationTokenSource? _suggestionFaviconsCts;
@@ -155,8 +155,24 @@ public partial class TopBarView : System.Windows.Controls.UserControl
         Unloaded += (_, _) =>
         {
             _suggestionFaviconsCts?.Cancel();
+            _addressSearchCts?.Cancel();
             DetachZoomIndicatorObservers();
         };
+    }
+
+    public void Dispose()
+    {
+        _zoomIndicatorCts?.Cancel();
+        _zoomIndicatorCts?.Dispose();
+        _zoomIndicatorCts = null;
+
+        _suggestionFaviconsCts?.Cancel();
+        _suggestionFaviconsCts?.Dispose();
+        _suggestionFaviconsCts = null;
+
+        _addressSearchCts?.Cancel();
+        _addressSearchCts?.Dispose();
+        _addressSearchCts = null;
     }
 
     private void Back_Click(object sender, RoutedEventArgs e) => GetWebView()?.GoBack();

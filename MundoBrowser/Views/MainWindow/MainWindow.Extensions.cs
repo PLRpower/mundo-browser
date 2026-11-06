@@ -11,7 +11,7 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
-    private void CheckForExtensionStorePage(TabViewModel tab, string url)
+    private static void CheckForExtensionStorePage(TabViewModel tab, string url)
     {
         if (string.IsNullOrEmpty(url))
         {

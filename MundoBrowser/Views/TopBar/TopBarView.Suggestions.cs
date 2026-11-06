@@ -13,6 +13,7 @@ public partial class TopBarView
         MainViewModel vm)
     {
         _suggestionFaviconsCts?.Cancel();
+        _suggestionFaviconsCts?.Dispose();
         _suggestionFaviconsCts = new CancellationTokenSource();
         CancellationToken cancellationToken = _suggestionFaviconsCts.Token;
 

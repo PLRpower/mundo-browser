@@ -8,7 +8,7 @@ using MundoBrowser.ViewModels;
 
 namespace MundoBrowser.Services;
 
-public partial class FaviconService : IFaviconService, IDisposable
+public sealed partial class FaviconService : IFaviconService, IDisposable
 {
     private const int MaxFaviconDownloadBytes = 4 * 1024 * 1024;
     private const int MaxCachedDomains = 4096;
@@ -30,7 +30,7 @@ public partial class FaviconService : IFaviconService, IDisposable
         _faviconsPath = Path.Combine(AppRuntime.LocalDataDirectory, "Favicons");
         Directory.CreateDirectory(_faviconsPath);
 
-        _httpClient = new HttpClient(new HttpClientHandler { MaxConnectionsPerServer = 4 });
+        _httpClient = new HttpClient(new SocketsHttpHandler { MaxConnectionsPerServer = 4 }, disposeHandler: true);
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         _httpClient.Timeout = TimeSpan.FromSeconds(10);

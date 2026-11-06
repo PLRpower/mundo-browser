@@ -247,8 +247,11 @@ namespace MundoBrowser.ViewModels
             var pendingSave = Interlocked.Exchange(ref _sessionSaveDebounceCts, null);
             try
             {
-                pendingSave?.Cancel();
-                pendingSave?.Dispose();
+                if (pendingSave != null)
+                {
+                    await pendingSave.CancelAsync().ConfigureAwait(false);
+                    pendingSave.Dispose();
+                }
             }
             catch { }
 

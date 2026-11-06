@@ -7,7 +7,7 @@ using MundoBrowser.ViewModels;
 
 namespace MundoBrowser;
 
-public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
+public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow, IDisposable
 {
     private readonly IWebViewService _webViewService;
     private readonly IExtensionService _extensionService;

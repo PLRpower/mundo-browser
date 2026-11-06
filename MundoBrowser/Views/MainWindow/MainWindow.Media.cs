@@ -207,7 +207,7 @@ public partial class MainWindow
         if (webView?.CoreWebView2 == null) return;
 
         string script = "";
-        if (action.StartsWith("seek:"))
+        if (action.StartsWith("seek:", StringComparison.Ordinal))
         {
             var parts = action.Split(':');
             if (parts.Length == 2 && double.TryParse(parts[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double percent))

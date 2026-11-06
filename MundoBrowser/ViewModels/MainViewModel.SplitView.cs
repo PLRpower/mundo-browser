@@ -12,7 +12,7 @@ namespace MundoBrowser.ViewModels
         // Split-View State & Management
         // ════════════════════════════════════════════════════════════════
 
-        public static bool IsSplitViewFeatureEnabled { get; set; } = false;
+        public static bool IsSplitViewFeatureEnabled { get; set; }
 
         [ObservableProperty]
         private bool _isSplitViewActive;
@@ -287,8 +287,8 @@ namespace MundoBrowser.ViewModels
 
             if (secondary != null)
             {
-                if (Tabs.Contains(secondary)) Tabs.Remove(secondary);
-                else foreach (var p in PinnedTabs) { if (p.Tab == secondary) p.Tab = null; }
+                if (!Tabs.Remove(secondary))
+                    foreach (var p in PinnedTabs) { if (p.Tab == secondary) p.Tab = null; }
                 if (ActiveMediaTab == secondary) ActiveMediaTab = null;
             }
 
@@ -300,8 +300,8 @@ namespace MundoBrowser.ViewModels
                     SelectNextTabAfterClose(primary);
                 }
 
-                if (Tabs.Contains(primary)) Tabs.Remove(primary);
-                else foreach (var p in PinnedTabs) { if (p.Tab == primary) p.Tab = null; }
+                if (!Tabs.Remove(primary))
+                    foreach (var p in PinnedTabs) { if (p.Tab == primary) p.Tab = null; }
                 if (ActiveMediaTab == primary) ActiveMediaTab = null;
             }
         }

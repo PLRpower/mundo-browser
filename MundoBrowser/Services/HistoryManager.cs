@@ -6,7 +6,7 @@ using MundoBrowser.Models;
 
 namespace MundoBrowser.Services;
 
-public class HistoryManager : IHistoryManager
+public sealed class HistoryManager : IHistoryManager, IDisposable
 {
     private const int MaxHistoryEntries = 1000;
     private const long MaxHistoryFileBytes = 16 * 1024 * 1024;
@@ -206,5 +206,13 @@ public class HistoryManager : IHistoryManager
         }
 
         SaveHistory();
+    }
+
+    public void Dispose()
+    {
+        var pendingSave = Interlocked.Exchange(ref _saveDebounceCts, null);
+        TryCancel(pendingSave);
+        pendingSave?.Dispose();
+        _saveLock.Dispose();
     }
 }

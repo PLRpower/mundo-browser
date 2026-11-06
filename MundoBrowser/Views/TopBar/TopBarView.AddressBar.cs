@@ -121,6 +121,8 @@ public partial class TopBarView
         UpdateAddressDisplay();
         _suggestionFaviconsCts?.Cancel();
         _addressSearchCts?.Cancel();
+        _addressSearchCts?.Dispose();
+        _addressSearchCts = null;
         if (_isUpdatingAddressBar || _isApplyingInlineCompletion || DataContext is not MainViewModel vm)
             return;
 
@@ -406,7 +408,7 @@ public partial class TopBarView
                 displayText = displayText[4..];
         }
 
-        if (displayText.EndsWith("/", StringComparison.Ordinal) && !input.EndsWith("/", StringComparison.Ordinal))
+        if (displayText.EndsWith('/') && !input.EndsWith('/'))
             displayText = displayText.TrimEnd('/');
 
         return displayText;

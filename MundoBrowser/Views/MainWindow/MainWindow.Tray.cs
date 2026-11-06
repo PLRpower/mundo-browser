@@ -187,4 +187,9 @@ public partial class MainWindow
         _trayIconImage?.Dispose();
         _trayIconImage = null;
     }
+
+    public void Dispose()
+    {
+        DisposeTrayIcon();
+    }
 }

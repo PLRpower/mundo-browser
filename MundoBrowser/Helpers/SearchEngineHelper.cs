@@ -36,7 +36,7 @@ public static class SearchEngineHelper
             return FormatCustomUrl(customUrl, encodedQuery);
 
         if (SearchUrlTemplates.TryGetValue(engineKey, out var template))
-            return string.Format(template, encodedQuery);
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture, template, encodedQuery);
 
         return $"https://www.google.com/search?q={encodedQuery}";
     }
@@ -72,8 +72,8 @@ public static class SearchEngineHelper
         var trimmed = template.Trim();
         if (trimmed.Contains("{query}", StringComparison.OrdinalIgnoreCase))
             return trimmed.Replace("{query}", encodedQuery, StringComparison.OrdinalIgnoreCase);
-        if (trimmed.Contains("{0}"))
-            return string.Format(trimmed, encodedQuery);
+        if (trimmed.Contains("{0}", StringComparison.Ordinal))
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture, trimmed, encodedQuery);
 
         return trimmed.Contains('?') 
             ? $"{trimmed}&q={encodedQuery}" 

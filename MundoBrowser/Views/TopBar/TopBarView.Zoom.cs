@@ -69,6 +69,8 @@ public partial class TopBarView
     private void UpdateZoomIndicator(bool showTransientAtDefaultZoom)
     {
         _zoomIndicatorCts?.Cancel();
+        _zoomIndicatorCts?.Dispose();
+        _zoomIndicatorCts = null;
         ZoomIndicatorButton.BeginAnimation(OpacityProperty, null);
         ZoomIndicatorButton.Opacity = 1;
 

@@ -150,7 +150,6 @@ public partial class FaviconService
         string extension,
         int quality)
     {
-        string? temporaryPath = null;
         try
         {
             if (extension == "svg")
@@ -172,10 +171,17 @@ public partial class FaviconService
             var fileName = $"{safeDomain}.q{quality}.{extension}";
             var fullPath = Path.Combine(_faviconsPath, fileName);
 
-            temporaryPath = fullPath + ".tmp";
-            File.WriteAllBytes(temporaryPath, bytes);
-            File.Move(temporaryPath, fullPath, overwrite: true);
-            temporaryPath = null;
+            var temporaryPath = fullPath + ".tmp";
+            try
+            {
+                File.WriteAllBytes(temporaryPath, bytes);
+                File.Move(temporaryPath, fullPath, overwrite: true);
+            }
+            catch
+            {
+                try { File.Delete(temporaryPath); } catch { }
+                throw;
+            }
 
             if (Directory.Exists(_faviconsPath))
             {
@@ -185,7 +191,8 @@ public partial class FaviconService
                         continue;
 
                     var oldFileName = Path.GetFileName(oldFile);
-                    if (oldFileName.StartsWith(safeDomain + ".q") || oldFileName.StartsWith(safeDomain + "."))
+                    if (oldFileName.StartsWith(safeDomain + ".q", StringComparison.OrdinalIgnoreCase)
+                        || oldFileName.StartsWith(safeDomain + ".", StringComparison.OrdinalIgnoreCase))
                     {
                         try { File.Delete(oldFile); } catch { }
                     }
@@ -196,10 +203,6 @@ public partial class FaviconService
         }
         catch
         {
-            if (temporaryPath != null)
-            {
-                try { File.Delete(temporaryPath); } catch { }
-            }
             return null;
         }
     }

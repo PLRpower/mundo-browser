@@ -308,8 +308,7 @@ namespace MundoBrowser.ViewModels
                 if (previousSlot != null)
                     previousSlot.Tab = null;
 
-                if (Tabs.Contains(tab))
-                    Tabs.Remove(tab);
+                Tabs.Remove(tab);
 
                 if (SelectedTab == tab) foreach (var p in PinnedTabs) p.IsSelected = (p.Tab == tab);
             }

@@ -75,8 +75,13 @@ public partial class WebViewService
                     if (_splitSecondaryTab != null) _splitSecondaryTab.LastAccessed = now;
 
                     var tabsToDiscard = new Queue<TabViewModel>();
+                    KeyValuePair<TabViewModel, WebView2>[] snapshot;
+                    lock (_initializationTasks)
+                    {
+                        snapshot = [.. _webViews];
+                    }
 
-                    foreach (var entry in _webViews)
+                    foreach (var entry in snapshot)
                     {
                         var tab = entry.Key;
                         var webView = entry.Value;
@@ -127,7 +132,7 @@ public partial class WebViewService
         try
         {
             var tab = tabs.Dequeue();
-            _webViews.TryGetValue(tab, out var webView);
+            var webView = GetWebViewForTab(tab);
             if (!IsTabProtected(tab, webView))
             {
                 DiscardTab(tab);

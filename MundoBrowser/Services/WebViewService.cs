@@ -8,9 +8,9 @@ using MundoBrowser.Interfaces;
 
 namespace MundoBrowser.Services;
 
-public partial class WebViewService : IWebViewService, IDisposable
+public sealed partial class WebViewService : IWebViewService, IDisposable
 {
-    private class TabContainer
+    private sealed class TabContainer
     {
         public required System.Windows.Controls.Grid ContainerGrid { get; init; }
         public required WebView2 MainWebView { get; init; }
@@ -403,7 +403,9 @@ public partial class WebViewService : IWebViewService, IDisposable
             if (!tab.IsCreatedFromNewWindow)
             {
                 string initialUrl = tab.Url;
-                if (initialUrl == "about:preferences" || initialUrl.StartsWith("edge://preferences") || initialUrl.StartsWith("chrome://settings"))
+                if (initialUrl == "about:preferences"
+                    || initialUrl.StartsWith("edge://preferences", StringComparison.OrdinalIgnoreCase)
+                    || initialUrl.StartsWith("chrome://settings", StringComparison.OrdinalIgnoreCase))
                 {
                     initialUrl = "https://internals.mundobrowser/settings.html#general";
                     tab.AddressUrl = "about:preferences#general";
@@ -426,8 +428,7 @@ public partial class WebViewService : IWebViewService, IDisposable
 
             lock (_initializationTasks)
             {
-                if (_disposed || _removedTabs.Contains(tab))
-                    throw new ObjectDisposedException(nameof(WebViewService));
+                ObjectDisposedException.ThrowIf(_disposed || _removedTabs.Contains(tab), this);
 
                 _webViews[tab] = webView;
                 _tabContainers[tab] = new TabContainer
@@ -674,18 +675,6 @@ public partial class WebViewService : IWebViewService, IDisposable
         catch { }
     }
 
-    private static void TrySetNormalMemoryTarget(WebView2 webView)
-    {
-        try
-        {
-            if (webView.CoreWebView2 != null && webView.CoreWebView2.MemoryUsageTargetLevel != CoreWebView2MemoryUsageTargetLevel.Normal)
-            {
-                webView.CoreWebView2.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
-            }
-        }
-        catch { }
-    }
-
     private static void TrySetLowMemoryTarget(WebView2 webView)
     {
         try
@@ -700,7 +689,8 @@ public partial class WebViewService : IWebViewService, IDisposable
 
     public Task<WebView2?> OpenDevToolsForTabAsync(TabViewModel tab)
     {
-        if (_webViews.TryGetValue(tab, out var webView))
+        var webView = GetWebViewForTab(tab);
+        if (webView != null)
         {
             try
             {
@@ -861,9 +851,8 @@ public partial class WebViewService : IWebViewService, IDisposable
                 if (downloads.Count == 0)
                 {
                     _activeDownloads.Remove(webView);
-                    if (_pendingDisposalWebViews.Contains(webView))
+                    if (_pendingDisposalWebViews.Remove(webView))
                     {
-                        _pendingDisposalWebViews.Remove(webView);
                         shouldDispose = true;
                     }
                 }
@@ -967,34 +956,37 @@ public partial class WebViewService : IWebViewService, IDisposable
             _pendingGracefulDisposals.Add((webView, element));
         }
 
-        _ = Task.Delay(400).ContinueWith(_ =>
+        _ = CompleteGracefulDisposalAsync(webView, element);
+    }
+
+    private async Task CompleteGracefulDisposalAsync(WebView2 webView, UIElement? element)
+    {
+        await Task.Delay(400).ConfigureAwait(false);
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.HasShutdownStarted) return;
+
+        _ = dispatcher.BeginInvoke(() =>
         {
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher == null || dispatcher.HasShutdownStarted) return;
-
-            dispatcher.BeginInvoke(() =>
+            lock (_pendingGracefulDisposals)
             {
-                lock (_pendingGracefulDisposals)
+                if (!_pendingGracefulDisposals.Remove((webView, element)))
+                    return;
+            }
+
+            lock (_activeDownloads)
+            {
+                if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
                 {
-                    if (!_pendingGracefulDisposals.Remove((webView, element)))
-                        return;
+                    _pendingDisposalWebViews.Add(webView);
+                    return;
                 }
+            }
 
-                lock (_activeDownloads)
-                {
-                    if (_activeDownloads.TryGetValue(webView, out var downloads) && downloads.Count > 0)
-                    {
-                        _pendingDisposalWebViews.Add(webView);
-                        return;
-                    }
-                }
+            if (element != null) RemoveFromParentPanel(element);
+            else if (webView.Parent is UIElement parent && parent != _container) RemoveFromParentPanel(parent);
+            else RemoveFromParentPanel(webView);
 
-                if (element != null) RemoveFromParentPanel(element);
-                else if (webView.Parent is UIElement parent && parent != _container) RemoveFromParentPanel(parent);
-                else RemoveFromParentPanel(webView);
-
-                try { webView.Dispose(); } catch { }
-            });
+            try { webView.Dispose(); } catch { }
         });
     }
 
@@ -1007,6 +999,7 @@ public partial class WebViewService : IWebViewService, IDisposable
         _memoryTimer.Stop();
         _memoryTimer.Elapsed -= CheckMemoryOptimization;
         _memoryTimer.Dispose();
+        _initSemaphore.Dispose();
 
         lock (_pendingGracefulDisposals)
         {

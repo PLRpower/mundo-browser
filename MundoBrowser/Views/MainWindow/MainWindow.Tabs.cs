@@ -273,9 +273,9 @@ public partial class MainWindow
                 return;
 
             var source = webView.CoreWebView2.Source;
-            if (source.Contains("internals.mundobrowser"))
+            if (source.Contains("internals.mundobrowser", StringComparison.OrdinalIgnoreCase))
             {
-                if (source.Contains("settings.html"))
+                if (source.Contains("settings.html", StringComparison.OrdinalIgnoreCase))
                 {
                     string versionBadge = AppRuntime.VersionBadgeText;
                     _ = webView.CoreWebView2.ExecuteScriptAsync(
@@ -283,9 +283,10 @@ public partial class MainWindow
                 }
 
                 if (string.IsNullOrEmpty(tab.AddressUrl)
-                    || !tab.AddressUrl.StartsWith("about:preferences"))
+                    || !tab.AddressUrl.StartsWith("about:preferences", StringComparison.OrdinalIgnoreCase))
                 {
-                    string hash = source.Contains("#") ? source[source.IndexOf("#")..] : "#general";
+                    int hashIdx = source.IndexOf('#');
+                    string hash = hashIdx >= 0 ? source[hashIdx..] : "#general";
                     tab.AddressUrl = "about:preferences" + hash;
                 }
             }
@@ -337,15 +338,16 @@ public partial class MainWindow
                 if (webView.CoreWebView2 == null) return;
                 var source = webView.CoreWebView2.Source;
                 if (webView.CoreWebView2.DocumentTitle == "about:preferences"
-                    || source.Contains("internals.mundobrowser"))
+                    || source.Contains("internals.mundobrowser", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (source.Contains("settings.html"))
+                    if (source.Contains("settings.html", StringComparison.OrdinalIgnoreCase))
                     {
-                        string hash = source.Contains("#") ? source[source.IndexOf("#")..] : "#general";
+                        int hashIdx = source.IndexOf('#');
+                        string hash = hashIdx >= 0 ? source[hashIdx..] : "#general";
                         tab.AddressUrl = "about:preferences" + hash;
                     }
                     else if (string.IsNullOrEmpty(tab.AddressUrl)
-                             || !tab.AddressUrl.StartsWith("about:preferences"))
+                             || !tab.AddressUrl.StartsWith("about:preferences", StringComparison.OrdinalIgnoreCase))
                     {
                         tab.AddressUrl = "about:preferences#general";
                     }

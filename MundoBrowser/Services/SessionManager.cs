@@ -9,7 +9,7 @@ namespace MundoBrowser.Services;
 /// <summary>
 /// Default implementation of ISessionManager for browser session persistence.
 /// </summary>
-public class SessionManager : ISessionManager
+public sealed class SessionManager : ISessionManager, IDisposable
 {
     private const long MaxSessionFileBytes = 8 * 1024 * 1024;
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
@@ -70,5 +70,10 @@ public class SessionManager : ISessionManager
         }
 
         return null;
+    }
+
+    public void Dispose()
+    {
+        _saveLock.Dispose();
     }
 }

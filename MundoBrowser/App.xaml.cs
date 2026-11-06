@@ -14,6 +14,7 @@ public partial class App : System.Windows.Application
 {
     private const string UniqueEventName = AppRuntime.UniqueInstanceName;
     private static Mutex? _mutex;
+    private static CancellationTokenSource? _argsListenerCts;
     private readonly ServiceProvider _serviceProvider;
 
     public App()
@@ -21,7 +22,7 @@ public partial class App : System.Windows.Application
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
-        NativeMethods.SetCurrentProcessExplicitAppUserModelID(NativeMethods.AppUserModelId);
+        _ = NativeMethods.SetCurrentProcessExplicitAppUserModelID(NativeMethods.AppUserModelId);
         ConfigurePerformanceSettings();
         _serviceProvider = ConfigureServices();
     }
@@ -129,6 +130,9 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _argsListenerCts?.Cancel();
+        _argsListenerCts?.Dispose();
+        _argsListenerCts = null;
         _serviceProvider.Dispose();
         _mutex?.Dispose();
         base.OnExit(e);
@@ -153,42 +157,54 @@ public partial class App : System.Windows.Application
 
     internal static void StartArgsListener(MainWindow mainWindow)
     {
-        var thread = new Thread(() =>
+        _argsListenerCts?.Cancel();
+        _argsListenerCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _argsListenerCts = cts;
+        _ = ListenForExternalArgsAsync(mainWindow, cts.Token);
+    }
+
+    private static async Task ListenForExternalArgsAsync(MainWindow mainWindow, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
         {
-            while (true)
+            try
             {
+                using var server = new NamedPipeServerStream(UniqueEventName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+                using var reader = new StreamReader(server);
+                string? argsLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                string[] args = string.IsNullOrWhiteSpace(argsLine)
+                    ? []
+                    : JsonSerializer.Deserialize<string[]>(argsLine) ?? [];
+
+                _ = mainWindow.Dispatcher.BeginInvoke(() =>
+                {
+                    mainWindow.RestoreFromTray();
+
+                    if (args.Length > 0)
+                        mainWindow.HandleExternalArguments(args);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch
+            {
+                if (mainWindow.Dispatcher.HasShutdownStarted || cancellationToken.IsCancellationRequested)
+                    return;
+
                 try
                 {
-                    using var server = new NamedPipeServerStream(UniqueEventName, PipeDirection.In);
-                    server.WaitForConnection();
-                    using var reader = new StreamReader(server);
-                    string? argsLine = reader.ReadLine();
-                    string[] args = string.IsNullOrWhiteSpace(argsLine)
-                        ? []
-                        : JsonSerializer.Deserialize<string[]>(argsLine) ?? [];
-
-                    mainWindow.Dispatcher.BeginInvoke(() =>
-                    {
-                        mainWindow.RestoreFromTray();
-
-                        if (args.Length > 0)
-                            mainWindow.HandleExternalArguments(args);
-                    });
+                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
                 }
-                catch
+                catch (OperationCanceledException)
                 {
-                    if (mainWindow.Dispatcher.HasShutdownStarted)
-                        return;
-
-                    // Avoid a tight retry loop if the pipe temporarily becomes unavailable.
-                    Thread.Sleep(100);
+                    return;
                 }
             }
-        })
-        {
-            IsBackground = true
-        };
-        thread.Start();
+        }
     }
 
     internal static void LaunchMainWindow(string[]? args, Window? startupWindow = null)
