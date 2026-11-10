@@ -16,25 +16,27 @@ public partial class MainWindow
                     try {
                         if (!window.chrome || !window.chrome.webview) return;
                         const media = document.querySelector('video, audio');
-                        if (!media) {
+                        const hasMetadata = Boolean(navigator.mediaSession && navigator.mediaSession.metadata);
+                        if (!media && !hasMetadata) {
                             window.chrome.webview.postMessage({ type: 'mediaState', hasMedia: false });
                             return;
                         }
                         let title = document.title || '';
                         let artist = '';
-                        if (navigator.mediaSession && navigator.mediaSession.metadata) {
+                        if (hasMetadata) {
                             title = navigator.mediaSession.metadata.title || title;
                             artist = navigator.mediaSession.metadata.artist || '';
                         }
+                        const isPaused = media ? Boolean(media.paused) : (navigator.mediaSession ? navigator.mediaSession.playbackState === 'paused' : false);
                         window.chrome.webview.postMessage({
                             type: 'mediaState',
                             hasMedia: true,
                             title: title,
                             artist: artist,
-                            position: Number.isFinite(media.currentTime) ? media.currentTime : 0,
-                            duration: Number.isFinite(media.duration) ? media.duration : 0,
-                            paused: Boolean(media.paused),
-                            muted: Boolean(media.muted)
+                            position: media && Number.isFinite(media.currentTime) ? media.currentTime : 0,
+                            duration: media && Number.isFinite(media.duration) ? media.duration : 0,
+                            paused: isPaused,
+                            muted: media ? Boolean(media.muted) : false
                         });
                     } catch (e) {}
                 };
@@ -89,7 +91,7 @@ public partial class MainWindow
                 tab.MediaDuration = data.duration;
                 tab.MediaTitle = data.title;
                 tab.MediaArtist = data.artist;
-                tab.IsMediaPaused = data.paused;
+                tab.IsMediaPaused = data.paused || !tab.IsPlayingAudio;
                 tab.IsMediaMuted = data.muted;
                 _globalMediaTimer.Stop();
             }
@@ -168,7 +170,7 @@ public partial class MainWindow
                 tab.MediaDuration = data.duration;
                 tab.MediaTitle = data.title;
                 tab.MediaArtist = data.artist;
-                tab.IsMediaPaused = data.paused;
+                tab.IsMediaPaused = data.paused || !tab.IsPlayingAudio;
                 tab.IsMediaMuted = data.muted;
 
                 if (data.paused && !tab.IsPlayingAudio)
@@ -232,18 +234,18 @@ public partial class MainWindow
                             if (video.paused) video.play();
                             else video.pause();
                         } else {
-                            const btn = document.querySelector('#play-pause-button') || document.querySelector('.play-pause-button') || document.querySelector('.ytp-play-button');
+                            const btn = document.querySelector('[data-testid=""control-button-playpause""]') || document.querySelector('#play-pause-button') || document.querySelector('.play-pause-button') || document.querySelector('.ytp-play-button');
                             if (btn) btn.click();
                         }
                     })()",
                 "next" => @"
                     (function() {
-                        const btn = document.querySelector('.next-button') || document.querySelector('[aria-label=""Suivant""]') || document.querySelector('[aria-label=""Next""]') || document.querySelector('.ytp-next-button');
+                        const btn = document.querySelector('[data-testid=""control-button-skip-forward""]') || document.querySelector('.next-button') || document.querySelector('[aria-label=""Suivant""]') || document.querySelector('[aria-label=""Next""]') || document.querySelector('.ytp-next-button');
                         if (btn) btn.click();
                     })()",
                 "previous" => @"
                     (function() {
-                        const btn = document.querySelector('.previous-button') || document.querySelector('[aria-label=""Précédent""]') || document.querySelector('[aria-label=""Previous""]') || document.querySelector('.ytp-prev-button');
+                        const btn = document.querySelector('[data-testid=""control-button-skip-back""]') || document.querySelector('.previous-button') || document.querySelector('[aria-label=""Précédent""]') || document.querySelector('[aria-label=""Previous""]') || document.querySelector('.ytp-prev-button');
                         if (btn) btn.click();
                     })()",
                 "volume" => @"
@@ -251,7 +253,7 @@ public partial class MainWindow
                         const video = document.querySelector('video, audio');
                         if (video) video.muted = !video.muted;
                         else {
-                            const btn = document.querySelector('.volume-button') || document.querySelector('.ytp-mute-button') || document.querySelector('[aria-label=""Mute""]') || document.querySelector('[aria-label=""Désactiver le son""]');
+                            const btn = document.querySelector('[data-testid=""volume-bar-toggle-mute-button""]') || document.querySelector('.volume-button') || document.querySelector('.ytp-mute-button') || document.querySelector('[aria-label=""Mute""]') || document.querySelector('[aria-label=""Désactiver le son""]');
                             if (btn) btn.click();
                         }
                     })()",

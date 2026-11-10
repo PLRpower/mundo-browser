@@ -586,7 +586,7 @@ public partial class TopBarView
     {
         if (vm.IsPendingNewTab)
         {
-            vm.AddTabWithUrl(url);
+            vm.AddTabWithUrl(url, vm.SelectedTab);
             return;
         }
 

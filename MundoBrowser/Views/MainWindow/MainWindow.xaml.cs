@@ -192,7 +192,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow, IDisposab
                             input = new Uri(System.IO.Path.GetFullPath(input)).AbsoluteUri;
                         }
 
-                        vm.AddTabWithUrl(input);
+                        vm.AddTabWithUrl(input, vm.SelectedTab);
                     }
                     else if (vm.SelectedTab != null)
                     {
@@ -222,7 +222,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow, IDisposab
                 input = new Uri(System.IO.Path.GetFullPath(input)).AbsoluteUri;
             }
             
-            vm.AddTabWithUrl(input);
+            vm.AddTabWithUrl(input, vm.SelectedTab);
             
             var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
             

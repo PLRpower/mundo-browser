@@ -7,6 +7,8 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
+    private readonly HashSet<TabViewModel> _syncingUrlTabs = [];
+
     private void InitializeEvents(MainViewModel vm)
     {
         _viewModel = vm;
@@ -81,19 +83,27 @@ public partial class MainWindow
         if (e.PropertyName != nameof(TabViewModel.Url) || sender is not TabViewModel tab)
             return;
 
+        if (_syncingUrlTabs.Contains(tab))
+            return;
+
         if (!Dispatcher.CheckAccess())
         {
             _ = Dispatcher.BeginInvoke(() => OnTabPropertyChanged(sender, e));
             return;
         }
 
-        if (!_trackedTabs.Contains(tab))
+        if (_syncingUrlTabs.Contains(tab) || !_trackedTabs.Contains(tab))
             return;
 
         try
         {
-            var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
-            if (_trackedTabs.Contains(tab))
+            bool createdNewWebView = false;
+            var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv =>
+            {
+                createdNewWebView = true;
+                SetupWebViewEvents(wv, tab);
+            });
+            if (!createdNewWebView && _trackedTabs.Contains(tab))
             {
                 try
                 {
@@ -229,24 +239,31 @@ public partial class MainWindow
         webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
         {
             tab.IsPlayingAudio = webView.CoreWebView2.IsDocumentPlayingAudio;
+            tab.IsMediaPaused = !tab.IsPlayingAudio;
             if (tab.IsPlayingAudio) tab.LastAccessed = DateTime.Now;
             if (DataContext is MainViewModel vm)
             {
                 if (tab.IsPlayingAudio)
                 {
-                    vm.ActiveMediaTab = tab;
-                    vm.IsMediaBarVisible = true;
+                    if (vm.ActiveMediaTab == tab)
+                    {
+                        vm.KeepActiveMediaTabWhenPaused = false;
+                        vm.IsMediaBarVisible = true;
+                    }
+                    else if (vm.ActiveMediaTab == null || !vm.IsMediaBarVisible || (!vm.ActiveMediaTab.IsPlayingAudio && !vm.KeepActiveMediaTabWhenPaused))
+                    {
+                        vm.ActiveMediaTab = tab;
+                        vm.IsMediaBarVisible = true;
+                    }
                     EnsureMediaObserverInstalled(webView);
                 }
                 else if (vm.ActiveMediaTab == tab)
                 {
+                    if (vm.FindPlayingAudioTab(tab) != null)
+                        vm.KeepActiveMediaTabWhenPaused = true;
+
                     EnsureMediaObserverInstalled(webView);
-                    var otherAudioTab = vm.Tabs.FirstOrDefault(t => t.IsPlayingAudio);
-                    if (otherAudioTab != null)
-                    {
-                        vm.ActiveMediaTab = otherAudioTab;
-                    }
-                    else if (tab.IsMediaPaused)
+                    if (tab.IsMediaPaused)
                     {
                         _globalMediaTimer.Stop();
                     }
@@ -254,6 +271,7 @@ public partial class MainWindow
             }
         };
 
+        bool hasLoadedDocument = false;
         ulong activeNavigationId = 0;
 
         webView.CoreWebView2.NavigationStarting += (_, args) =>
@@ -273,6 +291,11 @@ public partial class MainWindow
                 return;
 
             var source = webView.CoreWebView2.Source;
+            if (string.IsNullOrEmpty(source) || source.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            hasLoadedDocument = true;
+
             if (source.Contains("internals.mundobrowser", StringComparison.OrdinalIgnoreCase))
             {
                 if (source.Contains("settings.html", StringComparison.OrdinalIgnoreCase))
@@ -292,7 +315,15 @@ public partial class MainWindow
             }
             else
             {
-                tab.Url = tab.AddressUrl = source;
+                _syncingUrlTabs.Add(tab);
+                try
+                {
+                    tab.Url = tab.AddressUrl = source;
+                }
+                finally
+                {
+                    _syncingUrlTabs.Remove(tab);
+                }
             }
 
             var docTitle = webView.CoreWebView2.DocumentTitle;
@@ -502,35 +533,40 @@ public partial class MainWindow
         webView.CoreWebView2.DownloadStarting += (sender, args) =>
         {
             var downloadOp = args.DownloadOperation;
-            _webViewService.RegisterActiveDownload(webView, downloadOp);
+            if (!hasLoadedDocument && downloadOp.Uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                args.Cancel = true;
+            }
+            else
+            {
+                _webViewService.RegisterActiveDownload(webView, downloadOp);
+            }
 
-            bool isBlankDownloadTab = !webView.CoreWebView2.CanGoBack &&
-                (string.IsNullOrEmpty(webView.CoreWebView2.DocumentTitle) 
-                 || webView.CoreWebView2.DocumentTitle == "about:blank" 
-                 || webView.CoreWebView2.Source == "about:blank"
-                 || webView.CoreWebView2.Source == tab.Url);
+            bool isBlankDownloadTab = !hasLoadedDocument
+                && !webView.CoreWebView2.CanGoBack
+                && !tab.IsPinned;
 
             if (isBlankDownloadTab)
             {
                 Dispatcher.BeginInvoke(() =>
                 {
-                    if (_viewModel != null)
+                    if (_viewModel == null || !_trackedTabs.Contains(tab))
+                        return;
+
+                    if (_viewModel.SelectedTab == tab)
                     {
-                        if (_viewModel.SelectedTab == tab)
+                        var targetTab = (tab.OpenedByTab != null && _trackedTabs.Contains(tab.OpenedByTab))
+                            ? tab.OpenedByTab
+                            : _viewModel.Tabs.FirstOrDefault(t => t != tab)
+                              ?? _viewModel.PinnedTabs.FirstOrDefault(p => !p.IsEmpty && p.Tab != tab)?.Tab;
+
+                        if (targetTab != null)
                         {
-                            var targetTab = (tab.OpenedByTab != null && _trackedTabs.Contains(tab.OpenedByTab))
-                                ? tab.OpenedByTab
-                                : _viewModel.Tabs.FirstOrDefault(t => t != tab)
-                                  ?? _viewModel.PinnedTabs.FirstOrDefault(p => !p.IsEmpty)?.Tab;
-
-                            if (targetTab != null)
-                            {
-                                _viewModel.SelectedTab = targetTab;
-                            }
+                            _viewModel.SelectedTab = targetTab;
                         }
-
-                        _viewModel.CloseTab(tab);
                     }
+
+                    _viewModel.CloseTab(tab);
                 });
             }
         };

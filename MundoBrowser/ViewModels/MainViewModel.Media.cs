@@ -12,13 +12,33 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private TabViewModel? _activeMediaTab;
 
+        public bool KeepActiveMediaTabWhenPaused { get; set; }
+
         partial void OnActiveMediaTabChanged(TabViewModel? value)
         {
+            KeepActiveMediaTabWhenPaused = false;
             if (value != null) IsMediaBarVisible = true;
         }
 
         [ObservableProperty]
         private bool _isMediaBarVisible = true;
+
+        public TabViewModel? FindPlayingAudioTab(TabViewModel? excludeTab = null)
+        {
+            foreach (var tab in Tabs)
+            {
+                if (tab != excludeTab && tab.IsPlayingAudio)
+                    return tab;
+            }
+
+            foreach (var pinned in PinnedTabs)
+            {
+                if (pinned.Tab is { IsPlayingAudio: true } pinnedTab && pinnedTab != excludeTab)
+                    return pinnedTab;
+            }
+
+            return null;
+        }
 
         public bool IsAdBlockerEnabled
         {
@@ -41,12 +61,20 @@ namespace MundoBrowser.ViewModels
         }
 
         [RelayCommand]
-        private void CloseMediaBar() => IsMediaBarVisible = false;
+        private void CloseMediaBar()
+        {
+            IsMediaBarVisible = false;
+            ActiveMediaTab = null;
+        }
 
         [RelayCommand]
         private void MediaPlayPause()
         {
-            if (ActiveMediaTab != null) ActiveMediaTab.IsMediaPaused = !ActiveMediaTab.IsMediaPaused;
+            if (ActiveMediaTab != null)
+            {
+                ActiveMediaTab.IsMediaPaused = !ActiveMediaTab.IsMediaPaused;
+                KeepActiveMediaTabWhenPaused = ActiveMediaTab.IsMediaPaused;
+            }
             RequestMediaAction("playPause");
         }
 

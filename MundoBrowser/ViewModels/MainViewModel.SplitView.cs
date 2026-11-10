@@ -289,7 +289,7 @@ namespace MundoBrowser.ViewModels
             {
                 if (!Tabs.Remove(secondary))
                     foreach (var p in PinnedTabs) { if (p.Tab == secondary) p.Tab = null; }
-                if (ActiveMediaTab == secondary) ActiveMediaTab = null;
+                if (ActiveMediaTab == secondary) ActiveMediaTab = FindPlayingAudioTab(secondary);
             }
 
             if (primary != null)
@@ -302,7 +302,7 @@ namespace MundoBrowser.ViewModels
 
                 if (!Tabs.Remove(primary))
                     foreach (var p in PinnedTabs) { if (p.Tab == primary) p.Tab = null; }
-                if (ActiveMediaTab == primary) ActiveMediaTab = null;
+                if (ActiveMediaTab == primary) ActiveMediaTab = FindPlayingAudioTab(primary);
             }
         }
     }

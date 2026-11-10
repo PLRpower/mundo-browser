@@ -357,7 +357,7 @@ namespace MundoBrowser.ViewModels
                 }
             }
 
-            if (removed && ActiveMediaTab == tab) ActiveMediaTab = null;
+            if (removed && ActiveMediaTab == tab) ActiveMediaTab = FindPlayingAudioTab(tab);
         }
 
         private void SelectNextTabAfterClose(TabViewModel tabBeingClosed)
@@ -400,9 +400,9 @@ namespace MundoBrowser.ViewModels
 
             foreach (var tab in toRemove)
             {
-                if (ActiveMediaTab == tab)
-                    ActiveMediaTab = null;
                 Tabs.Remove(tab);
+                if (ActiveMediaTab == tab)
+                    ActiveMediaTab = FindPlayingAudioTab(tab);
             }
         }
     }
