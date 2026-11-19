@@ -140,4 +140,113 @@ public sealed class CoreLogicTests
                 Directory.Delete(tempDir, recursive: true);
         }
     }
+
+    [Theory]
+    [InlineData("chrome-extension://agcalopfgbmbfgciceeneagbcjbmhopo/popup/index.html?uilocation=popout&singleActionPopout=vault_Fido2Popout_abc#/fido2?sessionId=abc", true)]
+    [InlineData("chrome-extension://agcalopfgbmbfgciceeneagbcjbmhopo/notification/bar.html?add=1", true)]
+    [InlineData("chrome-extension://agcalopfgbmbfgciceeneagbcjbmhopo/popup/index.html#/tabs/vault", true)]
+    [InlineData("chrome-extension://cjpalhdlnbpafiamejdnhcphjbkeiagm/dashboard.html", false)]
+    [InlineData("https://clients.boursobank.com/connexion/", false)]
+    [InlineData("about:blank", false)]
+    public void ExtensionService_IsExtensionPopupUri_DetectsPopupsCorrectly(string uri, bool expected)
+    {
+        var extensions = new[]
+        {
+            new ExtensionInfo("agcalopfgbmbfgciceeneagbcjbmhopo", "Bitwarden", true)
+            {
+                PopupUrl = "chrome-extension://agcalopfgbmbfgciceeneagbcjbmhopo/popup/index.html"
+            }
+        };
+
+        Assert.Equal(expected, ExtensionService.IsExtensionPopupUri(uri, extensions));
+    }
+
+    [Fact]
+    public void ExtensionService_EnsureExtensionCompatibilityShim_PatchesBackgroundServiceWorkerIdempotently()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "MundoBrowserExtTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            string bgPath = Path.Combine(tempDir, "background.js");
+            File.WriteAllText(bgPath, "console.log('worker');");
+
+            const string manifestJson = """
+            {
+              "manifest_version": 3,
+              "name": "Bitwarden Test",
+              "version": "1.0.0",
+              "background": { "service_worker": "background.js" }
+            }
+            """;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(manifestJson);
+
+            bool firstPatch = ExtensionService.EnsureExtensionCompatibilityShim(tempDir, doc.RootElement);
+            bool secondPatch = ExtensionService.EnsureExtensionCompatibilityShim(tempDir, doc.RootElement);
+
+            Assert.True(firstPatch);
+            Assert.False(secondPatch);
+            string patchedContent = File.ReadAllText(bgPath);
+            Assert.Contains(ExtensionService.WebView2ExtensionShimMarker, patchedContent);
+            Assert.EndsWith("console.log('worker');", patchedContent);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnsureExtensionCompatibilityShim_UpgradesLegacyV1ShimToCurrent()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "MundoBrowserTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            string bgPath = Path.Combine(tempDir, "background.js");
+            File.WriteAllText(bgPath, """
+                /* MUNDO_WV2_EXTENSION_SHIM_V1 */
+                (function() {
+                  chrome.tabs.create = patchedTabCreate;
+                })();
+                console.log('original-worker');
+                """);
+
+            const string manifestJson = """
+            {
+              "manifest_version": 3,
+              "name": "Bitwarden Test",
+              "version": "1.0.0",
+              "background": { "service_worker": "background.js" }
+            }
+            """;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(manifestJson);
+
+            bool upgraded = ExtensionService.EnsureExtensionCompatibilityShim(tempDir, doc.RootElement);
+
+            Assert.True(upgraded);
+            string patchedContent = File.ReadAllText(bgPath);
+            Assert.Contains(ExtensionService.WebView2ExtensionShimMarker, patchedContent);
+            Assert.DoesNotContain("/* MUNDO_WV2_EXTENSION_SHIM_V1 */", patchedContent);
+            Assert.EndsWith("console.log('original-worker');", patchedContent.Trim());
+
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            ExtensionService.EnsureAllInstalledExtensionsPatched(Path.Combine(appData, "MundoBrowser", "Extensions"));
+            ExtensionService.EnsureAllInstalledExtensionsPatched(Path.Combine(appData, "MundoBrowser.Development", "Extensions"));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
 }
+
+
+
+

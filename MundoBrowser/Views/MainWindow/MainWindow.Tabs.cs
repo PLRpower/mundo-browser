@@ -469,16 +469,48 @@ public partial class MainWindow
 
             try
             {
-                if (args.WindowFeatures.HasSize || args.WindowFeatures.HasPosition)
+                bool isExtensionPopup = Services.ExtensionService.IsExtensionPopupUri(args.Uri, _viewModel?.InstalledExtensions);
+                bool isPopupWindow = args.WindowFeatures.HasSize
+                    || args.WindowFeatures.HasPosition
+                    || !args.WindowFeatures.ShouldDisplayToolbar
+                    || isExtensionPopup;
+
+                if (isPopupWindow)
                 {
+                    if (isExtensionPopup)
+                    {
+                        CloseExtensionPopup();
+                        if (_activeExtensionPopoutWindow?.IsVisible == true)
+                        {
+                            try { _activeExtensionPopoutWindow.Close(); } catch { }
+                        }
+                        _activeExtensionPopoutWindow = null;
+                    }
+
+                    double defaultWidth = isExtensionPopup ? 480 : 800;
+                    double defaultHeight = 600;
+
                     var popupWindow = new System.Windows.Window
                     {
-                        Title = "Mundo Browser",
-                        Width = args.WindowFeatures.HasSize && args.WindowFeatures.Width > 0 ? args.WindowFeatures.Width : 800,
-                        Height = args.WindowFeatures.HasSize && args.WindowFeatures.Height > 0 ? args.WindowFeatures.Height : 600,
-                        WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+                        Title = isExtensionPopup ? "Extension" : "Mundo Browser",
+                        Width = args.WindowFeatures.HasSize && args.WindowFeatures.Width > 0 ? args.WindowFeatures.Width : defaultWidth,
+                        Height = args.WindowFeatures.HasSize && args.WindowFeatures.Height > 0 ? args.WindowFeatures.Height : defaultHeight,
+                        WindowStartupLocation = !isExtensionPopup && args.WindowFeatures.HasPosition
+                            ? System.Windows.WindowStartupLocation.Manual
+                            : System.Windows.WindowStartupLocation.CenterOwner,
                         Owner = this
                     };
+
+                    if (!isExtensionPopup && args.WindowFeatures.HasPosition)
+                    {
+                        popupWindow.Left = args.WindowFeatures.Left;
+                        popupWindow.Top = args.WindowFeatures.Top;
+                    }
+
+                    if (isExtensionPopup)
+                    {
+                        _activeExtensionPopoutWindow = popupWindow;
+                    }
 
                     popupWindow.SourceInitialized += (_, _) => Helpers.NativeMethods.ApplyDarkMode(popupWindow);
 
@@ -487,23 +519,62 @@ public partial class MainWindow
 
                     popupWindow.Closed += (_, _) =>
                     {
+                        if (ReferenceEquals(_activeExtensionPopoutWindow, popupWindow))
+                            _activeExtensionPopoutWindow = null;
                         popupWindow.Content = null;
                         try { popupWebView.Dispose(); } catch { }
                     };
 
                     popupWindow.Show();
+                    popupWindow.Activate();
 
                     await popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
-                    await _webViewService.ConfigurePopupWebViewAsync(popupWebView, args.Uri);
                     args.NewWindow = popupWebView.CoreWebView2;
 
                     popupWebView.CoreWebView2.WindowCloseRequested += (_, _) =>
                     {
                         popupWindow.Close();
                     };
+                    popupWebView.CoreWebView2.ProcessFailed += (_, _) =>
+                    {
+                        popupWindow.Close();
+                    };
+
+                    if (isExtensionPopup)
+                    {
+                        try
+                        {
+                            await popupWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("""
+                                (function() {
+                                    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) return;
+                                    var origSend = chrome.runtime.sendMessage.bind(chrome.runtime);
+                                    chrome.runtime.sendMessage = function(msg) {
+                                        if (msg && (msg.type === 'PickCredentialResponse' || msg.type === 'ConfirmNewCredentialResponse')) {
+                                            setTimeout(function() {
+                                                try { window.close(); } catch (e) {}
+                                            }, 100);
+                                        }
+                                        return origSend.apply(this, arguments);
+                                    };
+                                })();
+                            """);
+                        }
+                        catch { }
+                    }
+
+                    await _webViewService.ConfigurePopupWebViewAsync(popupWebView, args.Uri);
                     popupWebView.CoreWebView2.DocumentTitleChanged += (_, _) =>
                     {
-                        popupWindow.Title = popupWebView.CoreWebView2.DocumentTitle;
+                        if (!string.IsNullOrWhiteSpace(popupWebView.CoreWebView2.DocumentTitle))
+                            popupWindow.Title = popupWebView.CoreWebView2.DocumentTitle;
+                    };
+                    popupWebView.CoreWebView2.NewWindowRequested += (_, popupArgs) =>
+                    {
+                        if (_viewModel == null || string.IsNullOrWhiteSpace(popupArgs.Uri))
+                            return;
+
+                        popupArgs.Handled = true;
+                        _viewModel.AddTabWithUrl(popupArgs.Uri, _viewModel.SelectedTab ?? tab);
                     };
                 }
                 else if (_viewModel != null)

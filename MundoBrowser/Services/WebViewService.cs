@@ -774,6 +774,18 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
             RegisterActiveDownload(popupWebView, args.DownloadOperation);
         };
 
+        try
+        {
+            await popupWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ExtensionService.WebView2ExtensionShimScript);
+        }
+        catch { }
+
+        if (!string.IsNullOrWhiteSpace(initialUrl) &&
+            initialUrl.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         var adBlocker = _adBlockerService;
         if (adBlocker == null)
             return;
@@ -806,6 +818,10 @@ public sealed partial class WebViewService : IWebViewService, IDisposable
 
         popupWebView.CoreWebView2.WebResourceRequested += (_, e) =>
         {
+            if (currentPageUrl.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) ||
+                e.Request.Uri.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase))
+                return;
+
             if (!isAdBlockActiveForPage || !adBlocker.IsAdBlockerEnabled) return;
             bool cookieBlockActive = isCookieBlockActiveForPage && adBlocker.IsCookieBlockerEnabled;
             if (adBlocker.ShouldBlockUrl(e.Request.Uri, cookieBlockActive))

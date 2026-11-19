@@ -28,6 +28,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow, IDisposab
     private WindowState _windowStateBeforeTray = WindowState.Normal;
     private string? _currentExtensionId;
     private ExtensionPopupWindow? _extensionPopupWindow;
+    private Window? _activeExtensionPopoutWindow;
     private SidebarView? FloatingSidebarControl;
     private (WindowState State, WindowStyle Style, ResizeMode Resize, Wpf.Ui.Controls.WindowBackdropType Backdrop, Wpf.Ui.Controls.WindowCornerPreference Corners, bool Topmost, double Left, double Top, double Width, double Height) _prevWindowState;
 

@@ -46,6 +46,13 @@ public partial class ExtensionPopupWindow : Window
 
         PopupWebView.CoreWebView2.Settings.IsScriptEnabled = true;
         PopupWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
+        PopupWebView.CoreWebView2.WindowCloseRequested += (_, _) => Close();
+        try
+        {
+            await PopupWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(Services.ExtensionService.WebView2ExtensionShimScript);
+        }
+        catch { }
+
         PopupWebView.CoreWebView2.Navigate(popupUrl);
 
         await Task.Delay(100);
