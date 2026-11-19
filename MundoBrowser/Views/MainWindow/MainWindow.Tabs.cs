@@ -514,8 +514,14 @@ public partial class MainWindow
 
                     popupWindow.SourceInitialized += (_, _) => Helpers.NativeMethods.ApplyDarkMode(popupWindow);
 
-                    var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
-                    popupWindow.Content = popupWebView;
+                    var popupWebView = new Microsoft.Web.WebView2.Wpf.WebView2
+                    {
+                        HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+                        VerticalAlignment = System.Windows.VerticalAlignment.Stretch
+                    };
+                    var popupGrid = new System.Windows.Controls.Grid();
+                    popupGrid.Children.Add(popupWebView);
+                    popupWindow.Content = popupGrid;
 
                     popupWindow.Closed += (_, _) =>
                     {
@@ -530,6 +536,30 @@ public partial class MainWindow
 
                     await popupWebView.EnsureCoreWebView2Async(webView.CoreWebView2.Environment);
                     args.NewWindow = popupWebView.CoreWebView2;
+
+                    void NudgePopupLayout()
+                    {
+                        try
+                        {
+                            if (!popupWindow.IsVisible) return;
+                            popupGrid.InvalidateVisual();
+                            popupWebView.InvalidateVisual();
+                            popupGrid.UpdateLayout();
+                            popupWindow.Width += 0.5;
+                            popupWindow.Width -= 0.5;
+                            popupWebView.Focus();
+                        }
+                        catch { }
+                    }
+
+                    popupWebView.CoreWebView2.DOMContentLoaded += (_, _) =>
+                    {
+                        popupWindow.Dispatcher.InvokeAsync(NudgePopupLayout, System.Windows.Threading.DispatcherPriority.Render);
+                    };
+                    popupWebView.CoreWebView2.NavigationCompleted += (_, _) =>
+                    {
+                        popupWindow.Dispatcher.InvokeAsync(NudgePopupLayout, System.Windows.Threading.DispatcherPriority.Render);
+                    };
 
                     popupWebView.CoreWebView2.WindowCloseRequested += (_, _) =>
                     {
@@ -576,6 +606,14 @@ public partial class MainWindow
                         popupArgs.Handled = true;
                         _viewModel.AddTabWithUrl(popupArgs.Uri, _viewModel.SelectedTab ?? tab);
                     };
+
+                    _ = popupWindow.Dispatcher.InvokeAsync(async () =>
+                    {
+                        await Task.Delay(60);
+                        NudgePopupLayout();
+                        await Task.Delay(150);
+                        NudgePopupLayout();
+                    }, System.Windows.Threading.DispatcherPriority.Loaded);
                 }
                 else if (_viewModel != null)
                 {
