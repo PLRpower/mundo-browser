@@ -245,6 +245,101 @@ public sealed class CoreLogicTests
                 Directory.Delete(tempDir, recursive: true);
         }
     }
+
+    private sealed class FakeDialogService : IDialogService
+    {
+        public void ShowInformation(string message, string title) { }
+        public void ShowError(string message, string title) { }
+    }
+
+    [Fact]
+    public async Task UpdateService_CheckForUpdatesInBackground_RunsStartupAndPeriodicChecksIdempotently()
+    {
+        var settings = new FakeAppSettingsService();
+        var dialogs = new FakeDialogService();
+        int checkCount = 0;
+        bool sawManualCheck = false;
+        var twoChecksObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var updateService = new UpdateService(
+            settings,
+            dialogs,
+            TimeSpan.FromMilliseconds(20),
+            TimeSpan.FromMilliseconds(35),
+            (isManualCheck, _) =>
+            {
+                if (isManualCheck)
+                    sawManualCheck = true;
+                if (Interlocked.Increment(ref checkCount) >= 2)
+                    twoChecksObserved.TrySetResult();
+                return Task.CompletedTask;
+            });
+
+        updateService.CheckForUpdatesInBackground(["--arg"]);
+        updateService.CheckForUpdatesInBackground(["--arg"]);
+
+        await twoChecksObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        updateService.Dispose();
+        int countAtDispose = Volatile.Read(ref checkCount);
+        await Task.Delay(80);
+
+        Assert.False(sawManualCheck);
+        Assert.True(countAtDispose >= 2);
+        Assert.Equal(countAtDispose, Volatile.Read(ref checkCount));
+    }
+
+    [Fact]
+    public void UpdateIconGeometry_ParsesCleanSymmetricBounds()
+    {
+        var geometry = System.Windows.Media.Geometry.Parse(
+            "M12,3 A9,9 0 1 1 12,21 A9,9 0 1 1 12,3 Z M9,12.75 L12,15.75 L15,12.75 M12,8.25 L12,15.75");
+
+        Assert.False(geometry.IsEmpty());
+        Assert.Equal(3, geometry.Bounds.Left, 3);
+        Assert.Equal(3, geometry.Bounds.Top, 3);
+        Assert.Equal(18, geometry.Bounds.Width, 3);
+        Assert.Equal(18, geometry.Bounds.Height, 3);
+    }
+
+    [Fact]
+    public void ExtensionService_MatchesManifest_MatchesLocalizedAndCaseInsensitiveMessages()
+    {
+        string rootTempDir = Path.Combine(Path.GetTempPath(), "MundoBrowserExtMatchTest_" + Guid.NewGuid().ToString("N"));
+        string tempDir = Path.Combine(rootTempDir, "nngceckbapebfimnlniiiahkandclblb");
+        Directory.CreateDirectory(Path.Combine(tempDir, "_locales", "en"));
+        Directory.CreateDirectory(Path.Combine(tempDir, "_locales", "fr"));
+
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(tempDir, "_locales", "en", "messages.json"),
+                """{ "extname": { "message": "Password Vault" } }""");
+            File.WriteAllText(
+                Path.Combine(tempDir, "_locales", "fr", "messages.json"),
+                """{ "extname": { "message": "Coffre de mots de passe" } }""");
+
+            const string manifestJson = """
+            {
+              "manifest_version": 3,
+              "name": "__MSG_extName__",
+              "default_locale": "en",
+              "version": "1.0.0"
+            }
+            """;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(manifestJson);
+
+            Assert.True(ExtensionService.MatchesManifest(tempDir, doc.RootElement, "agcalopfgbmbfgciceeneagbcjbmhopo", "Coffre de mots de passe"));
+            Assert.True(ExtensionService.MatchesManifest(tempDir, doc.RootElement, "agcalopfgbmbfgciceeneagbcjbmhopo", "Password Vault"));
+            Assert.True(ExtensionService.MatchesManifest(tempDir, doc.RootElement, "nngceckbapebfimnlniiiahkandclblb", "Unrelated Name"));
+            Assert.False(ExtensionService.MatchesManifest(tempDir, doc.RootElement, "agcalopfgbmbfgciceeneagbcjbmhopo", "Other Extension"));
+        }
+        finally
+        {
+            if (Directory.Exists(rootTempDir))
+                Directory.Delete(rootTempDir, recursive: true);
+        }
+    }
 }
 
 

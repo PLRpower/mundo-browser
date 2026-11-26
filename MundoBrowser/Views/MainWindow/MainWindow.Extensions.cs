@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Windows;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
@@ -11,6 +12,9 @@ namespace MundoBrowser;
 
 public partial class MainWindow
 {
+    private bool _extensionsLoaded;
+    private Task? _extensionsLoadTask;
+
     private static void CheckForExtensionStorePage(TabViewModel tab, string url)
     {
         if (string.IsNullOrEmpty(url))
@@ -25,18 +29,47 @@ public partial class MainWindow
         tab.IsExtensionStorePage = false;
     }
 
-    private async Task LoadExtensionsAsync()
+    private Task EnsureExtensionsLoadedAsync(CoreWebView2Profile? profile = null)
     {
-        var webView = _webViewService.ActiveWebView ?? _webViewService.GetAnyActiveWebView();
-        if (webView?.CoreWebView2 == null || DataContext is not MainViewModel vm) return;
-        var profile = webView.CoreWebView2.Profile;
-        
-        var extensions = await _extensionService.LoadExtensionsAsync(profile);
-        
-        vm.InstalledExtensions.Clear();
-        foreach (var ext in extensions)
+        if (_extensionsLoaded)
+            return Task.CompletedTask;
+
+        if (_extensionsLoadTask is { IsCompleted: false } inFlight)
+            return inFlight;
+
+        return LoadExtensionsAsync(profile);
+    }
+
+    private async Task LoadExtensionsAsync(CoreWebView2Profile? profile = null)
+    {
+        while (_extensionsLoadTask is { IsCompleted: false } inFlight)
+            await inFlight;
+
+        var task = LoadExtensionsCoreAsync(profile);
+        _extensionsLoadTask = task;
+        await task;
+    }
+
+    private async Task LoadExtensionsCoreAsync(CoreWebView2Profile? profile)
+    {
+        if (DataContext is not MainViewModel vm) return;
+
+        profile ??= (_webViewService.ActiveWebView ?? _webViewService.GetAnyActiveWebView())?.CoreWebView2?.Profile;
+        if (profile == null) return;
+
+        try
         {
-            vm.InstalledExtensions.Add(ext);
+            var extensions = await _extensionService.LoadExtensionsAsync(profile);
+            vm.InstalledExtensions.Clear();
+            foreach (var ext in extensions)
+            {
+                vm.InstalledExtensions.Add(ext);
+            }
+            _extensionsLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Extensions] Failed to load extensions: {ex.Message}");
         }
     }
 
@@ -99,7 +132,7 @@ public partial class MainWindow
             webView.CoreWebView2.PostWebMessageAsJson(progressJson);
 
             await _extensionService.InstallExtensionAsync(extensionId, webView.CoreWebView2.Profile);
-            await LoadExtensionsAsync();
+            await LoadExtensionsAsync(webView.CoreWebView2.Profile);
 
             var installedJson = JsonSerializer.Serialize(new
             {

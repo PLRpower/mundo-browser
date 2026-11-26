@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
@@ -380,18 +381,8 @@ public class ExtensionService : IExtensionService
                         var json = await File.ReadAllTextAsync(manifestPath);
                         var doc = JsonDocument.Parse(json);
                         var root = doc.RootElement;
-                        
-                        var manifestName = root.TryGetProperty("name", out var n) ? n.GetString() : null;
-                        var shortName = root.TryGetProperty("short_name", out var sn) ? sn.GetString() : null;
-                        var resolvedName = ResolveName(manifestName, dir, root);
-                        var resolvedShortName = ResolveName(shortName, dir, root);
-                        
-                        bool isMatch = false;
-                        if (resolvedName != null && ext.Name != null && (ext.Name.Contains(resolvedName) || resolvedName.Contains(ext.Name))) isMatch = true;
-                        else if (resolvedShortName != null && ext.Name != null && ext.Name.Contains(resolvedShortName)) isMatch = true;
-                        else if (ext.Id.Equals(Path.GetFileName(dir), StringComparison.OrdinalIgnoreCase)) isMatch = true;
-                        
-                        if (isMatch)
+
+                        if (MatchesManifest(dir, root, ext.Id, ext.Name))
                         {
                             matchedDir = dir;
                             matchedStoreId = Path.GetFileName(dir);
@@ -399,10 +390,8 @@ public class ExtensionService : IExtensionService
                             matchedRoot = root;
                             break;
                         }
-                        else
-                        {
-                            doc.Dispose();
-                        }
+
+                        doc.Dispose();
                     }
                     catch
                     {
@@ -614,16 +603,7 @@ public class ExtensionService : IExtensionService
         {
             var json = File.ReadAllText(manifestPath);
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var manifestName = root.TryGetProperty("name", out var n) ? n.GetString() : null;
-            var shortName = root.TryGetProperty("short_name", out var sn) ? sn.GetString() : null;
-            var resolvedName = ResolveName(manifestName, dir, root);
-            var resolvedShortName = ResolveName(shortName, dir, root);
-
-            if (resolvedName != null && ext.Name != null && (ext.Name.Contains(resolvedName) || resolvedName.Contains(ext.Name))) return true;
-            if (resolvedShortName != null && ext.Name != null && ext.Name.Contains(resolvedShortName)) return true;
-            if (ext.Id.Equals(Path.GetFileName(dir), StringComparison.OrdinalIgnoreCase)) return true;
+            return MatchesManifest(dir, doc.RootElement, ext.Id, ext.Name);
         }
         catch { }
 
@@ -676,28 +656,85 @@ public class ExtensionService : IExtensionService
         return dir.Contains(".deleted_") || dir.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) || dir.EndsWith(".bak", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? ResolveName(string? name, string extensionDir, JsonElement root)
+    public static bool MatchesManifest(string extensionDir, JsonElement root, string extensionId, string? extensionName)
     {
-        if (string.IsNullOrEmpty(name)) return null;
-        if (!name.StartsWith("__MSG_", StringComparison.Ordinal) || !name.EndsWith("__", StringComparison.Ordinal)) return name;
-        
+        if (extensionId.Equals(Path.GetFileName(extensionDir), StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(extensionName))
+            return false;
+
+        var manifestName = root.TryGetProperty("name", out var n) ? n.GetString() : null;
+        foreach (var candidate in ResolveLocalizedNames(manifestName, extensionDir, root))
+        {
+            if (extensionName.Contains(candidate, StringComparison.OrdinalIgnoreCase)
+                || candidate.Contains(extensionName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        var shortName = root.TryGetProperty("short_name", out var sn) ? sn.GetString() : null;
+        foreach (var candidate in ResolveLocalizedNames(shortName, extensionDir, root))
+        {
+            if (extensionName.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> ResolveLocalizedNames(string? name, string extensionDir, JsonElement root)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            yield break;
+
+        if (!name.StartsWith("__MSG_", StringComparison.Ordinal) || !name.EndsWith("__", StringComparison.Ordinal))
+        {
+            yield return name;
+            yield break;
+        }
+
         var key = name[6..^2];
-        var defaultLocale = root.TryGetProperty("default_locale", out var locale) ? (locale.GetString() ?? "en") : "en";
         var localesPath = ResolveExtensionPath(extensionDir, "_locales");
-        
-        if (localesPath == null || !Directory.Exists(localesPath)) return name;
-        
-        string[] searchLocales = [defaultLocale, "fr", "en_US", "en"];
+        if (localesPath == null || !Directory.Exists(localesPath))
+        {
+            yield return name;
+            yield break;
+        }
+
+        var uiCulture = CultureInfo.CurrentUICulture;
+        var defaultLocale = root.TryGetProperty("default_locale", out var locale) ? (locale.GetString() ?? "en") : "en";
+        var seenLocales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var yieldedAny = false;
+
+        string[] searchLocales =
+        [
+            uiCulture.Name.Replace('-', '_'),
+            uiCulture.TwoLetterISOLanguageName,
+            defaultLocale,
+            "fr",
+            "en_US",
+            "en"
+        ];
+
         foreach (var loc in searchLocales)
         {
+            if (string.IsNullOrWhiteSpace(loc) || !seenLocales.Add(loc))
+                continue;
+
             var msgPath = ResolveExtensionPath(extensionDir, Path.Combine("_locales", loc, "messages.json"));
-            if (msgPath != null && File.Exists(msgPath))
+            if (msgPath == null || !File.Exists(msgPath))
+                continue;
+
+            var val = GetMessageValue(msgPath, key);
+            if (!string.IsNullOrWhiteSpace(val))
             {
-                var val = GetMessageValue(msgPath, key);
-                if (val != null) return val;
+                yieldedAny = true;
+                yield return val;
             }
         }
-        return name;
+
+        if (!yieldedAny)
+            yield return name;
     }
 
     private static string? GetMessageValue(string messagesPath, string key)
@@ -710,8 +747,16 @@ public class ExtensionService : IExtensionService
             var json = File.ReadAllText(messagesPath);
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty(key, out var msgObj) && msgObj.TryGetProperty("message", out var msg))
-            {
                 return msg.GetString();
+
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.Name.Equals(key, StringComparison.OrdinalIgnoreCase)
+                    && prop.Value.ValueKind == JsonValueKind.Object
+                    && prop.Value.TryGetProperty("message", out var ciMsg))
+                {
+                    return ciMsg.GetString();
+                }
             }
         }
         catch { }
@@ -742,6 +787,10 @@ public class ExtensionService : IExtensionService
         string? iconPath = null;
         if (root.TryGetProperty("icons", out var icons))
             iconPath = GetBestIconPath(icons);
+        else if (root.TryGetProperty("action", out var actionForIcon) && actionForIcon.TryGetProperty("default_icon", out var actionIcons))
+            iconPath = GetBestIconPath(actionIcons);
+        else if (root.TryGetProperty("browser_action", out var browserActionForIcon) && browserActionForIcon.TryGetProperty("default_icon", out var browserActionIcons))
+            iconPath = GetBestIconPath(browserActionIcons);
             
         if (!string.IsNullOrEmpty(iconPath))
         {

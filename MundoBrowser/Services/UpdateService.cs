@@ -5,14 +5,23 @@ using Velopack.Sources;
 
 namespace MundoBrowser.Services;
 
-public class UpdateService : IUpdateService
+public class UpdateService : IUpdateService, IDisposable
 {
+    private static readonly TimeSpan DefaultStartupCheckDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultCheckInterval = TimeSpan.FromHours(6);
+
     private readonly IAppSettingsService _settingsService;
     private readonly IDialogService _dialogService;
+    private readonly TimeSpan _startupCheckDelay;
+    private readonly TimeSpan _checkInterval;
+    private readonly Func<bool, CancellationToken, Task>? _customCheckRunner;
+    private readonly CancellationTokenSource _disposeCts = new();
     private UpdateManager? _updateManager;
     private UpdateInfo? _updateInfo;
     private string[]? _startArgs;
-    private bool _isChecking;
+    private int _isChecking;
+    private int _backgroundLoopStarted;
+    private int _disposed;
 
     public bool IsUpdateAvailable { get; private set; }
     public bool IsDownloading { get; private set; }
@@ -23,35 +32,73 @@ public class UpdateService : IUpdateService
     public event EventHandler? UpdateStatusChanged;
 
     public UpdateService(IAppSettingsService settingsService, IDialogService dialogService)
+        : this(settingsService, dialogService, DefaultStartupCheckDelay, DefaultCheckInterval, null)
+    {
+    }
+
+    internal UpdateService(
+        IAppSettingsService settingsService,
+        IDialogService dialogService,
+        TimeSpan startupCheckDelay,
+        TimeSpan checkInterval,
+        Func<bool, CancellationToken, Task>? customCheckRunner = null)
     {
         _settingsService = settingsService;
         _dialogService = dialogService;
+        _startupCheckDelay = startupCheckDelay;
+        _checkInterval = checkInterval;
+        _customCheckRunner = customCheckRunner;
     }
 
     public void CheckForUpdatesInBackground(string[]? args)
     {
         _startArgs = args;
-        _ = Task.Run(async () =>
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (Interlocked.Exchange(ref _backgroundLoopStarted, 1) != 0) return;
+
+        _ = RunBackgroundUpdateLoopAsync(_disposeCts.Token);
+    }
+
+    private async Task RunBackgroundUpdateLoopAsync(CancellationToken cancellationToken)
+    {
+        try
         {
-            // Small delay so application startup completes smoothly before network check
-            await Task.Delay(3000);
-            await PerformUpdateCheckAsync(isManualCheck: false);
-        });
+            // Delay initial check so startup rendering and initial tab load stay responsive.
+            await Task.Delay(_startupCheckDelay, cancellationToken).ConfigureAwait(false);
+            await PerformUpdateCheckAsync(isManualCheck: false, cancellationToken).ConfigureAwait(false);
+
+            using var timer = new PeriodicTimer(_checkInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            {
+                await PerformUpdateCheckAsync(isManualCheck: false, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Application shutting down
+        }
     }
 
-    public async Task CheckForUpdatesManualAsync()
+    public Task CheckForUpdatesManualAsync()
     {
-        if (_isChecking) return;
-        await PerformUpdateCheckAsync(isManualCheck: true);
+        return PerformUpdateCheckAsync(isManualCheck: true, _disposeCts.Token);
     }
 
-    private async Task PerformUpdateCheckAsync(bool isManualCheck)
+    private async Task PerformUpdateCheckAsync(bool isManualCheck, CancellationToken cancellationToken)
     {
-        if (_isChecking) return;
-        _isChecking = true;
+        if (Volatile.Read(ref _disposed) != 0 || cancellationToken.IsCancellationRequested)
+            return;
+        if (Interlocked.CompareExchange(ref _isChecking, 1, 0) != 0)
+            return;
 
         try
         {
+            if (_customCheckRunner != null)
+            {
+                await _customCheckRunner(isManualCheck, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             var isBeta = _settingsService.Current.IsBetaChannelEnabled;
             var options = new UpdateOptions
             {
@@ -59,44 +106,75 @@ public class UpdateService : IUpdateService
                 AllowVersionDowngrade = true
             };
 
-            _updateManager = new UpdateManager(new GithubSource("https://github.com/PLRpower/mundo-browser", null, isBeta), options);
+            var manager = new UpdateManager(new GithubSource("https://github.com/PLRpower/mundo-browser", null, isBeta), options);
+            _updateManager = manager;
 
-            var updateInfo = await _updateManager.CheckForUpdatesAsync();
-            if (updateInfo != null)
+            if (!isManualCheck && !manager.IsInstalled)
+                return;
+
+            var updateInfo = await manager.CheckForUpdatesAsync().ConfigureAwait(false);
+            if (updateInfo == null)
             {
-                _updateInfo = updateInfo;
-                NewVersionText = updateInfo.TargetFullRelease.Version.ToString();
-                IsUpdateAvailable = true;
-                IsDownloading = true;
-                NotifyStatusChanged();
-
                 if (isManualCheck)
                 {
                     _dialogService.ShowInformation(
-                        $"Une nouvelle version ({NewVersionText}) est disponible ! Le téléchargement a démarré en arrière-plan.",
-                        "Mise à jour disponible");
+                        "Vous utilisez déjà la dernière version de MundoBrowser.",
+                        "Mise à jour");
                 }
-
-                await _updateManager.DownloadUpdatesAsync(updateInfo, progress =>
-                {
-                    DownloadProgress = progress;
-                    NotifyStatusChanged();
-                });
-
-                IsDownloading = false;
-                IsUpdateReady = true;
-                NotifyStatusChanged();
+                return;
             }
-            else if (isManualCheck)
+
+            string targetVersion = updateInfo.TargetFullRelease.Version.ToString();
+            if (IsUpdateReady && string.Equals(NewVersionText, targetVersion, StringComparison.Ordinal))
+            {
+                if (isManualCheck)
+                {
+                    _dialogService.ShowInformation(
+                        $"La mise à jour ({targetVersion}) est déjà téléchargée et prête à être installée.",
+                        "Mise à jour prête");
+                }
+                return;
+            }
+
+            _updateInfo = updateInfo;
+            NewVersionText = targetVersion;
+            IsUpdateAvailable = true;
+            IsDownloading = true;
+            IsUpdateReady = false;
+            DownloadProgress = 0;
+            NotifyStatusChanged();
+
+            if (isManualCheck)
             {
                 _dialogService.ShowInformation(
-                    "Vous utilisez déjà la dernière version de MundoBrowser.",
-                    "Mise à jour");
+                    $"Une nouvelle version ({NewVersionText}) est disponible ! Le téléchargement a démarré en arrière-plan.",
+                    "Mise à jour disponible");
             }
+
+            int lastReportedProgress = -1;
+            await manager.DownloadUpdatesAsync(updateInfo, progress =>
+            {
+                if (progress == lastReportedProgress)
+                    return;
+
+                lastReportedProgress = progress;
+                DownloadProgress = progress;
+                NotifyStatusChanged();
+            }, cancellationToken).ConfigureAwait(false);
+
+            IsDownloading = false;
+            IsUpdateReady = true;
+            DownloadProgress = 100;
+            NotifyStatusChanged();
+        }
+        catch (OperationCanceledException)
+        {
+            ResetFailedDownloadState();
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Update check failed: {ex.Message}");
+            ResetFailedDownloadState();
             if (isManualCheck)
             {
                 _dialogService.ShowError(
@@ -106,8 +184,19 @@ public class UpdateService : IUpdateService
         }
         finally
         {
-            _isChecking = false;
+            Volatile.Write(ref _isChecking, 0);
         }
+    }
+
+    private void ResetFailedDownloadState()
+    {
+        if (!IsDownloading)
+            return;
+
+        IsDownloading = false;
+        IsUpdateAvailable = IsUpdateReady;
+        DownloadProgress = IsUpdateReady ? 100 : 0;
+        NotifyStatusChanged();
     }
 
     public void ApplyUpdateAndRestart()
@@ -130,5 +219,14 @@ public class UpdateService : IUpdateService
     private void NotifyStatusChanged()
     {
         UpdateStatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        _disposeCts.Cancel();
+        _disposeCts.Dispose();
     }
 }

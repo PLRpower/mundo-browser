@@ -621,9 +621,14 @@
                     </Button.ContextMenu>
                     <Grid>
                         <Viewbox Width="19" Height="19" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Path Fill="#22C55E"
+                            <Path Fill="Transparent"
+                                  Stroke="#22C55E"
+                                  StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
                                   Width="24" Height="24"
-                                  Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 22,12A10,10 0 0,0 2,12M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M11,7V13H8L12,17L16,13H13V7H11Z"/>
+                                  Data="M12,3 A9,9 0 1 1 12,21 A9,9 0 1 1 12,3 Z M9,12.75 L12,15.75 L15,12.75 M12,8.25 L12,15.75"/>
                         </Viewbox>
                     </Grid>
                 </Button>

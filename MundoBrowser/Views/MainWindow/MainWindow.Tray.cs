@@ -146,6 +146,9 @@ public partial class MainWindow
         ForceForeground(handle);
         Activate();
         Focus();
+
+        if (!_extensionsLoaded)
+            _ = EnsureExtensionsLoadedAsync();
     }
 
     private void RequestExit()

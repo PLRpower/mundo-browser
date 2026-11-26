@@ -107,6 +107,7 @@ namespace MundoBrowser.ViewModels
             _webViewService.ActiveDownloadsChanged += OnActiveDownloadsChanged;
             _updateService.UpdateStatusChanged += OnUpdateStatusChanged;
             _appSettingsService.SettingsChanged += OnAppSettingsChanged;
+            SyncUpdateState();
             Tabs.CollectionChanged += (_, _) => UpdateSplitTabFlags(refreshView: false);
 
             IsSidebarVisible = _appSettingsService.Current.IsSidebarVisible;

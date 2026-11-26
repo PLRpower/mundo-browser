@@ -12,7 +12,7 @@
         Top="{Binding WindowTop, Mode=OneTime}"
         WindowState="{Binding WindowState, Mode=TwoWay}"
         ExtendsContentIntoTitleBar="True"
-        WindowBackdropType="Acrylic"
+        WindowBackdropType="None"
         WindowCornerPreference="Round"
         AllowsTransparency="False"
         PreviewKeyDown="Window_PreviewKeyDown"
@@ -21,7 +21,7 @@
         Foreground="White">
 
     <ui:FluentWindow.Resources>
-        <SolidColorBrush x:Key="ChromeSurfaceBrush" Color="#99000000"/>
+        <SolidColorBrush x:Key="ChromeSurfaceBrush" Color="#FF0E0E10"/>
         <SolidColorBrush x:Key="OverlaySurfaceBrush" Color="#FF18181A"/>
 
         <!-- Scrollbar Style - Ultra Minimalist & Rounded -->

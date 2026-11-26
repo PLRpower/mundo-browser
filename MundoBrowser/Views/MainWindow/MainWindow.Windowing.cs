@@ -90,13 +90,13 @@ public partial class MainWindow
     private void EnterFullscreen(bool hideUI)
     {
         _fullscreenHidesUi = hideUI;
-        _prevWindowState = (WindowState, WindowStyle, ResizeMode, WindowBackdropType, WindowCornerPreference, Topmost, Left, Top, Width, Height);
+        _prevWindowState = (WindowState, WindowStyle, ResizeMode, WindowBackdropType, WindowCornerPreference, Background, Topmost, Left, Top, Width, Height);
 
         NativeMethods.SuppressAccentBorder(this);
 
         WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.DoNotRound;
-        WindowBackdropType = hideUI ? Wpf.Ui.Controls.WindowBackdropType.None : _prevWindowState.Backdrop;
-        Background = hideUI ? System.Windows.Media.Brushes.Black : System.Windows.Media.Brushes.Transparent;
+        WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.None;
+        Background = hideUI ? System.Windows.Media.Brushes.Black : _prevWindowState.Background;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
 
@@ -138,7 +138,7 @@ public partial class MainWindow
 
             WindowCornerPreference = _prevWindowState.Corners;
             WindowBackdropType = _prevWindowState.Backdrop;
-            Background = System.Windows.Media.Brushes.Transparent;
+            Background = _prevWindowState.Background;
             WindowStyle = _prevWindowState.Style;
             ResizeMode = _prevWindowState.Resize;
 

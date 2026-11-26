@@ -16,6 +16,7 @@ namespace MundoBrowser.ViewModels
         private bool _isUpdateDownloading;
 
         [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ApplyUpdateCommand))]
         private bool _isUpdateReady;
 
         [ObservableProperty]
@@ -30,7 +31,7 @@ namespace MundoBrowser.ViewModels
         [ObservableProperty]
         private string _updateMenuHeader = "Mise à jour disponible";
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(IsUpdateReady))]
         private void ApplyUpdate() => _updateService.ApplyUpdateAndRestart();
 
         [RelayCommand]
@@ -38,35 +39,35 @@ namespace MundoBrowser.ViewModels
 
         private void OnUpdateStatusChanged(object? sender, EventArgs e)
         {
-            void UpdateState()
-            {
-                IsUpdateAvailable = _updateService.IsUpdateAvailable;
-                IsUpdateDownloading = _updateService.IsDownloading;
-                IsUpdateReady = _updateService.IsUpdateReady;
-                UpdateProgress = _updateService.DownloadProgress;
-                UpdateVersionText = _updateService.NewVersionText;
-
-                if (IsUpdateReady)
-                {
-                    UpdateToolTipText = $"Mise à jour v{UpdateVersionText} prête. Cliquez pour installer et redémarrer.";
-                    UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} prête";
-                }
-                else if (IsUpdateDownloading)
-                {
-                    UpdateToolTipText = $"Téléchargement de la mise à jour v{UpdateVersionText} ({UpdateProgress:F0}%)...";
-                    UpdateMenuHeader = $"Téléchargement v{UpdateVersionText} ({UpdateProgress:F0}%)";
-                }
-                else if (IsUpdateAvailable)
-                {
-                    UpdateToolTipText = $"Mise à jour v{UpdateVersionText} disponible";
-                    UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} disponible";
-                }
-            }
-
             if (_dispatcherService.CheckAccess())
-                UpdateState();
+                SyncUpdateState();
             else
-                _dispatcherService.BeginInvoke(UpdateState);
+                _dispatcherService.BeginInvoke(SyncUpdateState);
+        }
+
+        private void SyncUpdateState()
+        {
+            IsUpdateAvailable = _updateService.IsUpdateAvailable;
+            IsUpdateDownloading = _updateService.IsDownloading;
+            IsUpdateReady = _updateService.IsUpdateReady;
+            UpdateProgress = _updateService.DownloadProgress;
+            UpdateVersionText = _updateService.NewVersionText;
+
+            if (IsUpdateReady)
+            {
+                UpdateToolTipText = $"Mise à jour v{UpdateVersionText} prête. Cliquez pour installer et redémarrer.";
+                UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} prête";
+            }
+            else if (IsUpdateDownloading)
+            {
+                UpdateToolTipText = $"Téléchargement de la mise à jour v{UpdateVersionText} ({UpdateProgress:F0}%)...";
+                UpdateMenuHeader = $"Téléchargement v{UpdateVersionText} ({UpdateProgress:F0}%)";
+            }
+            else if (IsUpdateAvailable)
+            {
+                UpdateToolTipText = $"Mise à jour v{UpdateVersionText} disponible";
+                UpdateMenuHeader = $"Mise à jour v{UpdateVersionText} disponible";
+            }
         }
     }
 }

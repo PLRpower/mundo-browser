@@ -30,13 +30,13 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow, IDisposab
     private ExtensionPopupWindow? _extensionPopupWindow;
     private Window? _activeExtensionPopoutWindow;
     private SidebarView? FloatingSidebarControl;
-    private (WindowState State, WindowStyle Style, ResizeMode Resize, Wpf.Ui.Controls.WindowBackdropType Backdrop, Wpf.Ui.Controls.WindowCornerPreference Corners, bool Topmost, double Left, double Top, double Width, double Height) _prevWindowState;
+    private (WindowState State, WindowStyle Style, ResizeMode Resize, Wpf.Ui.Controls.WindowBackdropType Backdrop, Wpf.Ui.Controls.WindowCornerPreference Corners, System.Windows.Media.Brush Background, bool Topmost, double Left, double Top, double Width, double Height) _prevWindowState;
 
     private readonly System.Windows.Threading.DispatcherTimer _globalMediaTimer;
     private int _mediaUpdateRunning;
     private DateTime _lastBackgroundMediaUpdate = DateTime.MinValue;
     private string[]? _startArgs;
-    internal static readonly System.Windows.Media.SolidColorBrush _floatingTitleBarButtonBrush = CreateFrozenBrush(0xF2, 0x1E, 0x1E, 0x20);
+    internal static readonly System.Windows.Media.SolidColorBrush _floatingTitleBarButtonBrush = CreateFrozenBrush(0xFF, 0x1E, 0x1E, 0x20);
     internal static readonly System.Windows.Media.SolidColorBrush _floatingTitleBarButtonHoverBrush = CreateFrozenBrush(0xFF, 0x3D, 0x3D, 0x3D);
     internal static readonly System.Windows.Media.SolidColorBrush _floatingTitleBarButtonPressedBrush = CreateFrozenBrush(0xFF, 0x50, 0x50, 0x50);
     internal static readonly System.Windows.Media.SolidColorBrush _floatingTitleBarCloseHoverBrush = CreateFrozenBrush(0xFF, 0xC4, 0x2B, 0x1C);
@@ -193,20 +193,24 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow, IDisposab
                             input = new Uri(System.IO.Path.GetFullPath(input)).AbsoluteUri;
                         }
 
-                        vm.AddTabWithUrl(input, vm.SelectedTab);
+                        var startupTab = vm.AddTabWithUrl(input, vm.SelectedTab);
+                        await SwitchToTabAsync(startupTab);
                     }
                     else if (vm.SelectedTab != null)
                     {
                         await SwitchToTabAsync(vm.SelectedTab);
                     }
                     
-                    await LoadExtensionsAsync();
-                    _updateService.CheckForUpdatesInBackground(_startArgs);
+                    await EnsureExtensionsLoadedAsync();
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to initialize main window: {ex}");
+            }
+            finally
+            {
+                _updateService.CheckForUpdatesInBackground(_startArgs);
             }
         };
     }

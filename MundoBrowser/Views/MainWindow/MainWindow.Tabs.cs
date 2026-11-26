@@ -35,6 +35,8 @@ public partial class MainWindow
             return;
         }
 
+        _extensionsLoaded = false;
+
         if (_viewModel?.SelectedTab is { } currentTab)
         {
             _ = SwitchToTabAsync(currentTab);
@@ -51,6 +53,11 @@ public partial class MainWindow
         try
         {
             var webView = await _webViewService.GetOrCreateWebViewAsync(tab, wv => SetupWebViewEvents(wv, tab));
+            if (!_extensionsLoaded && webView.CoreWebView2 != null)
+            {
+                _ = EnsureExtensionsLoadedAsync(webView.CoreWebView2.Profile);
+            }
+
             if ((switchVersion != Volatile.Read(ref _tabSwitchVersion) && _viewModel?.SelectedTab != tab)
                 || _viewModel?.SelectedTab != tab
                 || !_trackedTabs.Contains(tab))
